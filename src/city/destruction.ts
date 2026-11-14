@@ -29,6 +29,9 @@ export interface Chunk {
   footprint: number;
   /** Sim time at which a scheduled collapse lets this chunk go, or -1. */
   releaseAt: number;
+  /** Recent pressure on the chunk (decaying sum of contact impulses), and when it was last updated. */
+  stress: number;
+  stressTick: number;
 }
 
 interface BuildingRecord {
@@ -38,6 +41,8 @@ interface BuildingRecord {
   floorFixed: number[];
   /** Lowest floor that has failed; everything at or above it is coming down. */
   failedFrom: number;
+  /** Floors that have lost a chunk to collapse (not a direct hit). */
+  fellFloors: number[];
 }
 
 /**
@@ -65,6 +70,7 @@ const GROOVE = 0.14;
 const EVENT_SPEED = 1.5;
 const MAX_KICK = 32;
 const MAX_DEBRIS_KICK = 10;
+const STRESS_DECAY = 0.9;
 
 const v1 = new THREE.Vector3();
 const v2 = new THREE.Vector3();
@@ -90,9 +96,13 @@ export class ChunkField implements System {
   private looseOrder: number[] = [];
   private looseHead = 0;
   private shrinking: { chunk: number; t: number }[] = [];
+  private looseAt: number[] = [];
+  private settleHead = 0;
   private brokeThisStep: number[] = [];
-  /** Called for every chunk that comes loose (dust, shake, sound hooks). */
-  onBreak: ((chunk: Chunk) => void) | null = null;
+  /** Chunks that fell because their support went, rather than from a direct hit. */
+  fellCount = 0;
+  /** The most floors any one building has lost to a collapse. */
+  biggestCollapse = 0;
 
   constructor(
     private sim: Sim,
@@ -121,6 +131,7 @@ export class ChunkField implements System {
       floorTotal: new Array(floors).fill(0),
       floorFixed: new Array(floors).fill(0),
       failedFrom: Infinity,
+      fellFloors: [],
     };
     const building = this.buildings.length;
     for (const c of buildingChunks(spec, tuning.city.floorHeight)) {
@@ -154,6 +165,8 @@ export class ChunkField implements System {
         dependents: [],
         footprint: supports.reduce((a, s) => a + s.area, 0),
         releaseAt: -1,
+        stress: 0,
+        stressTick: 0,
       });
       this.byCollider.set(collider.handle, index);
       this.field.add(body, c.hx * 2 - GROOVE, c.hy * 2 - GROOVE, c.hz * 2 - GROOVE, c.color);
@@ -244,7 +257,11 @@ export class ChunkField implements System {
         const c = this.chunks[pb.chunk];
         if (c.state !== ChunkState.Fixed) continue;
         const impulse = pb.force * dt;
-        if (impulse < d.breakSpeed * c.mass) continue;
+        // One hard knock breaks it; so does steady pressure that keeps coming.
+        c.stress = c.stress * Math.pow(STRESS_DECAY, this.sim.tick - c.stressTick) + impulse;
+        c.stressTick = this.sim.tick;
+        const limit = d.breakSpeed * c.mass;
+        if (impulse < limit && c.stress < limit * d.crush) continue;
         const otherBody = this.sim.world.getCollider(pb.other)?.parent();
         const hitter = otherBody ? this.hitters.get(otherBody.handle) : undefined;
         if (hitter) {
@@ -281,17 +298,19 @@ export class ChunkField implements System {
       }
     }
 
-    // Give hitters back the momentum the fixed chunk swallowed, minus the cost of breaking it.
+    // The fixed chunk swallowed the hitter's momentum for one step. Put it all back, then charge
+    // the cost of the break as an impulse above its centre: it slows, and is knocked back a little.
     for (const h of this.hitters.values()) {
       if (!h.hit || !h.body.isDynamic()) continue;
-      const momentum = h.body.mass() * h.pv.length();
-      const carry = THREE.MathUtils.clamp(1 - h.cost / (momentum + 1e-6), 0, 1);
-      const v = h.body.linvel();
-      v1.set(v.x, v.y, v.z).lerp(h.pv, carry);
-      h.body.setLinvel(v1, true);
-      const w = h.body.angvel();
-      v1.set(w.x, w.y, w.z).lerp(h.pw, carry * (1 - d.impactTilt));
-      h.body.setAngvel(v1, true);
+      const speed = h.pv.length();
+      if (speed < 1e-3) continue;
+      h.body.setLinvel(h.pv, true);
+      h.body.setAngvel(h.pw, true);
+      const cost = Math.min(h.cost, h.body.mass() * speed);
+      v1.copy(h.pv).multiplyScalar(-cost / speed);
+      const p = h.body.translation();
+      v2.set(p.x, p.y + d.impactHeight, p.z);
+      h.body.applyImpulseAtPoint(v1, v2, true);
     }
     this.brokeThisStep.length = 0;
   }
@@ -342,9 +361,18 @@ export class ChunkField implements System {
     this.fixedCount--;
     this.looseCount++;
     this.looseOrder.push(index);
+    this.looseAt.push(time);
     this.brokeThisStep.push(index);
     this.damage.chunk(c.building);
-    this.onBreak?.(c);
+    this.sim.emit('chunkBreak', { x: c.x, y: c.y, z: c.z, size: c.radius });
+    const b = this.buildings[c.building];
+    if (!velocity) {
+      this.fellCount++;
+      if (!b.fellFloors.includes(c.floor)) {
+        b.fellFloors.push(c.floor);
+        this.biggestCollapse = Math.max(this.biggestCollapse, b.fellFloors.length);
+      }
+    }
 
     // Anything resting on this chunk may now be under-supported.
     for (const di of c.dependents) {
@@ -356,7 +384,6 @@ export class ChunkField implements System {
     }
 
     // A floor that has lost too many pieces fails, and takes everything above with it.
-    const b = this.buildings[c.building];
     b.floorFixed[c.floor]--;
     if (c.floor < b.failedFrom && b.floorFixed[c.floor] / b.floorTotal[c.floor] < d.floorFailFraction) {
       b.failedFrom = c.floor;
@@ -380,8 +407,18 @@ export class ChunkField implements System {
   // --- Debris budget ---
 
   private enforceBudget(dt: number): void {
-    const cap = this.sim.tuning.destruction.debrisCap;
+    const d = this.sim.tuning.destruction;
+    const cap = d.debrisCap;
     if (this.sim.tick % 10 === 0) {
+      // Debris that has had its moment gets heavy damping, so rubble piles go quiet and sleep.
+      while (this.settleHead < this.looseAt.length && this.looseAt[this.settleHead] < this.sim.time - d.settleAfter) {
+        const i = this.looseOrder[this.settleHead++];
+        if (i < 0) continue;
+        const c = this.chunks[i];
+        if (c.state !== ChunkState.Loose) continue;
+        c.body.setLinearDamping(Math.max(d.debrisLinearDamping, 0.9));
+        c.body.setAngularDamping(Math.max(d.debrisAngularDamping, 3));
+      }
       let over = this.looseCount - this.shrinking.length - cap;
       // Oldest first; prefer pieces that have already come to rest.
       for (const pass of [0, 1]) {

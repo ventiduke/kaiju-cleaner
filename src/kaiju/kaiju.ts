@@ -46,6 +46,9 @@ export class Kaiju implements System {
   forwardSpeed = 0;
   stumbles = 0;
   falls = 0;
+  /** Seconds spent pushing without getting anywhere. */
+  stall = 0;
+  private lastForwardSpeed = 0;
 
   /** Horizontal facing and left vectors, refreshed every step. */
   readonly forward = new THREE.Vector3(0, 0, 1);
@@ -256,7 +259,13 @@ export class Kaiju implements System {
       const target = input.thrust >= 0 ? input.thrust * k.maxSpeed : input.thrust * k.reverseSpeed;
       const diff = target * control - this.forwardSpeed;
       const speedingUp = Math.sign(diff) === Math.sign(target) && target !== 0;
-      const rate = (speedingUp ? k.acceleration : k.braking) * (speedingUp ? control : 1);
+      // Stalled against something? Lean into it: the push builds until the obstacle gives.
+      const gained = (this.forwardSpeed - this.lastForwardSpeed) / dt;
+      this.lastForwardSpeed = this.forwardSpeed;
+      const wanted = Math.abs(diff) > 1 && speedingUp;
+      this.stall = wanted && Math.abs(gained) < k.acceleration * 0.3 ? this.stall + dt : Math.max(0, this.stall - dt * 3);
+      const boost = 1 + (k.pushBoost - 1) * smooth((this.stall - 0.3) / 0.8);
+      const rate = (speedingUp ? k.acceleration * boost : k.braking) * (speedingUp ? control : 1);
       const along = THREE.MathUtils.clamp(diff / dt, -rate, rate);
       const across = THREE.MathUtils.clamp(-sideSpeed / dt, -k.grip, k.grip);
       tmp

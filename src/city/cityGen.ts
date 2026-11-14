@@ -158,14 +158,15 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
       ];
       for (const e of edges) {
         const along = Math.atan2(e.dx, e.dz);
-        // Lamps and trees on the sidewalk, just inside the kerb.
+        // Lamps and trees on the sidewalk, just inside the kerb and clear of the building faces.
+        const kerb = Math.min(1.2, cfg.sidewalk * 0.3);
         for (let s = 6; s < size - 3; s += 12) {
           const kind: PropKind | null = (s / 12) % 2 < 1 ? 'lamp' : rng.chance(0.6 * density) ? 'tree' : null;
           if (!kind) continue;
           props.push({
             kind,
-            x: e.ox + e.dx * s - e.nx * 1.2,
-            z: e.oz + e.dz * s - e.nz * 1.2,
+            x: e.ox + e.dx * s - e.nx * kerb,
+            z: e.oz + e.dz * s - e.nz * kerb,
             rotY: along,
             color: 0xffffff,
           });
@@ -186,9 +187,9 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
       if (rng.chance(0.5 * density)) {
         props.push({
           kind: 'cart',
-          x: bx + (rng.chance(0.5) ? 2 : size - 2),
-          z: bz + (rng.chance(0.5) ? 2 : size - 2),
-          rotY: rng.range(0, Math.PI * 2),
+          x: bx + (rng.chance(0.5) ? 0.6 : size - 0.6),
+          z: bz + (rng.chance(0.5) ? 0.6 : size - 0.6),
+          rotY: rng.int(0, 3) * (Math.PI / 2),
           color: rng.pick(CAR_COLORS),
         });
       }

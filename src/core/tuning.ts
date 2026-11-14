@@ -20,8 +20,8 @@ export const codeDefaults = {
     blocks: 3,
     blockSize: 60,
     avenueWidth: 20,
-    sideStreetWidth: 12,
-    sidewalk: 3,
+    sideStreetWidth: 11,
+    sidewalk: 2,
     lotGap: 3,
     floorHeight: 4,
     minFloors: 2,
@@ -31,14 +31,19 @@ export const codeDefaults = {
   },
   destruction: {
     /** A same-mass object must hit at this speed (m/s) to break a chunk. */
-    breakSpeed: 9,
+    breakSpeed: 7,
+    /**
+     * Sustained pushing also breaks chunks: pressure builds up over about a sixth of a second,
+     * and a chunk gives at this many times the single-hit threshold. Lower = crumbles when leaned on.
+     */
+    crush: 3,
     /** Share of the hitter's velocity handed to a chunk it breaks. */
     handoff: 0.75,
     /** How much momentum each broken chunk costs the hitter (0 = free). */
-    breakDrag: 0.6,
-    /** How much of a collision's tipping kick the hitter keeps (0 = glides through, 1 = full). */
-    impactTilt: 0.5,
-    chunkDensity: 0.35,
+    breakDrag: 5,
+    /** How far above the hitter's centre the break cost lands (m). Bigger = knocked back harder. */
+    impactHeight: 12,
+    chunkDensity: 0.15,
     friction: 0.7,
     /** A chunk falls when less than this share of its footprint is supported. */
     supportFraction: 0.5,
@@ -49,13 +54,15 @@ export const codeDefaults = {
     debrisCap: 260,
     debrisLinearDamping: 0.15,
     debrisAngularDamping: 0.6,
+    /** Seconds after which loose debris gets heavily damped so piles stop jittering and sleep. */
+    settleAfter: 3,
   },
   kaiju: {
     // Shape (needs restart)
     bodyRadius: 5.5,
     bodyHalfHeight: 7,
     legLength: 7,
-    density: 1.6,
+    density: 4,
     // Hover spring
     hoverFrequency: 1.1,
     hoverDamping: 0.6,
@@ -67,6 +74,8 @@ export const codeDefaults = {
     reverseSpeed: 4,
     acceleration: 3.2,
     braking: 4.2,
+    /** How much harder it can push once it has stalled against something (x acceleration). */
+    pushBoost: 3,
     /** Sideways grip in m/s^2. Low = hockey player on stilts. */
     grip: 7,
     /** How far below the centre of mass the feet push (m). Bigger = more lean. */
@@ -91,7 +100,7 @@ export const codeDefaults = {
     length: 30,
     baseRadius: 3.2,
     tipRadius: 1.2,
-    density: 1.1,
+    density: 2.8,
     stiffness: 14,
     damping: 3.5,
   },
@@ -144,9 +153,10 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
   },
   destruction: {
     breakSpeed: [1, 40, 0.5],
+    crush: [1, 12, 0.25],
     handoff: [0, 1.5, 0.05],
-    breakDrag: [0, 2, 0.05],
-    impactTilt: [0, 1, 0.05],
+    breakDrag: [0, 12, 0.1],
+    impactHeight: [-12, 16, 0.5],
     chunkDensity: [0.05, 2, 0.05],
     friction: [0, 1.5, 0.05],
     supportFraction: [0, 1, 0.05],
@@ -155,12 +165,13 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     debrisCap: [50, 800, 10],
     debrisLinearDamping: [0, 2, 0.05],
     debrisAngularDamping: [0, 4, 0.05],
+    settleAfter: [0.5, 15, 0.5],
   },
   kaiju: {
     bodyRadius: [2, 10, 0.1],
     bodyHalfHeight: [2, 14, 0.1],
     legLength: [2, 14, 0.1],
-    density: [0.2, 6, 0.1],
+    density: [0.2, 12, 0.1],
     hoverFrequency: [0.3, 4, 0.05],
     hoverDamping: [0.05, 2, 0.05],
     uprightFrequency: [0.1, 3, 0.01],
@@ -169,6 +180,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     reverseSpeed: [0, 20, 0.5],
     acceleration: [0.5, 15, 0.1],
     braking: [0.5, 20, 0.1],
+    pushBoost: [1, 8, 0.1],
     grip: [0.5, 30, 0.5],
     driveOffset: [0, 20, 0.5],
     maxTurnRate: [0.2, 4, 0.05],
@@ -188,7 +200,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     length: [8, 60, 1],
     baseRadius: [1, 6, 0.1],
     tipRadius: [0.4, 4, 0.1],
-    density: [0.1, 5, 0.1],
+    density: [0.1, 10, 0.1],
     stiffness: [0, 80, 0.5],
     damping: [0, 20, 0.1],
   },

@@ -60,7 +60,7 @@ const KINDS: Record<PropKind, KindDef> = {
       ]),
     boxes: [
       { hx: 0.4, hy: 1.6, hz: 0.4, y: 1.6 },
-      { hx: 1.7, hy: 1.7, hz: 1.7, y: 4.8 },
+      { hx: 1.3, hy: 1.6, hz: 1.3, y: 4.8 },
     ],
     density: 0.25,
   },

@@ -30,11 +30,14 @@ describe('city layout', () => {
     }
   });
 
-  it('has an avenue the kaiju fits down and a side street it does not', () => {
+  it('has an avenue the kaiju fits down and a side street that is a squeeze', () => {
     const t = makeTuning();
     const stance = 2 * t.legs.stanceWidth + t.legs.footWidth;
-    expect(cfg.avenueWidth).toBeGreaterThan(stance);
-    expect(cfg.sideStreetWidth).toBeLessThan(stance);
+    // Clear width between building faces is the road plus both sidewalks.
+    expect(cfg.avenueWidth + 2 * cfg.sidewalk).toBeGreaterThan(stance + 6);
+    // The side street leaves only a metre or so either side of the feet.
+    expect(cfg.sideStreetWidth + 2 * cfg.sidewalk).toBeGreaterThan(stance);
+    expect(cfg.sideStreetWidth + 2 * cfg.sidewalk).toBeLessThan(stance + 3);
   });
 
   it('gives every chunk above the ground floor something to rest on', () => {
