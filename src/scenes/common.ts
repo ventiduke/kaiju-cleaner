@@ -16,16 +16,19 @@ export function addEnvironment(sim: Sim, extent = 400): THREE.DirectionalLight {
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   const cam = sun.shadow.camera;
-  cam.left = -extent * 0.5;
-  cam.right = extent * 0.5;
-  cam.top = extent * 0.5;
-  cam.bottom = -extent * 0.5;
+  // The shadow box follows the action (see main.ts), so it only needs to cover what is on screen.
+  const box = 170;
+  cam.left = -box;
+  cam.right = box;
+  cam.top = box;
+  cam.bottom = -box;
   cam.near = 1;
   cam.far = extent * 2;
   sun.shadow.bias = -0.0005;
   sun.shadow.normalBias = 0.3;
   scene.add(sun);
   scene.add(sun.target);
+  sim.parts.sun = sun;
 
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(extent * 6, extent * 6),

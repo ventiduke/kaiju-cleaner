@@ -29,6 +29,13 @@ export interface System {
   render?(alpha: number, frameDt: number): void;
 }
 
+/** Things that happen in the sim that other systems react to (camera shake, dust, sound). */
+export interface SimEvents {
+  footfall: { x: number; y: number; z: number; side: number; strength: number };
+  chunkBreak: { x: number; y: number; z: number; size: number };
+  kaijuFall: { x: number; y: number; z: number };
+}
+
 export type ForceListener = (collider1: number, collider2: number, force: number) => void;
 
 /** Something that owns many bodies and wants to know which ones are awake. */
@@ -94,6 +101,7 @@ export class Sim {
   private readonly tracked = new Set<Tracked>();
   private readonly forceListeners: ForceListener[] = [];
   private readonly owners = new Map<number, { field: BodyField; index: number }>();
+  private readonly listeners: { [K in keyof SimEvents]?: ((e: SimEvents[K]) => void)[] } = {};
 
   constructor(
     readonly R: Rapier,
@@ -119,6 +127,15 @@ export class Sim {
   untrack(t: Tracked): void {
     this.tracked.delete(t);
     this.scene.remove(t.object);
+  }
+
+  on<K extends keyof SimEvents>(name: K, fn: (e: SimEvents[K]) => void): void {
+    (this.listeners[name] ??= [] as never[]).push(fn as never);
+  }
+
+  emit<K extends keyof SimEvents>(name: K, e: SimEvents[K]): void {
+    const list = this.listeners[name];
+    if (list) for (const fn of list) fn(e);
   }
 
   /** Registers a body as belonging to a field, so the field hears when it is awake. */

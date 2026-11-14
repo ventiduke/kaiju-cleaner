@@ -4,6 +4,7 @@ import { Damage } from '../city/damage';
 import { ChunkField } from '../city/destruction';
 import { PropField } from '../city/props';
 import type { BallTool } from '../core/ball';
+import { Kaiju } from '../kaiju/kaiju';
 import type { Sim } from '../sim';
 import { addEnvironment } from './common';
 
@@ -58,6 +59,7 @@ export function populate(sim: Sim, layout: CityLayout): void {
   ball.onSpawn = (body) => chunks.addHitter(body, sim.tuning.debug.ballRadius);
   ball.onRemove = (body) => chunks.removeHitter(body);
   sim.parts.props = sim.add(new PropField(sim, damage, layout.props));
+  sim.parts.kaiju = sim.add(new Kaiju(sim, 0, layout.spawn, chunks));
 }
 
 export function buildCity(sim: Sim): void {

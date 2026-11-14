@@ -8,6 +8,8 @@ import { InputManager } from './core/input';
 import { Loop } from './core/loop';
 import { initRapier } from './core/physics';
 import { makeTuning, takeRestartStash } from './core/tuning';
+import { FollowCamera } from './kaiju/camera';
+import type { Kaiju } from './kaiju/kaiju';
 import { createGame, SCENES, type SceneName } from './scenes';
 
 async function boot(): Promise<void> {
@@ -48,11 +50,29 @@ async function boot(): Promise<void> {
     ball.throw(raycaster.ray.origin, raycaster.ray.direction);
   };
 
+  const kaiju = sim.parts.kaiju as Kaiju | undefined;
+  const followCam = kaiju ? new FollowCamera(sim, camera, kaiju) : null;
+  let follow = !!followCam && params.get('cam') !== 'free';
+  freeCam.enabled = !follow;
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'KeyC' || !followCam || e.target instanceof HTMLInputElement) return;
+    follow = !follow;
+    freeCam.enabled = !follow;
+    if (!follow && kaiju) freeCam.target.copy(kaiju.visual.position).setY(8);
+  });
+
   const input = new InputManager(sim.players);
   const hud = new Hud();
   buildTuningGui(tuning, { scene: sceneName, scenes: SCENES });
-  document.getElementById('help')!.textContent = 'drag: orbit   wheel: zoom   right-drag: pan   click: throw ball';
+  document.getElementById('help')!.textContent = [
+    'W/S walk   A/D turn   Q/E look around   (gamepad: left stick, right stick)',
+    'C free camera (drag orbit, wheel zoom, right-drag pan)   click: throw ball',
+  ].join('\n');
   document.getElementById('boot')?.remove();
+
+  // Keep the shadow box centred on the action.
+  const sun = sim.parts.sun as THREE.DirectionalLight;
+  const sunOffset = sun.position.clone();
 
   const loop = new Loop({
     step: () => {
@@ -61,12 +81,22 @@ async function boot(): Promise<void> {
     },
     render: (alpha, frameDt) => {
       sim.render(alpha, frameDt);
-      freeCam.update();
+      if (follow && followCam) followCam.update(frameDt);
+      else freeCam.update();
+      sun.position.copy(sunOffset).add(follow && kaiju ? kaiju.visual.position : freeCam.target);
+      sun.target.position.copy(sun.position).sub(sunOffset);
       renderer.render(sim.scene, camera);
       hud.frame(sim.lastStepMs);
       hud.update(() => {
         const c = sim.counts();
+        const k = kaiju
+          ? [
+              `kaiju: ${kaiju.state}   ${kaiju.speed.toFixed(1)} m/s   tilt ${((kaiju.tilt * 180) / Math.PI).toFixed(0)}°   ` +
+                `stumbles ${kaiju.stumbles}   falls ${kaiju.falls}`,
+            ]
+          : [];
         return [
+          ...k,
           `bodies ${c.bodies}   awake ${c.awake}   debris ${chunks.looseCount}`,
           `damage: ${damage.chunksBroken} chunks   ${damage.propsDisturbed} props   ${damage.buildingsDamaged} buildings`,
         ];
@@ -76,7 +106,7 @@ async function boot(): Promise<void> {
   loop.start();
 
   // Hook for headless checks and console poking.
-  (window as unknown as { __game: unknown }).__game = { sim, tuning, loop, camera, freeCam, THREE, ready: true };
+  (window as unknown as { __game: unknown }).__game = { sim, tuning, loop, camera, freeCam, followCam, kaiju, THREE, ready: true };
 }
 
 boot().catch((err) => {

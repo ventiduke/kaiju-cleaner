@@ -58,9 +58,9 @@ describe('M1 destruction', () => {
   it('idles with nothing awake in an untouched city', async () => {
     const g = await makeGame('city');
     g.sim.step();
-    expect(g.sim.awake).toBe(0);
+    expect(g.awakeOthers()).toBe(0);
     g.sim.run(120);
-    expect(g.sim.awake).toBe(0);
+    expect(g.awakeOthers()).toBe(0);
     expect(g.chunks.looseCount).toBe(0);
     expect(g.damage.chunksBroken).toBe(0);
     expect(g.damage.propsDisturbed).toBe(0);
@@ -119,7 +119,7 @@ describe('M1 destruction', () => {
     g.chunks.loosen(tower.first + 2, null);
     g.sim.run(60 * 20);
     expect(g.chunks.looseCount).toBe(32);
-    expect(g.sim.awake).toBeLessThan(4);
+    expect(g.awakeOthers()).toBeLessThan(4);
   });
 
   it('keeps live debris under the cap by shrinking away the oldest', async () => {
@@ -154,7 +154,7 @@ describe('M1 destruction', () => {
       g.sim.step();
       total += g.sim.lastStepMs;
       worst = Math.max(worst, g.sim.lastStepMs);
-      peakAwake = Math.max(peakAwake, g.sim.awake);
+      peakAwake = Math.max(peakAwake, g.awakeOthers());
     }
     const ms = total / steps;
     console.log(

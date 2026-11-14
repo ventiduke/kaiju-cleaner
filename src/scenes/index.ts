@@ -3,10 +3,10 @@ import type { Rapier } from '../core/physics';
 import type { Tuning } from '../core/tuning';
 import { Sim } from '../sim';
 import { buildCity } from './city';
-import { buildYard } from './yard';
+import { buildPlane, buildYard } from './yard';
 
-export type SceneName = 'yard' | 'city';
-export const SCENES: SceneName[] = ['yard', 'city'];
+export type SceneName = 'city' | 'yard' | 'plane';
+export const SCENES: SceneName[] = ['city', 'yard', 'plane'];
 
 export function createGame(R: Rapier, sceneName: SceneName, tuning: Tuning): Sim {
   const sim = new Sim(R, tuning);
@@ -17,6 +17,9 @@ export function createGame(R: Rapier, sceneName: SceneName, tuning: Tuning): Sim
       break;
     case 'yard':
       buildYard(sim);
+      break;
+    case 'plane':
+      buildPlane(sim);
       break;
   }
   return sim;

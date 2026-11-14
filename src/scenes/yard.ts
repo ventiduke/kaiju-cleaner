@@ -37,6 +37,12 @@ export function yardLayout(): CityLayout {
   };
 }
 
+/** Nothing but ground and a kaiju: for judging movement on its own, and for the movement tests. */
+export function buildPlane(sim: Sim): void {
+  addEnvironment(sim);
+  populate(sim, { size: 0, blocks: [], streets: [], buildings: [], props: [], spawn: { x: 0, z: 0, yaw: 0 } });
+}
+
 /** The test yard: a flat plane with a few things to knock about. The permanent tuning scene. */
 export function buildYard(sim: Sim): void {
   addEnvironment(sim);

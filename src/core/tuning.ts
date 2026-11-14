@@ -60,7 +60,7 @@ export const codeDefaults = {
     hoverFrequency: 1.1,
     hoverDamping: 0.6,
     // Balance
-    uprightFrequency: 0.5,
+    uprightFrequency: 0.44,
     uprightDamping: 0.28,
     // Locomotion
     maxSpeed: 9,
@@ -70,7 +70,7 @@ export const codeDefaults = {
     /** Sideways grip in m/s^2. Low = hockey player on stilts. */
     grip: 7,
     /** How far below the centre of mass the feet push (m). Bigger = more lean. */
-    driveOffset: 9,
+    driveOffset: 11,
     maxTurnRate: 1.15,
     turnAcceleration: 2.2,
     /** Turn authority lost at top speed (0..1). */
@@ -94,8 +94,6 @@ export const codeDefaults = {
     density: 1.1,
     stiffness: 14,
     damping: 3.5,
-    /** Downward droop of the rest pose per segment (rad). */
-    droop: 0.1,
   },
   legs: {
     stanceWidth: 4.6,
@@ -113,8 +111,8 @@ export const codeDefaults = {
     stompMass: 0.5,
   },
   camera: {
-    distance: 62,
-    height: 44,
+    distance: 74,
+    height: 50,
     lookHeight: 14,
     followLag: 0.35,
     yawLag: 0.9,
@@ -193,7 +191,6 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     density: [0.1, 5, 0.1],
     stiffness: [0, 80, 0.5],
     damping: [0, 20, 0.1],
-    droop: [-0.3, 0.5, 0.01],
   },
   legs: {
     stanceWidth: [1, 10, 0.1],
