@@ -10,6 +10,12 @@ import type { Sim } from '../../src/sim';
  * agent (or a test) sees feel without a player: the same script, any settings.
  */
 
+/**
+ * A fixed set of feel dials for tests to pin behaviour against. The shipped defaults
+ * move every time the feel is tuned; the rules the tests check should not move with them.
+ */
+export const REF = { feel: { speed: 24, pickup: 1.7, turning: 2, grip: 34, wobble: 0.5, balance: 0.5 } };
+
 export interface Rig {
   sim: Sim;
   k: Kaiju;

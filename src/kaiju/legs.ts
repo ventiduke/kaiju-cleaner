@@ -34,6 +34,9 @@ export interface LegContext {
   yaw: number;
   /** False while fallen: the legs go limp and the feet stop colliding. */
   standing: boolean;
+  /** Stance width and footprint multipliers (tiptoe narrows both). */
+  stanceScale: number;
+  footScale: number;
 }
 
 const Y = new THREE.Vector3(0, 1, 0);
@@ -72,6 +75,9 @@ export class Legs {
   onFootfall: ((side: number, pos: THREE.Vector3, strength: number) => void) | null = null;
   private rng = new Rng(11);
   private shape: InstanceType<Sim['R']['Cuboid']>;
+  private tipShape: InstanceType<Sim['R']['Cuboid']>;
+  private readonly shinHeight: number;
+  private stanceScale = 1;
   private wasStanding = true;
   private lastSide = -1;
   private readonly hipHeight: number;
@@ -92,7 +98,10 @@ export class Legs {
     this.hipHeight = k.legLength + k.bodyRadius * 0.8;
     this.boneLength = this.hipHeight * 0.58;
     this.reach = Math.sqrt((this.boneLength * 2) ** 2 - this.hipHeight ** 2) + l.stanceWidth;
-    this.shape = new R.Cuboid(l.footWidth / 2, l.footHeight / 2, l.footLength / 2);
+    // What a step breaks: the foot and the shin above it, so a leg can't pass through a bridge deck.
+    this.shinHeight = k.legLength * 0.7;
+    this.shape = new R.Cuboid(l.footWidth / 2, this.shinHeight / 2, l.footLength / 2);
+    this.tipShape = new R.Cuboid((l.footWidth / 2) * tuning.modes.tiptoeFoot, this.shinHeight / 2, (l.footLength / 2) * tuning.modes.tiptoeFoot);
     for (const side of [1, -1]) {
       const home = this.home(start, side, new THREE.Vector3());
       const body = world.createRigidBody(
@@ -101,7 +110,10 @@ export class Legs {
       world.createCollider(
         R.ColliderDesc.cuboid(l.footWidth / 2, l.footHeight / 2, l.footLength / 2)
           .setFriction(0.8)
-          .setCollisionGroups(groups(Group.FOOT, Group.CHUNK | Group.PROP | Group.BALL)),
+          // Feet shove props about physically. Building chunks they deal with in code (see
+          // `stomp`): an unstoppable kinematic foot squeezing a chunk against the body is
+          // how a kaiju gets fired into the sky.
+          .setCollisionGroups(groups(Group.FOOT, Group.PROP | Group.BALL)),
         body,
       );
       const thigh = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 2.3, 1, 8), material);
@@ -145,7 +157,7 @@ export class Legs {
 
   /** Where a foot would stand if the kaiju were still: under the hip, out to the side. */
   private home(ctx: LegContext, side: number, target: THREE.Vector3): THREE.Vector3 {
-    const w = this.sim.tuning.legs.stanceWidth;
+    const w = this.sim.tuning.legs.stanceWidth * this.stanceScale;
     return target.set(ctx.pos.x + ctx.left.x * side * w, 0, ctx.pos.z + ctx.left.z * side * w);
   }
 
@@ -153,6 +165,8 @@ export class Legs {
     const l = this.sim.tuning.legs;
     const maxSpeed = this.sim.tuning.kaiju.maxSpeed;
     const speed = Math.hypot(ctx.velocity.x, ctx.velocity.z);
+    this.stanceScale += (ctx.stanceScale - this.stanceScale) * Math.min(1, dt * 5);
+    const ground = this.sim.ground;
 
     if (!ctx.standing) {
       // Limp: feet hang off the body, wherever it has ended up.
@@ -160,7 +174,7 @@ export class Legs {
         f.prev.copy(f.pos);
         f.prevYaw = f.yaw;
         a.set(f.side * l.stanceWidth * 0.8, -this.hipHeight * 0.9, 0).applyQuaternion(this.bodyVisual.quaternion);
-        f.pos.set(ctx.pos.x + a.x, Math.max(0, ctx.pos.y + a.y), ctx.pos.z + a.z);
+        f.pos.set(ctx.pos.x + a.x, Math.max(ground(ctx.pos.x + a.x, ctx.pos.z + a.z), ctx.pos.y + a.y), ctx.pos.z + a.z);
         f.swinging = false;
         if (this.wasStanding) f.body.setEnabled(false);
       }
@@ -170,10 +184,11 @@ export class Legs {
     if (!this.wasStanding) {
       for (const f of this.feet) {
         this.home(ctx, f.side, f.pos);
+        f.pos.y = ground(f.pos.x, f.pos.z);
         f.prev.copy(f.pos);
         f.yaw = f.prevYaw = ctx.yaw;
         f.body.setEnabled(true);
-        f.body.setTranslation({ x: f.pos.x, y: l.footHeight / 2, z: f.pos.z }, true);
+        f.body.setTranslation({ x: f.pos.x, y: f.pos.y + l.footHeight / 2, z: f.pos.z }, true);
       }
       this.wasStanding = true;
     }
@@ -205,6 +220,7 @@ export class Legs {
       }
     }
 
+    let landed: Foot | null = null;
     for (const f of this.feet) {
       f.prev.copy(f.pos);
       f.prevYaw = f.yaw;
@@ -217,22 +233,27 @@ export class Legs {
         this.home(ctx, f.side, a).add(d);
         a.y = 0;
         const p = f.phase * f.phase * (3 - 2 * f.phase);
+        const fromY = f.from.y;
         f.pos.lerpVectors(f.from, a, p);
-        f.pos.y = Math.sin(Math.PI * f.phase) * l.stepHeight * (0.45 + 0.55 * Math.min(1, speed / maxSpeed));
+        // Rise from where it stood to where it will land (the river bed is lower than the street).
+        const floor = fromY + (ground(a.x, a.z) - fromY) * p;
+        f.pos.y = floor + Math.sin(Math.PI * f.phase) * l.stepHeight * (0.45 + 0.55 * Math.min(1, speed / maxSpeed));
         f.yaw = lerpAngle(f.fromYaw, ctx.yaw, p);
         if (f.phase >= 1) {
           f.swinging = false;
-          f.pos.y = 0;
+          f.pos.y = ground(f.pos.x, f.pos.z);
           this.onFootfall?.(f.side, f.pos, Math.min(1.2, 0.35 + speed / maxSpeed));
+          landed = f;
         }
       }
       q.setFromAxisAngle(Y, f.yaw);
       b.set(f.pos.x, f.pos.y + l.footHeight / 2, f.pos.z);
       f.body.setNextKinematicTranslation(b);
       f.body.setNextKinematicRotation(q);
-      if (this.chunks && f.swinging) {
+      if (this.chunks && (f.swinging || landed === f)) {
         c.subVectors(f.pos, f.prev).divideScalar(dt);
-        this.chunks.stomp(this.shape, b, q, c);
+        b.y = f.pos.y + this.shinHeight / 2;
+        this.chunks.stomp(ctx.footScale < 0.99 ? this.tipShape : this.shape, b, q, c, landed === f);
       }
     }
   }

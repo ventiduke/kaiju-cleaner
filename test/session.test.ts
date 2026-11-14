@@ -36,27 +36,28 @@ async function recordRun(): Promise<SessionFile> {
 
 describe('session recording', () => {
   it('reports only the settings that differ from the defaults', () => {
-    expect(diffTuning(makeTuning())).toEqual({});
-    const d = diffTuning(makeTuning({ feel: { speed: 30 } }));
+    const base = makeTuning();
+    expect(diffTuning(base)).toEqual({});
+    const speed = base.feel.speed + 5;
     // The kaiju numbers the dial implies are left out; a hand-set one is kept.
-    expect(d).toEqual({ feel: { speed: 30 } });
-    const hand = makeTuning({ feel: { speed: 30 }, kaiju: { lean: 0.5 } });
-    expect(diffTuning(hand)).toEqual({ feel: { speed: 30 }, kaiju: { lean: 0.5 } });
+    expect(diffTuning(makeTuning({ feel: { speed } }))).toEqual({ feel: { speed } });
+    const hand = makeTuning({ feel: { speed }, kaiju: { lean: 0.5 } });
+    expect(diffTuning(hand)).toEqual({ feel: { speed }, kaiju: { lean: 0.5 } });
     expect(makeTuning(diffTuning(hand))).toEqual(hand);
   });
 
   it('captures settings, notes, stats and inputs, and prints a pasteable report', async () => {
     const f = await recordRun();
-    expect(f.changed.feel).toEqual({ speed: 18 });
+    expect(f.changed.feel.speed).toBe(18);
     expect(f.notes.length).toBe(1);
-    expect(f.notes[0].changed.feel).toEqual({ speed: 18 });
+    expect(f.notes[0].changed.feel.speed).toBe(18);
     expect(f.tuningChanges.length).toBe(1);
     expect(f.inputs.length).toBe(5); // one entry per change of input
     expect(f.stats.distance).toBeGreaterThan(100);
     expect(f.stats.topSpeed).toBeGreaterThan(15);
     expect(f.samples.length).toBeGreaterThan(30);
     const text = formatSession(f);
-    expect(text).toContain('"feel":{"speed":18}');
+    expect(text).toContain('"speed":18');
     expect(text).toContain('turning felt too wild');
     expect(text.length).toBeLessThan(2500);
   });

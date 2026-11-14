@@ -19,7 +19,8 @@ export class Tail {
   readonly segments: RigidBody[] = [];
   readonly meshes: THREE.Mesh[] = [];
   private joints: Joint[] = [];
-  private applied = { stiffness: NaN, damping: NaN };
+  private applied = { stiffness: NaN, damping: NaN, tuck: NaN };
+  private tuck = 0;
 
   /**
    * @param anchor where the tail joins the body, in the body's local frame
@@ -90,11 +91,23 @@ export class Tail {
     this.syncMotors();
   }
 
-  /** Re-applies joint motor settings when the tuning changes. */
+  /** 0 lets the tail swing free; 1 curls it in tight against the body (crouching). */
+  setTuck(amount: number): void {
+    if (amount === this.tuck) return;
+    this.tuck = amount;
+    this.syncMotors();
+  }
+
+  /** Re-applies joint motor settings when the tuning or the tuck changes. */
   syncMotors(): void {
-    const { stiffness, damping } = this.sim.tuning.tail;
-    if (stiffness === this.applied.stiffness && damping === this.applied.damping) return;
-    this.applied = { stiffness, damping };
+    const t = this.sim.tuning.tail;
+    const tuck = this.tuck;
+    // Tucked: much stiffer, and aimed round to one side instead of straight back.
+    const stiffness = t.stiffness * (1 + 9 * tuck);
+    const damping = t.damping * (1 + 3 * tuck);
+    if (stiffness === this.applied.stiffness && damping === this.applied.damping && tuck === this.applied.tuck) return;
+    this.applied = { stiffness, damping, tuck };
+    const curl = (2.4 / this.joints.length) * tuck;
     const { JointAxis, MotorModel } = this.sim.R;
     for (const j of this.joints) {
       // Rapier 0.21 hands a spherical joint back typed as "generic", which lacks the motor
@@ -102,7 +115,7 @@ export class Tail {
       const raw = (j as unknown as { rawSet: RawJointSet }).rawSet;
       for (const axis of [JointAxis.AngX, JointAxis.AngY, JointAxis.AngZ]) {
         raw.jointConfigureMotorModel(j.handle, axis, MotorModel.AccelerationBased);
-        raw.jointConfigureMotorPosition(j.handle, axis, 0, stiffness, damping);
+        raw.jointConfigureMotorPosition(j.handle, axis, axis === JointAxis.AngY ? curl : 0, stiffness, damping);
       }
     }
   }

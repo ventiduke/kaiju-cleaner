@@ -8,14 +8,16 @@ export interface PlayerInput {
   thrust: number;
   /** Turn left (+1) / right (-1). */
   turn: number;
-  /** Modifier held (tiptoe, later). */
+  /** Held to go up on tiptoe: slow, narrow and quiet, for as long as the calves last. */
   tiptoe: boolean;
+  /** Held to crouch: slow and steady, tail tucked. */
+  crouch: boolean;
   /** Camera orbit input (-1..1). */
   camYaw: number;
 }
 
 export function emptyInput(): PlayerInput {
-  return { thrust: 0, turn: 0, tiptoe: false, camYaw: 0 };
+  return { thrust: 0, turn: 0, tiptoe: false, crouch: false, camYaw: 0 };
 }
 
 export interface System {
@@ -31,7 +33,11 @@ export interface System {
 
 /** Things that happen in the sim that other systems react to (camera shake, dust, sound). */
 export interface SimEvents {
-  footfall: { x: number; y: number; z: number; side: number; strength: number };
+  footfall: { x: number; y: number; z: number; side: number; strength: number; wet: boolean };
+  kaijuSave: { x: number; y: number; z: number };
+  citizenSquish: { x: number; y: number; z: number };
+  citizenScare: { x: number; y: number; z: number };
+  propHit: { x: number; y: number; z: number };
   chunkBreak: { x: number; y: number; z: number; size: number };
   kaijuFall: { x: number; y: number; z: number };
 }
@@ -96,6 +102,10 @@ export class Sim {
   lastStepMs = 0;
   /** Bodies the engine simulated in the last step. */
   awake = 0;
+  /** Height of the ground at a point. Scenes with a river replace this. */
+  ground: (x: number, z: number) => number = () => 0;
+  /** Traction at a point: 1 normally, near 0 on an oil slick. Scenes with hazards replace this. */
+  traction: (x: number, z: number) => number = () => 1;
 
   private readonly events;
   private readonly tracked = new Set<Tracked>();

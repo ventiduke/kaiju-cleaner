@@ -19,6 +19,7 @@ export class InputManager {
   constructor(private players: PlayerInput[]) {
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
+      if (e.code === 'Space') e.preventDefault();
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -37,11 +38,13 @@ export class InputManager {
       let turn = 0;
       let camYaw = 0;
       let tiptoe = false;
+      let crouch = false;
       if (i === 0) {
         thrust += this.key('KeyW', 'ArrowUp') - this.key('KeyS', 'ArrowDown');
         turn += this.key('KeyA', 'ArrowLeft') - this.key('KeyD', 'ArrowRight');
         camYaw += this.key('KeyE') - this.key('KeyQ');
         tiptoe = this.key('ShiftLeft', 'ShiftRight') > 0;
+        crouch = this.key('Space') > 0;
       }
       const pad = pads[i];
       if (pad) {
@@ -49,11 +52,13 @@ export class InputManager {
         turn += -axis(pad.axes[0] ?? 0);
         camYaw += axis(pad.axes[2] ?? 0);
         tiptoe ||= !!pad.buttons[0]?.pressed || (pad.buttons[7]?.value ?? 0) > 0.4;
+        crouch ||= !!pad.buttons[1]?.pressed || (pad.buttons[6]?.value ?? 0) > 0.4;
       }
       p.thrust = Math.max(-1, Math.min(1, thrust));
       p.turn = Math.max(-1, Math.min(1, turn));
       p.camYaw = Math.max(-1, Math.min(1, camYaw));
       p.tiptoe = tiptoe;
+      p.crouch = crouch;
     }
   }
 }

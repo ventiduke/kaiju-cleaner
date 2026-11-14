@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { codeDefaults, applyFeel, makeTuning } from '../src/core/tuning';
-import { feelReport, formatReport, rig, turnAtSpeed } from './feel/maneuvers';
+import { feelReport, formatReport, REF, rig, turnAtSpeed } from './feel/maneuvers';
 
 describe('feel dials', () => {
   it('derive the detailed kaiju numbers, and the shipped defaults agree with them', () => {
@@ -13,12 +13,14 @@ describe('feel dials', () => {
     expect(makeTuning({ feel: { speed: 10 } }).kaiju.maxSpeed).toBe(10);
     expect(makeTuning({ feel: { speed: 10 }, kaiju: { maxSpeed: 12 } }).kaiju.maxSpeed).toBe(12);
     expect(makeTuning({ kaiju: { grip: 5 } }).kaiju.grip).toBe(5);
+    // The committed defaults file is applied the same way, under any override.
+    expect(makeTuning(REF).feel).toEqual(REF.feel);
   });
 });
 
 describe('M2 kaiju movement', () => {
   it('stands still without drifting, stumbling or falling', async () => {
-    const { sim, k } = await rig();
+    const { sim, k } = await rig(REF);
     sim.run(60 * 10);
     const p = k.position();
     expect(Math.hypot(p.x, p.z)).toBeLessThan(0.5);
@@ -28,7 +30,7 @@ describe('M2 kaiju movement', () => {
   });
 
   it('runs a long straight line without ever stumbling', async () => {
-    const { sim, k } = await rig();
+    const { sim, k } = await rig(REF);
     sim.players[0].thrust = 1;
     sim.run(60 * 20);
     expect(k.stumbles + k.falls).toBe(0);
@@ -37,9 +39,9 @@ describe('M2 kaiju movement', () => {
   });
 
   it('handles as designed: the default feel report', async () => {
-    const rep = await feelReport();
-    console.log(formatReport(rep, 'Feel report (defaults)'));
-    const t = makeTuning();
+    const rep = await feelReport(REF);
+    console.log(formatReport(rep, 'Feel report (reference dials)'));
+    const t = makeTuning(REF);
 
     // Snappy but not instant, and it visibly leans into starts and stops.
     expect(rep.pickup).toBeGreaterThan(t.feel.pickup * 0.7);
@@ -63,7 +65,7 @@ describe('M2 kaiju movement', () => {
   });
 
   it('saves itself if you let go of the turn when it stumbles', async () => {
-    const { sim, k } = await rig();
+    const { sim, k } = await rig(REF);
     sim.players[0].thrust = 1;
     sim.run(60 * 5);
     sim.players[0].turn = 1;
@@ -76,26 +78,26 @@ describe('M2 kaiju movement', () => {
   });
 
   it('balance dial: solid never falls on the hard turn, tippy falls on a gentler one', async () => {
-    expect((await turnAtSpeed(1, 1, 2, { feel: { balance: 1 } })).outcome).not.toBe('fall');
-    expect((await turnAtSpeed(0.7, 1, 2, { feel: { balance: 0.1 } })).outcome).toBe('fall');
+    expect((await turnAtSpeed(1, 1, 2, REF, { feel: { balance: 1 } })).outcome).not.toBe('fall');
+    expect((await turnAtSpeed(0.7, 1, 2, REF, { feel: { balance: 0.1 } })).outcome).toBe('fall');
   });
 
   it('grip dial: low grip slides wide instead of tipping', async () => {
-    const grippy = await turnAtSpeed(1, 1, 1, {});
-    const slick = await turnAtSpeed(1, 1, 1, { feel: { grip: 8 } });
+    const grippy = await turnAtSpeed(1, 1, 1, REF);
+    const slick = await turnAtSpeed(1, 1, 1, REF, { feel: { grip: 8 } });
     expect(slick.outcome).toBe('steady');
     expect(slick.maxTiltDeg).toBeLessThan(grippy.maxTiltDeg);
   });
 
   it('wobble dial: more wobble means more lean and more sway', async () => {
-    const steady = await feelReport({ feel: { wobble: 0 } });
-    const drunk = await feelReport({ feel: { wobble: 1, balance: 1 } });
+    const steady = await feelReport(REF, { feel: { wobble: 0 } });
+    const drunk = await feelReport(REF, { feel: { wobble: 1, balance: 1 } });
     expect(drunk.startLeanDeg).toBeGreaterThan(steady.startLeanDeg * 1.5);
     expect(drunk.swayDeg).toBeGreaterThan(steady.swayDeg);
   });
 
   it('falls over when knocked flat, then gets back up and can run again', async () => {
-    const { sim, k } = await rig();
+    const { sim, k } = await rig(REF);
     sim.run(60);
     k.knockDown();
     sim.run(30);
@@ -112,7 +114,7 @@ describe('M2 kaiju movement', () => {
   });
 
   it('keeps its feet under it at a sprint: steps alternate and stay in reach', async () => {
-    const { sim, k } = await rig();
+    const { sim, k } = await rig(REF);
     const sides: number[] = [];
     sim.on('footfall', (e) => sides.push(e.side));
     sim.players[0].thrust = 1;

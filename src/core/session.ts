@@ -65,7 +65,7 @@ export interface SessionStats {
   buildingsDamaged: number;
 }
 
-const STATES = ['walk', 'stumble', 'fallen', 'getup'];
+const STATES = ['walk', 'stumble', 'fallen', 'getup', 'falling'];
 const SAMPLE_EVERY = 12;
 const NOTES_KEY = 'kaiju-notes';
 

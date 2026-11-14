@@ -122,8 +122,34 @@ export const codeDefaults = {
     stumbleLurch: 3,
     /** Share of steering and thrust it keeps while stumbling. Keep pushing and it goes over. */
     stumbleControl: 0.8,
-    fallDuration: 1.6,
-    getUpDuration: 1.6,
+    /** Seconds it has, once it is going over, to be caught by steering into the fall. */
+    saveWindow: 0.9,
+    /** How hard steering into a fall hauls it back upright. */
+    saveStrength: 3,
+    fallDuration: 1.4,
+    getUpDuration: 1.3,
+  },
+  modes: {
+    // Tiptoe (hold Shift): slow, narrow, quiet, and only for as long as the calves last.
+    tiptoeSpeed: 0.35,
+    tiptoeStance: 0.55,
+    tiptoeFoot: 0.6,
+    tiptoeLean: 0.5,
+    tiptoeTurn: 0.7,
+    /** How far it rises onto its toes (m). */
+    tiptoeRise: 2.2,
+    /** Seconds of tiptoe before it has to come down, and seconds to recover fully. */
+    tiptoeSeconds: 7,
+    tiptoeRecover: 4,
+    // Crouch (hold Space): slow and hard to topple, tail tucked in, but the view drops too.
+    crouchSpeed: 0.45,
+    /** Share of leg length it squats by. */
+    crouchDrop: 0.4,
+    crouchLean: 0.4,
+    /** Stumble angle multiplier while crouched. */
+    crouchBalance: 1.7,
+    /** How far the camera drops while crouched (share of its height). */
+    crouchView: 0.45,
   },
   tail: {
     segments: 5,
@@ -281,8 +307,25 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     stumbleDuration: [0.1, 3, 0.05],
     stumbleLurch: [0, 12, 0.1],
     stumbleControl: [0, 1, 0.05],
+    saveWindow: [0, 3, 0.05],
+    saveStrength: [0, 10, 0.1],
     fallDuration: [0.5, 8, 0.1],
     getUpDuration: [0.3, 5, 0.1],
+  },
+  modes: {
+    tiptoeSpeed: [0.1, 1, 0.05],
+    tiptoeStance: [0.3, 1, 0.05],
+    tiptoeFoot: [0.3, 1, 0.05],
+    tiptoeLean: [0, 1, 0.05],
+    tiptoeTurn: [0.2, 1, 0.05],
+    tiptoeRise: [0, 6, 0.1],
+    tiptoeSeconds: [1, 30, 0.5],
+    tiptoeRecover: [0.5, 20, 0.5],
+    crouchSpeed: [0.1, 1, 0.05],
+    crouchDrop: [0, 0.8, 0.05],
+    crouchLean: [0, 1, 0.05],
+    crouchBalance: [1, 4, 0.1],
+    crouchView: [0, 0.8, 0.05],
   },
   tail: {
     segments: [2, 8, 1],

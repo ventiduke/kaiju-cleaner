@@ -401,29 +401,56 @@ export class ChunkField implements System {
     this.brokeThisStep.length = 0;
   }
 
-  /** Breaks every fixed chunk a kinematic shape (a foot) overlaps. Returns how many broke. */
+  /**
+   * A foot coming through: breaks every fixed chunk the shape overlaps, and boots loose
+   * ones out of the way (feet don't collide with chunks physically). On landing, loose
+   * debris is squeezed out sideways instead. Returns how many chunks broke.
+   */
   stomp(
     shape: InstanceType<Sim['R']['Cuboid']>,
     position: THREE.Vector3,
     rotation: THREE.Quaternion,
     velocity: THREE.Vector3,
+    landing = false,
   ): number {
-    const hits: number[] = [];
+    const fixed: number[] = [];
+    const loose: number[] = [];
     this.sim.world.intersectionsWithShape(
       position,
       rotation,
       shape,
       (collider) => {
         const i = this.byCollider.get(collider.handle);
-        if (i !== undefined && this.chunks[i].state === ChunkState.Fixed) hits.push(i);
+        if (i === undefined) return true;
+        const state = this.chunks[i].state;
+        if (state === ChunkState.Fixed) fixed.push(i);
+        else if (state === ChunkState.Loose) loose.push(i);
         return true;
       },
       undefined,
       groups(ALL_GROUPS, Group.CHUNK),
     );
     const handoff = this.sim.tuning.destruction.handoff;
-    for (const i of hits) this.loosen(i, v3.copy(velocity).multiplyScalar(handoff).clampLength(0, MAX_KICK));
-    return hits.length;
+    v3.copy(velocity).multiplyScalar(handoff).clampLength(0, MAX_KICK);
+    for (const i of fixed) this.loosen(i, v3);
+    for (const i of loose) {
+      const body = this.chunks[i].body;
+      const p = body.translation();
+      if (landing) {
+        // Squirt out from under the foot.
+        v1.set(p.x - position.x, 0, p.z - position.z);
+        if (v1.lengthSq() < 0.01) v1.set(pseudo(i), 0, pseudo(i + 7));
+        v1.normalize().multiplyScalar(7);
+        v1.y = 3;
+      } else {
+        v1.copy(v3);
+        v1.y = Math.max(v1.y, 2);
+      }
+      const v = body.linvel();
+      // Only ever speed a piece up; a chunk already flying faster is left alone.
+      if (v1.lengthSq() > v.x * v.x + v.y * v.y + v.z * v.z) body.setLinvel(v1, true);
+    }
+    return fixed.length;
   }
 
   /** Turns a fixed chunk dynamic and lets the collapse rules react. */

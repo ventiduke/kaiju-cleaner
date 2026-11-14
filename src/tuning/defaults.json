@@ -1,1 +1,3 @@
-{}
+{
+  "feel": { "speed": 32, "pickup": 2.1, "turning": 2, "grip": 35.5, "wobble": 0.77, "balance": 0.75 }
+}
