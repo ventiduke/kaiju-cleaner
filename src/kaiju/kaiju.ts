@@ -301,6 +301,7 @@ export class Kaiju implements System {
       this.setState('stumble');
       this.stumbles++;
       this.lurch(mass);
+      this.sim.emit('kaijuStumble', { x: pos.x, y: pos.y, z: pos.z });
     } else if (this.state === 'stumble' && this.stateTime > k.stumbleDuration) {
       if (this.tilt < stumbleAngle * 0.75) this.setState('walk');
       else {

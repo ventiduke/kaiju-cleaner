@@ -35,6 +35,7 @@ export interface System {
 export interface SimEvents {
   footfall: { x: number; y: number; z: number; side: number; strength: number; wet: boolean };
   kaijuSave: { x: number; y: number; z: number };
+  kaijuStumble: { x: number; y: number; z: number };
   citizenSquish: { x: number; y: number; z: number };
   citizenScare: { x: number; y: number; z: number };
   propHit: { x: number; y: number; z: number };

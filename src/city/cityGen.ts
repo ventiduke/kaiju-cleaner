@@ -42,9 +42,13 @@ export interface Street {
   width: number;
 }
 
-/** A covered walkway strung between two buildings, across a street. */
+/**
+ * A span of chunks: a covered walkway strung between two buildings, or a road bridge
+ * over the river standing on its own piers.
+ */
 export interface BridgeSpec {
-  /** Indices into `buildings` of the two ends. */
+  kind: 'sky' | 'road';
+  /** Indices into `buildings` of the two ends, or -1 where it rests on the bank. */
   a: number;
   b: number;
   /** The axis the bridge runs along. */
@@ -53,10 +57,29 @@ export interface BridgeSpec {
   from: number;
   to: number;
   center: number;
-  /** Which floor it hangs at. */
+  /** Which floor it hangs at (skybridges). */
   floor: number;
+  /** Height of the deck's centre and its thickness (road bridges). */
+  y?: number;
+  thickness?: number;
+  /** How far down the piers go (road bridges). */
+  pierDepth?: number;
   width: number;
   color: number;
+}
+
+export interface Hazard {
+  kind: 'oil';
+  x: number;
+  z: number;
+  radius: number;
+}
+
+/** A band of water across the whole map, between two z values. */
+export interface River {
+  z0: number;
+  z1: number;
+  depth: number;
 }
 
 export interface CityLayout {
@@ -70,6 +93,8 @@ export interface CityLayout {
   buildings: BuildingSpec[];
   bridges: BridgeSpec[];
   props: PropSpec[];
+  hazards: Hazard[];
+  river: River | null;
   /** Where a kaiju starts: at the south end of the widest street, facing north (-z). */
   spawn: { x: number; z: number; yaw: number };
 }
@@ -125,12 +150,23 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     acrossX.push(i === mid ? cfg.boulevardWidth : (i + (i > mid ? 1 : 0)) % 2 === 0 ? cfg.sideStreetWidth : cfg.avenueWidth);
     acrossZ.push(i % 2 === 0 ? cfg.avenueWidth : cfg.sideStreetWidth);
   }
+  // The river takes the place of the middle east-west street, with a quay road on each bank.
+  const quay = cfg.sideStreetWidth;
+  const riverRow = cfg.riverWidth > 0 && n >= 2 ? Math.floor((n - 2) / 2) : -1;
+  if (riverRow >= 0) acrossZ[riverRow] = cfg.riverWidth + 2 * quay;
   const ax = layAxis(n, size, acrossX);
   const az = layAxis(n, size, acrossZ);
 
   const streets: Street[] = [];
   for (const s of ax.streets) streets.push({ along: 'z', center: s.center, width: s.width });
-  for (const s of az.streets) streets.push({ along: 'x', center: s.center, width: s.width });
+  let river: River | null = null;
+  az.streets.forEach((s, i) => {
+    if (i === riverRow) {
+      river = { z0: s.center - cfg.riverWidth / 2, z1: s.center + cfg.riverWidth / 2, depth: cfg.riverDepth };
+      streets.push({ along: 'x', center: river.z0 - quay / 2, width: quay });
+      streets.push({ along: 'x', center: river.z1 + quay / 2, width: quay });
+    } else streets.push({ along: 'x', center: s.center, width: s.width });
+  });
   for (const side of [-1, 1]) {
     streets.push({ along: 'z', center: side * (ax.span / 2 + perimeter / 2), width: perimeter });
     streets.push({ along: 'x', center: side * (az.span / 2 + perimeter / 2), width: perimeter });
@@ -147,8 +183,10 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
   const addBuilding = (cx: number, cz: number, lotW: number, lotD: number, bi: number, bj: number, tall: boolean) => {
     const w = lotW - rng.range(0, 3);
     const d = lotD - rng.range(0, 3);
-    const nx = Math.max(1, Math.round(w / cfg.chunkSize));
-    const nz = Math.max(1, Math.round(d / cfg.chunkSize));
+    // Slim lots still get split in two across, so even the thinnest tower can lose a corner.
+    const split = (len: number) => Math.max(len >= cfg.chunkSize * 1.15 ? 2 : 1, Math.round(len / cfg.chunkSize));
+    const nx = split(w);
+    const nz = split(d);
     const lo = Math.min(cfg.minFloors, cfg.maxFloors);
     const hi = Math.max(cfg.minFloors, cfg.maxFloors);
     // Big footprints stay lower; slim lots get the towers.
@@ -182,10 +220,10 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
         plazas.push(rect);
         for (let k = 0; k < 10; k++) {
           const a = (k / 10) * Math.PI * 2;
-          props.push({ kind: 'tree', x: rect.x + Math.cos(a) * size * 0.33, z: rect.z + Math.sin(a) * size * 0.33, rotY: a, color: 0xffffff });
+          props.push({ kind: 'tree', x: rect.x + Math.cos(a) * size * 0.38, z: rect.z + Math.sin(a) * size * 0.38, rotY: a, color: 0xffffff });
         }
         for (let k = 0; k < Math.round(3 * density); k++) {
-          props.push({ kind: 'cart', x: rect.x + rng.range(-8, 8), z: rect.z + rng.range(-8, 8), rotY: rng.int(0, 3) * (Math.PI / 2), color: rng.pick(CAR_COLORS) });
+          props.push({ kind: 'cart', x: rect.x + (k - 1) * 5, z: rect.z + rng.range(-4, 4), rotY: rng.int(0, 3) * (Math.PI / 2), color: rng.pick(CAR_COLORS) });
         }
       } else {
         const kind = rng.next();
@@ -264,7 +302,7 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
   const boulevard = ax.streets.find((s) => s.width === cfg.boulevardWidth && cfg.boulevardWidth > cfg.avenueWidth);
   if (boulevard) {
     for (let z = -az.span / 2 + 6; z < az.span / 2 - 4; z += 13) {
-      // Leave the crossings clear.
+      // Leave the crossings (and the river) clear.
       if (az.streets.some((s) => Math.abs(z - s.center) < s.width / 2 + 2)) continue;
       if (rng.chance(0.85 * Math.min(1, density))) props.push({ kind: 'tree', x: boulevard.center, z, rotY: rng.range(0, 6), color: 0xffffff });
     }
@@ -295,7 +333,7 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
       if (hi < lo) continue;
       const top = Math.min(ta.floors, tb.floors) - 1;
       if (top < 3) continue;
-      candidates.push({ a, b, along, from, to, center: (lo + hi) / 2, floor: Math.min(top, rng.int(3, 4)), width: 5, color: BRIDGE_COLOR });
+      candidates.push({ kind: 'sky', a, b, along, from, to, center: (lo + hi) / 2, floor: Math.min(top, rng.int(3, 4)), width: 5, color: BRIDGE_COLOR });
     }
   }
   const used = new Set<number>();
@@ -305,6 +343,42 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     used.add(pick.a);
     used.add(pick.b);
     bridges.push(pick);
+  }
+
+  // Road bridges carry the wider streets over the river. They hold cars, not kaiju.
+  const theRiver = river as River | null;
+  if (theRiver) {
+    for (const s of ax.streets) {
+      if (s.width <= cfg.sideStreetWidth) continue;
+      bridges.push({
+        kind: 'road',
+        a: -1,
+        b: -1,
+        along: 'z',
+        from: theRiver.z0,
+        to: theRiver.z1,
+        // On the boulevard the bridge takes the west carriageway, leaving the east one to wade.
+        center: s === boulevard ? s.center - s.width / 4 : s.center,
+        floor: 1,
+        y: -0.35,
+        thickness: 1.5,
+        pierDepth: theRiver.depth,
+        width: Math.min(s.width - 8, 12),
+        color: 0x9a9690,
+      });
+    }
+  }
+
+  // Oil spills, dotted about the roads away from the start.
+  const hazards: Hazard[] = [];
+  for (let attempt = 0; attempt < cfg.oilSlicks * 12 && hazards.length < cfg.oilSlicks; attempt++) {
+    const sx = rng.pick(ax.streets);
+    const z = rng.range(-az.span / 2 + 10, az.span / 2 - 40);
+    if (theRiver && z > theRiver.z0 - 16 && z < theRiver.z1 + 16) continue;
+    const radius = Math.min(rng.range(7, 10), sx.width / 2 - 1);
+    const x = sx.center + rng.range(-1, 1) * (sx.width / 2 - radius);
+    if (hazards.some((h) => Math.hypot(h.x - x, h.z - z) < 40)) continue;
+    hazards.push({ kind: 'oil', x, z, radius });
   }
 
   const main = boulevard ?? ax.streets.find((s) => s.width === cfg.avenueWidth) ?? { center: 0, width: cfg.avenueWidth };
@@ -317,6 +391,8 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     buildings,
     bridges,
     props,
+    hazards,
+    river: theRiver,
     // Just off the centre line, so the kaiju doesn't start on top of the boulevard's trees.
     spawn: { x: main.center + (boulevard ? boulevard.width / 4 + 0.75 : 0), z: az.span / 2 + perimeter * 0.5, yaw: Math.PI },
   };

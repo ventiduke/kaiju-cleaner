@@ -2,6 +2,7 @@
 export class Damage {
   chunksBroken = 0;
   propsDisturbed = 0;
+  citizensSquished = 0;
   private buildings = new Set<number>();
 
   chunk(building: number): void {

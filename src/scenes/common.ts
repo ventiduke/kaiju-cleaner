@@ -1,11 +1,15 @@
 import * as THREE from 'three';
+import type { River } from '../city/cityGen';
 import { ALL_GROUPS, Group, groups } from '../core/physics';
 import type { Sim } from '../sim';
 
 export const SKY = 0x9fc4e8;
 
-/** Sky, fog, lights and the ground: shared by every scene. */
-export function addEnvironment(sim: Sim, extent = 400): THREE.DirectionalLight {
+/**
+ * Sky, fog, lights and the ground: shared by every scene.
+ * With a river, the ground is two banks and a lower bed, and `sim.ground` reports the drop.
+ */
+export function addEnvironment(sim: Sim, extent = 400, river: River | null = null): THREE.DirectionalLight {
   const { scene, world, R } = sim;
   scene.background = new THREE.Color(SKY);
   scene.fog = new THREE.Fog(SKY, extent * 0.9, extent * 2.6);
@@ -17,7 +21,7 @@ export function addEnvironment(sim: Sim, extent = 400): THREE.DirectionalLight {
   sun.shadow.mapSize.set(2048, 2048);
   const cam = sun.shadow.camera;
   // The shadow box follows the action (see main.ts), so it only needs to cover what is on screen.
-  const box = 170;
+  const box = 190;
   cam.left = -box;
   cam.right = box;
   cam.top = box;
@@ -30,20 +34,49 @@ export function addEnvironment(sim: Sim, extent = 400): THREE.DirectionalLight {
   scene.add(sun.target);
   sim.parts.sun = sun;
 
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(extent * 6, extent * 6),
-    new THREE.MeshLambertMaterial({ color: 0x7d8a6a }),
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  scene.add(ground);
+  const far = extent * 3;
+  const grass = new THREE.MeshLambertMaterial({ color: 0x7d8a6a });
+  /** A slab of ground between two z values, with its top at `top`. */
+  const slab = (z0: number, z1: number, top: number, material: THREE.Material) => {
+    const depth = z1 - z0;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(far * 2, depth), material);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(0, top, (z0 + z1) / 2);
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    const body = world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(0, top - 10, (z0 + z1) / 2));
+    world.createCollider(
+      R.ColliderDesc.cuboid(far, 10, depth / 2)
+        .setFriction(0.9)
+        .setCollisionGroups(groups(Group.GROUND, ALL_GROUPS)),
+      body,
+    );
+  };
 
-  const body = world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(0, -5, 0));
-  world.createCollider(
-    R.ColliderDesc.cuboid(extent * 3, 5, extent * 3)
-      .setFriction(0.9)
-      .setCollisionGroups(groups(Group.GROUND, ALL_GROUPS)),
-    body,
+  if (!river) {
+    slab(-far, far, 0, grass);
+    return sun;
+  }
+
+  slab(-far, river.z0, 0, grass);
+  slab(river.z1, far, 0, grass);
+  slab(river.z0, river.z1, -river.depth, new THREE.MeshLambertMaterial({ color: 0x4a5a52 }));
+  sim.ground = (_x, z) => (z > river.z0 && z < river.z1 ? -river.depth : 0);
+
+  // Bank walls, then the water itself: see-through, so wreckage on the bed still shows.
+  const wall = new THREE.MeshLambertMaterial({ color: 0x8b8a84, side: THREE.DoubleSide });
+  for (const z of [river.z0, river.z1]) {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(far * 2, river.depth), wall);
+    mesh.position.set(0, -river.depth / 2, z);
+    scene.add(mesh);
+  }
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(far * 2, river.z1 - river.z0),
+    new THREE.MeshLambertMaterial({ color: 0x3f8fb8, transparent: true, opacity: 0.72, depthWrite: false }),
   );
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(0, -1.1, (river.z0 + river.z1) / 2);
+  water.renderOrder = 5;
+  scene.add(water);
   return sun;
 }

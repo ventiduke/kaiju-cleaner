@@ -22,6 +22,7 @@ export class FollowCamera {
   private yaw: number;
   private focus = new THREE.Vector3();
   private trauma = 0;
+  private squat = 1;
   private time = 0;
 
   constructor(
@@ -34,6 +35,7 @@ export class FollowCamera {
     sim.on('footfall', (e) => this.shake(0.1 * e.strength, e));
     sim.on('chunkBreak', (e) => this.shake(0.05, e));
     sim.on('kaijuFall', (e) => this.shake(0.6, e));
+    sim.on('kaijuSave', (e) => this.shake(0.2, e));
   }
 
   /** Mouse drag: swing round the kaiju and raise or lower the view. */
@@ -69,8 +71,12 @@ export class FollowCamera {
     this.yaw = lerpAngle(this.yaw, this.kaiju.yaw, 1 - Math.exp(-frameDt / Math.max(0.01, c.yawLag)));
 
     // The tuned distance and height set the resting view; the mouse offsets move along a dome.
-    const range = Math.hypot(c.distance, c.height) * this.zoom;
-    const elevation = THREE.MathUtils.clamp(Math.atan2(c.height, c.distance) + this.pitch, 0.08, 1.5);
+    // Crouching drops the view too: steadier on its feet, but it can't see over the rooftops.
+    const squat = this.kaiju.mode === 'crouch' ? 1 - this.sim.tuning.modes.crouchView : 1;
+    this.squat += (squat - this.squat) * Math.min(1, frameDt * 4);
+    const height = c.height * this.squat;
+    const range = Math.hypot(c.distance, height) * this.zoom;
+    const elevation = THREE.MathUtils.clamp(Math.atan2(height, c.distance) + this.pitch, 0.08, 1.5);
     const a = this.yaw + this.orbit;
     const flat = Math.cos(elevation) * range;
     this.camera.position.set(

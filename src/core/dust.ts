@@ -33,8 +33,11 @@ export class Dust implements System {
       this.puff(e.x, Math.max(1, e.y - e.size * 0.4), e.z, e.size * 0.4, 1.5);
     });
     sim.on('footfall', (e) => {
-      for (let i = 0; i < 3; i++) this.puff(e.x, 0.8, e.z, 1.6 * e.strength, 4);
+      // In the river a step throws up spray instead.
+      if (e.wet) for (let i = 0; i < 5; i++) this.puff(e.x, -0.6, e.z, 2.2 * e.strength, 7, 5);
+      else for (let i = 0; i < 3; i++) this.puff(e.x, 0.8, e.z, 1.6 * e.strength, 4);
     });
+    sim.on('citizenSquish', (e) => this.puff(e.x, 1, e.z, 1.4, 2));
     sim.on('kaijuFall', (e) => {
       for (let i = 0; i < 10; i++) this.puff(e.x, 2, e.z, 4, 9);
     });
@@ -45,11 +48,11 @@ export class Dust implements System {
     return this.seed / 2147483647 - 0.5;
   }
 
-  private puff(x: number, y: number, z: number, size: number, spread: number): void {
+  private puff(x: number, y: number, z: number, size: number, spread: number, rise = 1): void {
     const i = this.next;
     this.next = (this.next + 1) % MAX_PUFFS;
     this.pos.set([x + this.random() * size, y, z + this.random() * size], i * 3);
-    this.vel.set([this.random() * spread, 1 + Math.abs(this.random()) * 2.5, this.random() * spread], i * 3);
+    this.vel.set([this.random() * spread, rise + Math.abs(this.random()) * 2.5 * rise, this.random() * spread], i * 3);
     this.age[i] = 0;
     this.life[i] = 1.3 + Math.abs(this.random()) * 1.6;
     this.size[i] = size;

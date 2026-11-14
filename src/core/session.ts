@@ -26,7 +26,7 @@ export interface SessionFile {
   /** Rows of [seconds, x, z, yawDeg, speed, tiltDeg, state, thrust, turn, chunksBroken], 5 a second. */
   samples: number[][];
   events: { tick: number; type: string }[];
-  /** [tick, thrust, turn] whenever the input changed. */
+  /** [tick, thrust, turn, tiptoe, crouch] whenever the input changed (older files stop at turn). */
   inputs: number[][];
   /** [tick, ox, oy, oz, dx, dy, dz] for each debug ball thrown. */
   balls: number[][];
@@ -55,6 +55,11 @@ export interface SessionStats {
   averageTiltDegMoving: number;
   stumbles: number;
   falls: number;
+  /** Falls caught by steering into them. */
+  saves?: number;
+  secondsOnTiptoe?: number;
+  secondsCrouched?: number;
+  citizensSquished?: number;
   secondsStumbling: number;
   secondsDown: number;
   secondsStalled: number;
@@ -87,6 +92,7 @@ export class SessionRecorder implements System {
   private balls: number[][] = [];
   private lastThrust = NaN;
   private lastTurn = NaN;
+  private lastHeld = -1;
   private lastState = 'walk';
   private lastPos: { x: number; z: number } | null = null;
   private acc = {
@@ -100,6 +106,8 @@ export class SessionRecorder implements System {
     down: 0,
     stalled: 0,
     hardTurn: 0,
+    tiptoe: 0,
+    crouch: 0,
   };
 
   constructor(
@@ -122,10 +130,12 @@ export class SessionRecorder implements System {
     const p = this.sim.players[0];
     const thrust = r(p.thrust, 2);
     const turn = r(p.turn, 2);
-    if (thrust !== this.lastThrust || turn !== this.lastTurn) {
-      this.inputs.push([this.sim.tick, thrust, turn]);
+    const held = (p.tiptoe ? 1 : 0) + (p.crouch ? 2 : 0);
+    if (thrust !== this.lastThrust || turn !== this.lastTurn || held !== this.lastHeld) {
+      this.inputs.push([this.sim.tick, thrust, turn, p.tiptoe ? 1 : 0, p.crouch ? 1 : 0]);
       this.lastThrust = thrust;
       this.lastTurn = turn;
+      this.lastHeld = held;
     }
   }
 
@@ -151,6 +161,8 @@ export class SessionRecorder implements System {
     if (k.state === 'stumble') a.stumbling += dt;
     if (k.state === 'fallen' || k.state === 'getup') a.down += dt;
     if (k.stall > 0.5) a.stalled += dt;
+    if (k.mode === 'tiptoe') a.tiptoe += dt;
+    if (k.mode === 'crouch') a.crouch += dt;
 
     if (this.sim.tick % SAMPLE_EVERY === 0) {
       const p = this.sim.players[0];
@@ -226,6 +238,10 @@ export class SessionRecorder implements System {
       averageTiltDegMoving: r(((a.tiltSum / moving) * 180) / Math.PI),
       stumbles: this.kaiju?.stumbles ?? 0,
       falls: this.kaiju?.falls ?? 0,
+      saves: this.kaiju?.saves ?? 0,
+      secondsOnTiptoe: r(a.tiptoe),
+      secondsCrouched: r(a.crouch),
+      citizensSquished: this.damage?.citizensSquished ?? 0,
       secondsStumbling: r(a.stumbling),
       secondsDown: r(a.down),
       secondsStalled: r(a.stalled),
@@ -290,8 +306,9 @@ export function formatSession(f: SessionFile): string {
     'This run:',
     `  moving ${s.secondsMoving}s of ${s.seconds}s, ${s.distance} m, top ${s.topSpeed} m/s, average ${s.averageSpeedMoving} m/s`,
     `  lean: max ${s.maxTiltDeg} deg, average ${s.averageTiltDegMoving} deg while moving; hard turns ${Math.round(s.hardTurnShare * 100)}% of the time`,
-    `  ${s.stumbles} stumbles (${s.secondsStumbling}s), ${s.falls} falls (${s.secondsDown}s down), stalled ${s.secondsStalled}s`,
-    `  damage: ${s.chunksBroken} chunks, ${s.propsDisturbed} props, ${s.buildingsDamaged} buildings`,
+    `  ${s.stumbles} stumbles (${s.secondsStumbling}s), ${s.saves ?? 0} saves, ${s.falls} falls (${s.secondsDown}s down), stalled ${s.secondsStalled}s`,
+    `  tiptoe ${s.secondsOnTiptoe ?? 0}s, crouched ${s.secondsCrouched ?? 0}s`,
+    `  damage: ${s.chunksBroken} chunks, ${s.propsDisturbed} props, ${s.buildingsDamaged} buildings, ${s.citizensSquished ?? 0} people squished`,
   ];
   return lines.join('\n');
 }

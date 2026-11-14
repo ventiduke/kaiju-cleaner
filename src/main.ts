@@ -3,6 +3,8 @@ import type { Damage } from './city/damage';
 import type { ChunkField } from './city/destruction';
 import type { BallTool } from './core/ball';
 import { buildTuningGui, Hud, makeNoteBox, makeToast } from './core/debug';
+import type { Citizens } from './city/citizens';
+import { GameAudio } from './core/audio';
 import { FreeCamera } from './core/freeCamera';
 import { InputManager } from './core/input';
 import { Loop } from './core/loop';
@@ -43,7 +45,9 @@ async function boot(): Promise<void> {
   const damage = sim.parts.damage as Damage;
   const chunks = sim.parts.chunks as ChunkField;
   const kaiju = sim.parts.kaiju as Kaiju | undefined;
+  const citizens = sim.parts.citizens as Citizens | undefined;
   const recorder = sim.add(new SessionRecorder(sim, sceneName, kaiju, damage));
+  const audio = new GameAudio(sim, kaiju);
   if (sceneName === 'city') {
     freeCam.distance = 300;
     freeCam.pitch = 0.7;
@@ -96,13 +100,16 @@ async function boot(): Promise<void> {
     else if (e.code === 'KeyN') {
       e.preventDefault();
       openNote();
+    } else if (e.code === 'KeyM') {
+      tuning.audio.muted = !tuning.audio.muted;
+      toast(tuning.audio.muted ? 'Sound off' : 'Sound on');
     }
   });
 
   document.getElementById('help')!.textContent = [
-    'W/S run   A/D turn   (gamepad: left stick)      N: note for Claude',
+    'W/S run   A/D turn   Shift: tiptoe   Space: crouch      going over? steer into the fall to save it',
     'mouse drag: look around   wheel: zoom   double-click: reset view   Q/E: swing',
-    'C: free camera   B: throw ball',
+    'N: note for Claude   M: sound   C: free camera   B: throw ball',
   ].join('\n');
   document.getElementById('boot')?.remove();
 
@@ -121,19 +128,25 @@ async function boot(): Promise<void> {
       else freeCam.update();
       sun.position.copy(sunOffset).add(follow && kaiju ? kaiju.visual.position : freeCam.target);
       sun.target.position.copy(sun.position).sub(sunOffset);
+      audio.update();
       renderer.render(sim.scene, camera);
       hud.frame(sim.lastStepMs);
       hud.update(() => {
         const c = sim.counts();
         const k = kaiju
           ? [
-              `kaiju: ${kaiju.state}   ${kaiju.speed.toFixed(1)} m/s   lean ${((kaiju.tilt * 180) / Math.PI).toFixed(0)}°   ` +
-                `stumbles ${kaiju.stumbles}   falls ${kaiju.falls}`,
+              `kaiju: ${kaiju.state}${kaiju.mode === 'normal' ? '' : ' (' + kaiju.mode + ')'}   ${kaiju.speed.toFixed(1)} m/s   ` +
+                `lean ${((kaiju.tilt * 180) / Math.PI).toFixed(0)}°` +
+                (kaiju.traction < 0.5 ? '   ON OIL' : '') +
+                (kaiju.wading > 0.05 ? '   wading' : ''),
+              `stumbles ${kaiju.stumbles}   saves ${kaiju.saves}   falls ${kaiju.falls}   ` +
+                `tiptoe ${'▮'.repeat(Math.round(kaiju.toeMeter * 8)).padEnd(8, '▯')}`,
             ]
           : [];
         return [
           ...k,
-          `damage: ${damage.chunksBroken} chunks   ${damage.propsDisturbed} props   ${damage.buildingsDamaged} buildings`,
+          `damage: ${damage.chunksBroken} chunks   ${damage.propsDisturbed} props   ${damage.buildingsDamaged} buildings` +
+            (citizens ? `   people: ${citizens.alive} left, ${damage.citizensSquished} squished` : ''),
           `bodies ${c.bodies}   awake ${c.awake}   debris ${chunks.looseCount}   build ${BUILD}`,
         ];
       });

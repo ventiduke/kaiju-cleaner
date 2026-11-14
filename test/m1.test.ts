@@ -142,11 +142,25 @@ describe('M1 destruction', () => {
     expect(g.layout.plazas.length).toBe(1);
     expect(g.layout.streets.filter((s) => s.width === cfg.boulevardWidth).length).toBe(1);
     expect(g.layout.bridges.length).toBeGreaterThanOrEqual(2);
-    for (const b of g.layout.bridges) {
+    const sky = g.layout.bridges.filter((b) => b.kind === 'sky');
+    const road = g.layout.bridges.filter((b) => b.kind === 'road');
+    expect(sky.length).toBeGreaterThanOrEqual(3);
+    for (const b of sky) {
       expect(b.to - b.from).toBeGreaterThanOrEqual(cfg.sideStreetWidth);
       // Low enough to catch a kaiju in the belly.
       expect(b.floor * cfg.floorHeight).toBeGreaterThan(g.sim.tuning.kaiju.legLength);
     }
+    // A river splits the city, with road bridges on the wider streets and blocks on both banks.
+    const river = g.layout.river!;
+    expect(river.z1 - river.z0).toBe(cfg.riverWidth);
+    expect(road.length).toBeGreaterThanOrEqual(2);
+    for (const b of road) expect([b.from, b.to]).toEqual([river.z0, river.z1]);
+    expect(g.layout.blocks.some((b) => b.z < river.z0)).toBe(true);
+    expect(g.layout.blocks.some((b) => b.z > river.z1)).toBe(true);
+    for (const b of g.layout.blocks) expect(b.z + b.d / 2 <= river.z0 || b.z - b.d / 2 >= river.z1).toBe(true);
+    expect(g.sim.ground(0, (river.z0 + river.z1) / 2)).toBe(-cfg.riverDepth);
+    expect(g.sim.ground(0, river.z1 + 5)).toBe(0);
+    expect(g.layout.hazards.length).toBe(cfg.oilSlicks);
     console.log(
       `city: ${g.layout.sizeX} x ${g.layout.sizeZ} m, ${g.layout.buildings.length} buildings, ` +
         `${g.chunks.fixedCount} chunks, ${g.props.total} props, ${g.layout.bridges.length} skybridges`,

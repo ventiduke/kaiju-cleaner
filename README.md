@@ -27,15 +27,23 @@ Scenes are picked with a URL parameter:
 | --- | --- | --- |
 | Run forward / back | W / S | Left stick up / down |
 | Turn | A / D | Left stick left / right |
+| Tiptoe: slow, narrow, quiet, until the calves give out | Hold Shift | A or right trigger |
+| Crouch: slow, low, hard to tip, tail tucked | Hold Space | B or left trigger |
 | Look around, raise or lower the view | Drag the mouse (or Q / E to swing) | Right stick |
 | Zoom | Mouse wheel | |
 | Reset the view | Double-click | |
 | Note for Claude | N | |
+| Sound on / off | M | |
 | Free camera on / off | C | |
 | Throw a debug ball at the cursor | B (or click, in the free camera) | |
 
-Fast and sharp tips it over: hold a hard turn at speed and it stumbles, then falls. Let go when it stumbles
-and it saves itself. Slow down, or feather the turn, to corner cleanly.
+Fast and sharp tips it over: hold a hard turn at speed and it stumbles, then starts to go. Let go at the
+stumble and it rights itself. Once it is going over there is a short window to **save it by steering into the
+fall** (toppling right, steer right). If it does go down, mashing a direction scrambles it up sooner.
+
+The city is split by a river you can wade (slowly). The road bridges stand on piers and will not take a kaiju.
+Dark patches on the roads are oil: no grip at all. The townsfolk run from a stomping kaiju, less so from one on
+tiptoe, and a foot landing on one squashes it.
 
 ## Tuning the feel
 
@@ -63,8 +71,8 @@ and whether a set of turns at different speeds ends steady, in a stumble, or in 
 
 ## Status
 
-M0 (scaffold), M1 (destructible city), M2 (kaiju movement) and M3 (kaiju in the city) are built, and have had one
-round of playtest changes. Each has measurable checks in `test/`; whether the movement is *fun* is a playtest call.
+M0 (scaffold), M1 (destructible city), M2 (kaiju movement), M3 (kaiju in the city) and M4 (tiptoe, plus crouch)
+are built, and have had two rounds of playtest changes. Picking things up and repair jobs come next. Each has measurable checks in `test/`; whether the movement is *fun* is a playtest call.
 
 ## How the code is laid out
 

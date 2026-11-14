@@ -35,8 +35,8 @@ export const codeDefaults = {
   },
   city: {
     seed: 7,
-    blocks: 5,
-    blockSize: 40,
+    blocks: 8,
+    blockSize: 30,
     /** One extra-wide street through the middle. */
     boulevardWidth: 38,
     avenueWidth: 22,
@@ -47,8 +47,13 @@ export const codeDefaults = {
     minFloors: 2,
     maxFloors: 13,
     chunkSize: 8.5,
+    /** A river through the middle, splitting the city in two. 0 for none. */
+    riverWidth: 56,
+    riverDepth: 6,
     /** Covered walkways strung between buildings across a street. */
-    skybridges: 4,
+    skybridges: 8,
+    /** Oil spills on the roads: no grip at all. */
+    oilSlicks: 6,
     /** Leave the centre block open as a plaza. */
     plaza: true,
     propDensity: 1,
@@ -75,7 +80,7 @@ export const codeDefaults = {
     floorFailFraction: 0.45,
     /** Seconds between a support breaking and the chunk above letting go. */
     collapseDelay: 0.12,
-    debrisCap: 280,
+    debrisCap: 300,
     debrisLinearDamping: 0.15,
     debrisAngularDamping: 0.6,
     /** Seconds after which loose debris gets heavily damped so piles stop jittering and sleep. */
@@ -150,6 +155,14 @@ export const codeDefaults = {
     crouchBalance: 1.7,
     /** How far the camera drops while crouched (share of its height). */
     crouchView: 0.45,
+  },
+  citizens: {
+    /** How many people stroll each block's sidewalks (x5). */
+    density: 1,
+  },
+  audio: {
+    volume: 0.6,
+    muted: false,
   },
   tail: {
     segments: 5,
@@ -251,7 +264,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
   debug: { ballSpeed: [5, 150, 1], ballRadius: [0.5, 8, 0.1], ballDensity: [0.5, 30, 0.5] },
   city: {
     seed: [0, 999, 1],
-    blocks: [1, 8, 1],
+    blocks: [1, 12, 1],
     blockSize: [24, 120, 1],
     boulevardWidth: [10, 60, 1],
     avenueWidth: [8, 40, 0.5],
@@ -262,7 +275,10 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     minFloors: [1, 10, 1],
     maxFloors: [2, 24, 1],
     chunkSize: [4, 16, 0.5],
-    skybridges: [0, 12, 1],
+    riverWidth: [0, 120, 2],
+    riverDepth: [1, 12, 0.5],
+    skybridges: [0, 16, 1],
+    oilSlicks: [0, 20, 1],
     propDensity: [0, 3, 0.1],
   },
   destruction: {
@@ -327,6 +343,8 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     crouchBalance: [1, 4, 0.1],
     crouchView: [0, 0.8, 0.05],
   },
+  citizens: { density: [0, 4, 0.1] },
+  audio: { volume: [0, 1, 0.01] },
   tail: {
     segments: [2, 8, 1],
     length: [8, 60, 1],
@@ -361,6 +379,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
 /** Keys that only take effect when the scene is rebuilt. */
 export const restartKeys: { [G in TuningGroup]?: readonly string[] | 'all' } = {
   city: 'all',
+  citizens: 'all',
   kaiju: ['bodyRadius', 'bodyHalfHeight', 'legLength', 'density'],
   tail: ['segments', 'length', 'baseRadius', 'tipRadius', 'density'],
   legs: ['footLength', 'footWidth', 'footHeight'],

@@ -22,7 +22,7 @@ export function yardLayout(): CityLayout {
     plazas: [],
     streets: [],
     // A skybridge between the low block and the slim tower, to practise on.
-    bridges: [{ a: 0, b: 1, along: 'x', from: -37, to: -8, center: -57, floor: 2, width: 5, color: 0x8fc7d8 }],
+    bridges: [{ kind: 'sky', a: 0, b: 1, along: 'x', from: -37, to: -8, center: -57, floor: 2, width: 5, color: 0x8fc7d8 }],
     buildings: [
       { x: -45, z: -55, color: 0xcfa98f, tiers: [{ floors: 3, w: 16, d: 16, nx: 2, nz: 2 }] },
       { x: 0, z: -60, color: 0xb5c4cf, tiers: [{ floors: 8, w: 16, d: 16, nx: 2, nz: 2 }] },
@@ -37,6 +37,9 @@ export function yardLayout(): CityLayout {
       },
     ],
     props,
+    // An oil slick off to one side, for practising slides.
+    hazards: [{ kind: 'oil', x: -60, z: 30, radius: 12 }],
+    river: null,
     spawn: { x: 0, z: 70, yaw: Math.PI },
   };
 }
@@ -53,6 +56,8 @@ export function buildPlane(sim: Sim): void {
     buildings: [],
     bridges: [],
     props: [],
+    hazards: [],
+    river: null,
     spawn: { x: 0, z: 0, yaw: 0 },
   });
 }

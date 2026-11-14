@@ -113,7 +113,9 @@ export class ChunkField implements System {
     bridges: BridgeSpec[] = [],
   ) {
     const bridgePieces = (b: BridgeSpec) => Math.max(2, Math.round((b.to - b.from) / sim.tuning.city.chunkSize));
-    const capacity = specs.reduce((n, b) => n + chunkCount(b), 0) + bridges.reduce((n, b) => n + bridgePieces(b), 0);
+    const capacity =
+      specs.reduce((n, b) => n + chunkCount(b), 0) +
+      bridges.reduce((n, b) => n + bridgePieces(b) * (b.pierDepth ? 2 : 1), 0);
     this.field = new InstancedBodies(
       sim,
       new THREE.BoxGeometry(1, 1, 1),
@@ -208,8 +210,10 @@ export class ChunkField implements System {
    */
   private addBridge(spec: BridgeSpec, pieces: number): void {
     const floorHeight = this.sim.tuning.city.floorHeight;
-    const y = floorHeight * (spec.floor + 0.5);
+    const y = spec.y ?? floorHeight * (spec.floor + 0.5);
+    const hy = (spec.thickness ?? floorHeight * 0.84) / 2;
     const anchor = (buildingIndex: number, at: number): number => {
+      if (buildingIndex < 0) return -1;
       const b = this.buildings[buildingIndex];
       let best = -1;
       let bestDist = Infinity;
@@ -226,7 +230,7 @@ export class ChunkField implements System {
     };
     const start = anchor(spec.a, spec.from);
     const end = anchor(spec.b, spec.to);
-    if (start < 0 || end < 0) return;
+    if ((spec.a >= 0 && start < 0) || (spec.b >= 0 && end < 0)) return;
 
     const building = this.buildings.length;
     const first = this.chunks.length;
@@ -241,15 +245,29 @@ export class ChunkField implements System {
     // A little short of the gap at each end, so loose pieces drop clear instead of wedging.
     const slack = 0.3;
     const length = (spec.to - spec.from - 2 * slack) / pieces;
+    const place = (along: number, halfLength: number, halfWidth: number): [number, number, number, number] =>
+      spec.along === 'x' ? [along, spec.center, halfLength, halfWidth] : [spec.center, along, halfWidth, halfLength];
+    const deck: number[] = [];
     for (let i = 0; i < pieces; i++) {
-      const along = spec.from + slack + length * (i + 0.5);
-      const [x, z, hx, hz] =
-        spec.along === 'x' ? [along, spec.center, length / 2, spec.width / 2] : [spec.center, along, spec.width / 2, length / 2];
-      const before = i === 0 ? start : first + i - 1;
-      const index = this.createChunk(building, spec.floor, x, y, z, hx, floorHeight * 0.42, hz, spec.color, [{ chunk: before, area: 0.5 }], 1);
+      const [x, z, hx, hz] = place(spec.from + slack + length * (i + 0.5), length / 2, spec.width / 2);
+      const before = i === 0 ? start : deck[i - 1];
+      const supports = before >= 0 ? [{ chunk: before, area: 0.5 }] : [];
+      const index = this.createChunk(building, spec.floor, x, y, z, hx, hy, hz, spec.color, supports, 1);
+      deck.push(index);
       // Link forward as well, once the next piece (or the far building) is known.
-      if (i > 0) this.link(index - 1, index);
-      if (i === pieces - 1) this.link(index, end);
+      if (i > 0) this.link(deck[i - 1], index);
+      if (i === pieces - 1 && end >= 0) this.link(index, end);
+    }
+    // Road bridges stand on piers, one under each joint. Knock a pier out and the deck goes.
+    if (spec.pierDepth) {
+      const top = y - hy;
+      const pierHalf = (top + spec.pierDepth) / 2;
+      for (let i = 1; i < pieces; i++) {
+        const [x, z, hx, hz] = place(spec.from + slack + length * i, 1.6, spec.width * 0.36);
+        const pier = this.createChunk(building, 0, x, top - pierHalf, z, hx, pierHalf, hz, spec.color, []);
+        this.link(deck[i - 1], pier);
+        this.link(deck[i], pier);
+      }
     }
   }
 
