@@ -18,7 +18,7 @@ const scenes = (process.argv[2] ?? 'yard,city').split(',');
 const settleSteps = Number(process.argv[3] ?? 240);
 mkdirSync('scripts/out', { recursive: true });
 
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' });
+const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe', detached: true });
 await new Promise((resolve, reject) => {
   server.stdout.on('data', (d) => String(d).includes(String(PORT)) && resolve());
   server.on('exit', (code) => reject(new Error('preview server exited: ' + code)));
@@ -50,6 +50,8 @@ try {
   }
 } finally {
   await browser.close();
-  server.kill();
+  try {
+    process.kill(-server.pid);
+  } catch {}
 }
 process.exit(failed ? 1 : 0);

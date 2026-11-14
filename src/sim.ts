@@ -21,6 +21,8 @@ export function emptyInput(): PlayerInput {
 export interface System {
   /** Runs before each physics step. */
   preStep?(dt: number): void;
+  /** Runs after every system's preStep, immediately before the physics step. */
+  beforePhysics?(dt: number): void;
   /** Runs after each physics step (events for the step are already dispatched). */
   postStep?(dt: number): void;
   /** Runs once per rendered frame. */
@@ -28,6 +30,11 @@ export interface System {
 }
 
 export type ForceListener = (collider1: number, collider2: number, force: number) => void;
+
+/** Something that owns many bodies and wants to know which ones are awake. */
+export interface BodyField {
+  touch(index: number): void;
+}
 
 /** Keeps a Three object in step with a rigid body, interpolated between physics steps. */
 export class Tracked {
@@ -80,10 +87,13 @@ export class Sim {
   time = 0;
   /** Wall-clock cost of the last physics step, in ms. */
   lastStepMs = 0;
+  /** Bodies the engine simulated in the last step. */
+  awake = 0;
 
   private readonly events;
   private readonly tracked = new Set<Tracked>();
   private readonly forceListeners: ForceListener[] = [];
+  private readonly owners = new Map<number, { field: BodyField; index: number }>();
 
   constructor(
     readonly R: Rapier,
@@ -111,6 +121,15 @@ export class Sim {
     this.scene.remove(t.object);
   }
 
+  /** Registers a body as belonging to a field, so the field hears when it is awake. */
+  own(body: RigidBody, field: BodyField, index: number): void {
+    this.owners.set(body.handle, { field, index });
+  }
+
+  disown(body: RigidBody): void {
+    this.owners.delete(body.handle);
+  }
+
   onContactForce(listener: ForceListener): void {
     this.forceListeners.push(listener);
   }
@@ -119,6 +138,7 @@ export class Sim {
     const dt = FIXED_DT;
     this.world.gravity.y = -this.tuning.world.gravity;
     for (const s of this.systems) s.preStep?.(dt);
+    for (const s of this.systems) s.beforePhysics?.(dt);
     const t0 = performance.now();
     this.world.step(this.events);
     this.lastStepMs = performance.now() - t0;
@@ -131,6 +151,12 @@ export class Sim {
     this.events.drainCollisionEvents(() => {});
     this.tick++;
     this.time += dt;
+    this.awake = 0;
+    this.world.forEachActiveRigidBody((b) => {
+      this.awake++;
+      const o = this.owners.get(b.handle);
+      if (o) o.field.touch(o.index);
+    });
     for (const s of this.systems) s.postStep?.(dt);
     for (const t of this.tracked) t.capture();
   }
@@ -146,8 +172,6 @@ export class Sim {
   }
 
   counts(): { bodies: number; awake: number } {
-    let awake = 0;
-    this.world.forEachActiveRigidBody(() => awake++);
-    return { bodies: this.world.bodies.len(), awake };
+    return { bodies: this.world.bodies.len(), awake: this.awake };
   }
 }

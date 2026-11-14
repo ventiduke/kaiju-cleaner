@@ -36,6 +36,8 @@ export const codeDefaults = {
     handoff: 0.75,
     /** How much momentum each broken chunk costs the hitter (0 = free). */
     breakDrag: 0.6,
+    /** How much of a collision's tipping kick the hitter keeps (0 = glides through, 1 = full). */
+    impactTilt: 0.5,
     chunkDensity: 0.35,
     friction: 0.7,
     /** A chunk falls when less than this share of its footprint is supported. */
@@ -146,6 +148,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     breakSpeed: [1, 40, 0.5],
     handoff: [0, 1.5, 0.05],
     breakDrag: [0, 2, 0.05],
+    impactTilt: [0, 1, 0.05],
     chunkDensity: [0.05, 2, 0.05],
     friction: [0, 1.5, 0.05],
     supportFraction: [0, 1, 0.05],

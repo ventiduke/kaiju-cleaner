@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import type { Damage } from './city/damage';
+import type { ChunkField } from './city/destruction';
 import type { BallTool } from './core/ball';
 import { buildTuningGui, Hud } from './core/debug';
 import { FreeCamera } from './core/freeCamera';
@@ -11,7 +13,7 @@ import { createGame, SCENES, type SceneName } from './scenes';
 async function boot(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const requested = params.get('scene') as SceneName | null;
-  const sceneName: SceneName = requested && SCENES.includes(requested) ? requested : 'yard';
+  const sceneName: SceneName = requested && SCENES.includes(requested) ? requested : 'city';
 
   const R = await initRapier();
   const tuning = makeTuning(takeRestartStash());
@@ -20,7 +22,7 @@ async function boot(): Promise<void> {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   document.body.appendChild(renderer.domElement);
 
   const camera = new THREE.PerspectiveCamera(tuning.camera.fov, 1, 1, 3000);
@@ -34,6 +36,12 @@ async function boot(): Promise<void> {
   resize();
 
   const ball = sim.parts.ball as BallTool;
+  const damage = sim.parts.damage as Damage;
+  const chunks = sim.parts.chunks as ChunkField;
+  if (sceneName === 'city') {
+    freeCam.distance = 300;
+    freeCam.pitch = 0.7;
+  }
   const raycaster = new THREE.Raycaster();
   freeCam.onClick = (ndc) => {
     raycaster.setFromCamera(ndc, camera);
@@ -58,7 +66,10 @@ async function boot(): Promise<void> {
       hud.frame(sim.lastStepMs);
       hud.update(() => {
         const c = sim.counts();
-        return [`bodies ${c.bodies}   awake ${c.awake}`];
+        return [
+          `bodies ${c.bodies}   awake ${c.awake}   debris ${chunks.looseCount}`,
+          `damage: ${damage.chunksBroken} chunks   ${damage.propsDisturbed} props   ${damage.buildingsDamaged} buildings`,
+        ];
       });
     },
   });
