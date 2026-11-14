@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kaiju Cleaners</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #9fc4e8; font-family: ui-monospace, Menlo, Consolas, monospace; }
+      canvas { display: block; }
+      #hud { position: fixed; left: 10px; top: 10px; color: #fff; font-size: 12px; line-height: 1.5; background: rgba(20, 24, 32, 0.6); padding: 8px 10px; border-radius: 6px; white-space: pre; pointer-events: none; }
+      #help { position: fixed; left: 10px; bottom: 10px; color: #fff; font-size: 12px; line-height: 1.5; background: rgba(20, 24, 32, 0.6); padding: 8px 10px; border-radius: 6px; white-space: pre; pointer-events: none; }
+      #boot { position: fixed; inset: 0; display: grid; place-items: center; color: #fff; font-size: 16px; }
+    </style>
+  </head>
+  <body>
+    <div id="boot">Loading…</div>
+    <div id="hud"></div>
+    <div id="help"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
