@@ -17,6 +17,7 @@ interface RawJointSet {
  */
 export class Tail {
   readonly segments: RigidBody[] = [];
+  readonly meshes: THREE.Mesh[] = [];
   private joints: Joint[] = [];
   private applied = { stiffness: NaN, damping: NaN };
 
@@ -80,6 +81,7 @@ export class Tail {
       const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
       sim.track(body, mesh);
+      this.meshes.push(mesh);
 
       prev = body;
       prevAnchor = { x: 0, y: 0, z: -len / 2 };

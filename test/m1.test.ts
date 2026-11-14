@@ -74,7 +74,8 @@ describe('M1 destruction', () => {
     const g = await makeGame('yard');
     // The slim tower is building 1: 8 floors of 2x2 chunks, centred at (0, -60).
     const tower = g.chunks.buildings[1];
-    const target = g.chunks.chunks.slice(tower.first, tower.first + tower.count).find((c) => c.floor === 0 && c.x < 0 && c.z > -60)!;
+    // Aim at the corner away from the skybridge, so only this one column is involved.
+    const target = g.chunks.chunks.slice(tower.first, tower.first + tower.count).find((c) => c.floor === 0 && c.x > 0 && c.z > -60)!;
     const origin = new THREE.Vector3(target.x, target.y + 1, target.z + 40);
     g.ball.throw(origin, new THREE.Vector3(0, 0, -1));
     g.sim.run(240);
@@ -94,10 +95,10 @@ describe('M1 destruction', () => {
   it('carries a heavy ball through what it breaks instead of stopping it dead', async () => {
     const g = await makeGame('yard');
     const tower = g.chunks.buildings[1];
-    const target = g.chunks.chunks.slice(tower.first, tower.first + tower.count).find((c) => c.floor === 2 && c.x < 0 && c.z > -60)!;
+    const target = g.chunks.chunks.slice(tower.first, tower.first + tower.count).find((c) => c.floor === 2 && c.x > 0 && c.z > -60)!;
     const ballBody = g.ball.throw(new THREE.Vector3(target.x, target.y, target.z + 40), new THREE.Vector3(0, 0, -1));
     g.sim.run(50);
-    // It was thrown at 55 m/s; after punching into the tower it should still be moving forward.
+    // After punching into the tower it should still be moving forward.
     expect(ballBody.linvel().z).toBeLessThan(-5);
   });
 
@@ -114,6 +115,44 @@ describe('M1 destruction', () => {
     }
   });
 
+  it('drops a skybridge piece by piece when one end lets go', async () => {
+    const g = await makeGame('yard');
+    const bridge = g.chunks.buildings[3];
+    expect(bridge.count).toBeGreaterThanOrEqual(3);
+    const pieces = g.chunks.chunks.slice(bridge.first, bridge.first + bridge.count);
+    g.sim.run(60);
+    expect(pieces.every((c) => c.state === ChunkState.Fixed)).toBe(true);
+    // Break the piece of the low block that the bridge hangs from.
+    const anchor = pieces[0].supports[0].chunk;
+    expect(g.chunks.chunks[anchor].building).toBe(0);
+    g.chunks.loosen(anchor, null);
+    g.sim.run(5);
+    expect(pieces[0].state).toBe(ChunkState.Fixed); // the collapse delay hasn't run out yet
+    g.sim.run(90);
+    expect(pieces.every((c) => c.state !== ChunkState.Fixed)).toBe(true);
+    // The tower at the far end only lost its bridge, not itself.
+    const tower = g.chunks.buildings[1];
+    expect(g.chunks.chunks.slice(tower.first, tower.first + tower.count).every((c) => c.state === ChunkState.Fixed)).toBe(true);
+  });
+
+  it('builds the city with a boulevard, a plaza and skybridges', async () => {
+    const g = await makeGame('city');
+    const cfg = g.sim.tuning.city;
+    expect(g.layout.blocks.length).toBe(cfg.blocks * cfg.blocks);
+    expect(g.layout.plazas.length).toBe(1);
+    expect(g.layout.streets.filter((s) => s.width === cfg.boulevardWidth).length).toBe(1);
+    expect(g.layout.bridges.length).toBeGreaterThanOrEqual(2);
+    for (const b of g.layout.bridges) {
+      expect(b.to - b.from).toBeGreaterThanOrEqual(cfg.sideStreetWidth);
+      // Low enough to catch a kaiju in the belly.
+      expect(b.floor * cfg.floorHeight).toBeGreaterThan(g.sim.tuning.kaiju.legLength);
+    }
+    console.log(
+      `city: ${g.layout.sizeX} x ${g.layout.sizeZ} m, ${g.layout.buildings.length} buildings, ` +
+        `${g.chunks.fixedCount} chunks, ${g.props.total} props, ${g.layout.bridges.length} skybridges`,
+    );
+  });
+
   it('lets wreckage settle back to sleep', async () => {
     const g = await makeGame('yard');
     const tower = g.chunks.buildings[1];
@@ -121,7 +160,9 @@ describe('M1 destruction', () => {
     g.chunks.loosen(tower.first + 1, null);
     g.chunks.loosen(tower.first + 2, null);
     g.sim.run(60 * 20);
-    expect(g.chunks.looseCount).toBe(32);
+    // The tower's 32 chunks, plus the skybridge it was holding up.
+    expect(g.chunks.looseCount).toBeGreaterThanOrEqual(32);
+    expect(g.chunks.looseCount).toBeLessThanOrEqual(36);
     expect(g.awakeOthers()).toBeLessThan(4);
   });
 

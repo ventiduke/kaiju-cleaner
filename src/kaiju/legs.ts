@@ -66,6 +66,8 @@ function span(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3): void {
  */
 export class Legs {
   readonly feet: Foot[] = [];
+  /** Every mesh the legs draw, for effects that need to touch all of the kaiju. */
+  readonly meshes: THREE.Mesh[] = [];
   /** Fired when a foot lands. */
   onFootfall: ((side: number, pos: THREE.Vector3, strength: number) => void) | null = null;
   private rng = new Rng(11);
@@ -74,6 +76,8 @@ export class Legs {
   private lastSide = -1;
   private readonly hipHeight: number;
   private readonly boneLength: number;
+  /** Farthest a foot can be from under the body, horizontally, with the leg at full stretch. */
+  readonly reach: number;
 
   constructor(
     private sim: Sim,
@@ -87,6 +91,7 @@ export class Legs {
     const k = tuning.kaiju;
     this.hipHeight = k.legLength + k.bodyRadius * 0.8;
     this.boneLength = this.hipHeight * 0.58;
+    this.reach = Math.sqrt((this.boneLength * 2) ** 2 - this.hipHeight ** 2) + l.stanceWidth;
     this.shape = new R.Cuboid(l.footWidth / 2, l.footHeight / 2, l.footLength / 2);
     for (const side of [1, -1]) {
       const home = this.home(start, side, new THREE.Vector3());
@@ -113,7 +118,10 @@ export class Legs {
         toe.position.set(tx * l.footWidth * 0.34, l.footHeight * 0.35, l.footLength * 0.37);
         foot.add(toe);
       }
-      for (const m of [thigh, shin, sole, ...foot.children]) (m as THREE.Mesh).castShadow = true;
+      for (const m of [thigh, shin, ...foot.children] as THREE.Mesh[]) {
+        m.castShadow = true;
+        this.meshes.push(m);
+      }
       sim.scene.add(thigh, shin, foot);
       this.feet.push({
         side,
@@ -176,7 +184,7 @@ export class Legs {
       let worst = 0;
       for (const f of this.feet) {
         this.home(ctx, f.side, a);
-        const err = Math.hypot(f.pos.x - a.x, f.pos.z - a.z) / (l.stepLength * 0.5 * f.slack);
+        const err = Math.hypot(f.pos.x - a.x, f.pos.z - a.z) / (l.stepLength * f.slack);
         const twist = Math.abs(lerpAngle(f.yaw, ctx.yaw, 1) - f.yaw) / 0.7;
         // Prefer alternating feet when both are about as far out.
         const score = Math.max(err, twist) * (f.side === this.lastSide ? 0.85 : 1);
@@ -190,7 +198,8 @@ export class Legs {
         pick.phase = 0;
         pick.from.copy(pick.pos);
         pick.fromYaw = pick.yaw;
-        pick.duration = l.stepDuration * (1 + l.offbeat * this.rng.range(-0.4, 0.4));
+        // Quicker steps at speed, or the feet can never keep up.
+        pick.duration = Math.max(0.16, (l.stepDuration / (1 + speed / 12)) * (1 + l.offbeat * this.rng.range(-0.4, 0.4)));
         pick.slack = 1 + l.offbeat * this.rng.range(-0.5, 0.5);
         this.lastSide = pick.side;
       }
@@ -202,8 +211,10 @@ export class Legs {
       if (f.swinging) {
         f.phase = Math.min(1, f.phase + dt / f.duration);
         // Aim at where the home spot will be on landing, plus a bit: steps reach ahead of the body.
+        // The reach is capped so a sprinting kaiju doesn't plant feet it couldn't stretch to.
         const lead = l.lookahead + (1 - f.phase) * f.duration;
-        this.home(ctx, f.side, a).addScaledVector(ctx.velocity, lead);
+        d.copy(ctx.velocity).multiplyScalar(lead).clampLength(0, l.stepLength * 0.95);
+        this.home(ctx, f.side, a).add(d);
         a.y = 0;
         const p = f.phase * f.phase * (3 - 2 * f.phase);
         f.pos.lerpVectors(f.from, a, p);

@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import type { Damage } from './city/damage';
 import type { ChunkField } from './city/destruction';
 import type { BallTool } from './core/ball';
-import { buildTuningGui, Hud } from './core/debug';
+import { buildTuningGui, Hud, makeNoteBox, makeToast } from './core/debug';
 import { FreeCamera } from './core/freeCamera';
 import { InputManager } from './core/input';
 import { Loop } from './core/loop';
 import { initRapier } from './core/physics';
+import { BUILD, SessionRecorder } from './core/session';
 import { makeTuning, takeRestartStash } from './core/tuning';
 import { FollowCamera } from './kaiju/camera';
 import type { Kaiju } from './kaiju/kaiju';
@@ -21,7 +22,8 @@ async function boot(): Promise<void> {
   const tuning = makeTuning(takeRestartStash());
   const sim = createGame(R, sceneName, tuning);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // The stencil buffer is what lets the kaiju show through buildings as an outline.
+  const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -40,33 +42,67 @@ async function boot(): Promise<void> {
   const ball = sim.parts.ball as BallTool;
   const damage = sim.parts.damage as Damage;
   const chunks = sim.parts.chunks as ChunkField;
+  const kaiju = sim.parts.kaiju as Kaiju | undefined;
+  const recorder = sim.add(new SessionRecorder(sim, sceneName, kaiju, damage));
   if (sceneName === 'city') {
     freeCam.distance = 300;
     freeCam.pitch = 0.7;
   }
-  const raycaster = new THREE.Raycaster();
-  freeCam.onClick = (ndc) => {
-    raycaster.setFromCamera(ndc, camera);
-    ball.throw(raycaster.ray.origin, raycaster.ray.direction);
-  };
 
-  const kaiju = sim.parts.kaiju as Kaiju | undefined;
+  // Cameras: follow by default; C switches to a free orbit camera for looking around.
   const followCam = kaiju ? new FollowCamera(sim, camera, kaiju) : null;
   let follow = !!followCam && params.get('cam') !== 'free';
   freeCam.enabled = !follow;
-  window.addEventListener('keydown', (e) => {
-    if (e.code !== 'KeyC' || !followCam || e.target instanceof HTMLInputElement) return;
-    follow = !follow;
-    freeCam.enabled = !follow;
-    if (!follow && kaiju) freeCam.target.copy(kaiju.visual.position).setY(8);
+  freeCam.onDrag = (dx, dy) => followCam?.drag(dx, dy);
+  freeCam.onWheel = (dy) => followCam?.wheel(dy);
+  freeCam.onDoubleClick = () => followCam?.reset();
+
+  // Debug ball: click in the free camera, or B anywhere, throws one where the mouse points.
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+  renderer.domElement.addEventListener('pointermove', (e) => {
+    mouse.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
   });
+  const throwBall = (ndc: THREE.Vector2) => {
+    raycaster.setFromCamera(ndc, camera);
+    ball.throw(raycaster.ray.origin, raycaster.ray.direction);
+    recorder.ballThrown(raycaster.ray.origin, raycaster.ray.direction);
+  };
+  freeCam.onClick = throwBall;
 
   const input = new InputManager(sim.players);
   const hud = new Hud();
-  buildTuningGui(tuning, { scene: sceneName, scenes: SCENES });
+  const toast = makeToast();
+  let loop: Loop;
+  const openNote = makeNoteBox(
+    () => (loop.paused = true),
+    (text) => {
+      loop.paused = false;
+      if (text) {
+        recorder.addNote(text);
+        toast(`Note saved (${recorder.notes.length} so far). "copy settings + notes" sends them to Claude.`);
+      }
+    },
+  );
+  buildTuningGui(tuning, { scene: sceneName, scenes: SCENES, recorder, addNote: openNote, toast });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLInputElement) return;
+    if (e.code === 'KeyC' && followCam) {
+      follow = !follow;
+      freeCam.enabled = !follow;
+      if (!follow && kaiju) freeCam.target.copy(kaiju.visual.position).setY(8);
+    } else if (e.code === 'KeyB') throwBall(mouse);
+    else if (e.code === 'KeyN') {
+      e.preventDefault();
+      openNote();
+    }
+  });
+
   document.getElementById('help')!.textContent = [
-    'W/S walk   A/D turn   Q/E look around   (gamepad: left stick, right stick)',
-    'C free camera (drag orbit, wheel zoom, right-drag pan)   click: throw ball',
+    'W/S run   A/D turn   (gamepad: left stick)      N: note for Claude',
+    'mouse drag: look around   wheel: zoom   double-click: reset view   Q/E: swing',
+    'C: free camera   B: throw ball',
   ].join('\n');
   document.getElementById('boot')?.remove();
 
@@ -74,7 +110,7 @@ async function boot(): Promise<void> {
   const sun = sim.parts.sun as THREE.DirectionalLight;
   const sunOffset = sun.position.clone();
 
-  const loop = new Loop({
+  loop = new Loop({
     step: () => {
       input.update();
       sim.step();
@@ -91,14 +127,14 @@ async function boot(): Promise<void> {
         const c = sim.counts();
         const k = kaiju
           ? [
-              `kaiju: ${kaiju.state}   ${kaiju.speed.toFixed(1)} m/s   tilt ${((kaiju.tilt * 180) / Math.PI).toFixed(0)}°   ` +
+              `kaiju: ${kaiju.state}   ${kaiju.speed.toFixed(1)} m/s   lean ${((kaiju.tilt * 180) / Math.PI).toFixed(0)}°   ` +
                 `stumbles ${kaiju.stumbles}   falls ${kaiju.falls}`,
             ]
           : [];
         return [
           ...k,
-          `bodies ${c.bodies}   awake ${c.awake}   debris ${chunks.looseCount}`,
           `damage: ${damage.chunksBroken} chunks   ${damage.propsDisturbed} props   ${damage.buildingsDamaged} buildings`,
+          `bodies ${c.bodies}   awake ${c.awake}   debris ${chunks.looseCount}   build ${BUILD}`,
         ];
       });
     },
@@ -106,7 +142,18 @@ async function boot(): Promise<void> {
   loop.start();
 
   // Hook for headless checks and console poking.
-  (window as unknown as { __game: unknown }).__game = { sim, tuning, loop, camera, freeCam, followCam, kaiju, THREE, ready: true };
+  (window as unknown as { __game: unknown }).__game = {
+    sim,
+    tuning,
+    loop,
+    camera,
+    freeCam,
+    followCam,
+    kaiju,
+    recorder,
+    THREE,
+    ready: true,
+  };
 }
 
 boot().catch((err) => {

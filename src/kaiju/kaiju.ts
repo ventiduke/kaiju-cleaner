@@ -15,7 +15,6 @@ const up = new THREE.Vector3();
 const fwd = new THREE.Vector3();
 const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
-const point = new THREE.Vector3();
 
 function smooth(t: number): number {
   const x = THREE.MathUtils.clamp(t, 0, 1);
@@ -48,12 +47,15 @@ export class Kaiju implements System {
   falls = 0;
   /** Seconds spent pushing without getting anywhere. */
   stall = 0;
+  /** Horizontal acceleration the feet are applying right now (m/s^2): what is tipping it. */
+  load = 0;
   private lastForwardSpeed = 0;
 
   /** Horizontal facing and left vectors, refreshed every step. */
   readonly forward = new THREE.Vector3(0, 0, 1);
   readonly left = new THREE.Vector3(1, 0, 0);
   private readonly ray;
+  private ghost: THREE.MeshBasicMaterial | null = null;
   private readonly legContext: LegContext;
 
   constructor(
@@ -110,6 +112,7 @@ export class Kaiju implements System {
     };
     this.legs = new Legs(sim, chunks, this.visual, dark, this.legContext);
     this.legs.onFootfall = (side, p, strength) => this.footfall(side, p, strength);
+    this.addSilhouette([...this.tail.meshes, ...this.legs.meshes]);
   }
 
   private get input(): PlayerInput {
@@ -155,6 +158,44 @@ export class Kaiju implements System {
         -r * (0.82 + 0.16 * Math.sin(t * Math.PI)),
       );
       plate.rotation.x = -Math.PI / 2 + 0.35;
+    }
+  }
+
+  /**
+   * Lets the kaiju show through whatever hides it, as a flat tinted shape.
+   * Every kaiju mesh marks the stencil where it is actually visible; a ghost copy of each
+   * mesh then draws only where it is behind something and no kaiju pixel was drawn.
+   */
+  private addSilhouette(extra: THREE.Mesh[]): void {
+    this.ghost = new THREE.MeshBasicMaterial({
+      color: 0x8dffd0,
+      transparent: true,
+      opacity: 0.4,
+      depthFunc: THREE.GreaterDepth,
+      depthWrite: false,
+      stencilWrite: true,
+      stencilRef: 1,
+      stencilFunc: THREE.NotEqualStencilFunc,
+      // Mark what the ghost draws too, so overlapping parts don't stack up darker.
+      stencilZPass: THREE.ReplaceStencilOp,
+    });
+    const meshes: THREE.Mesh[] = [...extra];
+    this.visual.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+    });
+    const seen = new Set<THREE.Material>();
+    for (const mesh of meshes) {
+      const material = mesh.material as THREE.Material;
+      if (!seen.has(material)) {
+        seen.add(material);
+        material.stencilWrite = true;
+        material.stencilRef = 1;
+        material.stencilFunc = THREE.AlwaysStencilFunc;
+        material.stencilZPass = THREE.ReplaceStencilOp;
+      }
+      const ghost = new THREE.Mesh(mesh.geometry, this.ghost);
+      ghost.renderOrder = 20;
+      mesh.add(ghost);
     }
   }
 
@@ -248,13 +289,21 @@ export class Kaiju implements System {
         const w = Math.PI * 2 * k.hoverFrequency;
         const zeta = this.state === 'getup' ? Math.max(k.hoverDamping, 1) : k.hoverDamping;
         const error = this.rideHeight - hit.timeOfImpact;
-        let lift = g + w * w * error - 2 * zeta * w * vel.y;
+        // A spring-damper near ride height. Far from it, approach no faster than the legs
+        // (pushing up) or gravity (coming down) can stop it, so it arrives without bouncing.
+        const brake = 1.6 * g * (error > 0 ? 0.6 : 1);
+        const approach = Math.min((Math.abs(error) * w) / (2 * zeta), Math.sqrt(brake * Math.abs(error)));
+        let lift = g + 2 * zeta * w * (Math.sign(error) * approach - vel.y);
         lift = THREE.MathUtils.clamp(lift, 0, g * 2.6) * engaged;
         body.applyImpulse({ x: 0, y: mass * lift * dt, z: 0 }, true);
       }
     }
 
-    // --- Locomotion: the feet push at a point well below the centre of mass ---
+    // --- Locomotion ---
+    // Everything the feet do is a horizontal acceleration, and every horizontal
+    // acceleration tips the body the other way (`lean`). That one coupling is where
+    // the lean into starts and stops, the roll out of corners, and the falls come from.
+    tmp.set(0, 0, 0);
     if (standing) {
       const target = input.thrust >= 0 ? input.thrust * k.maxSpeed : input.thrust * k.reverseSpeed;
       const diff = target * control - this.forwardSpeed;
@@ -268,26 +317,34 @@ export class Kaiju implements System {
       const rate = (speedingUp ? k.acceleration * boost : k.braking) * (speedingUp ? control : 1);
       const along = THREE.MathUtils.clamp(diff / dt, -rate, rate);
       const across = THREE.MathUtils.clamp(-sideSpeed / dt, -k.grip, k.grip);
-      tmp
-        .copy(this.forward)
-        .multiplyScalar(along)
-        .addScaledVector(this.left, across)
-        .multiplyScalar(mass * dt);
-      point.copy(pos);
-      point.y -= k.driveOffset;
-      body.applyImpulseAtPoint(tmp, point, true);
-    }
+      tmp.copy(this.forward).multiplyScalar(along).addScaledVector(this.left, across);
+      // A leaning kaiju staggers the way it leans, which is also what catches it.
+      tmp.x += up.x * k.stagger;
+      tmp.z += up.z * k.stagger;
+      body.applyImpulse({ x: tmp.x * mass * dt, y: 0, z: tmp.z * mass * dt }, true);
+      this.load = Math.hypot(tmp.x, tmp.z);
+    } else this.load = 0;
 
     // --- Balance and turning: angular accelerations, independent of mass ---
     const av = body.angvel();
-    tmp.set(av.x, av.y, av.z);
+    tmp2.crossVectors(tmp, UP).multiplyScalar(k.lean * dt);
+    tmp.set(av.x + tmp2.x, av.y, av.z + tmp2.z);
     if (engaged > 0) {
-      const w = Math.PI * 2 * k.uprightFrequency;
-      const zeta = this.state === 'getup' ? Math.max(k.uprightDamping, 0.9) : k.uprightDamping;
+      // Getting up uses a firmer, well-damped pull than everyday balance does.
+      const rising = this.state === 'getup';
+      const w = Math.PI * 2 * (rising ? Math.max(k.uprightFrequency, 0.85) : k.uprightFrequency);
+      const zeta = rising ? Math.max(k.uprightDamping, 0.9) : k.uprightDamping;
+      // The righting pull grows with tilt up to the stumble angle, then gives way: by the
+      // fall angle there is nothing left. Push it past the peak and it is going over.
+      let pull = this.tilt;
+      if (standing && this.tilt > k.stumbleAngle) {
+        const span = Math.max(0.01, k.fallAngle - k.stumbleAngle);
+        pull = k.stumbleAngle * Math.max(0, 1 - (this.tilt - k.stumbleAngle) / span);
+      }
       // Axis that rotates the body's up back onto world up; its length is sin(tilt).
       tmp2.crossVectors(up, UP);
       const s = tmp2.length();
-      if (s > 1e-5) tmp2.multiplyScalar((w * w * this.tilt) / s);
+      if (s > 1e-5) tmp2.multiplyScalar((w * w * pull) / s);
       tmp2.x -= 2 * zeta * w * av.x;
       tmp2.z -= 2 * zeta * w * av.z;
       tmp2.y = 0;
@@ -311,19 +368,33 @@ export class Kaiju implements System {
     if (this.sim.tick % 30 === 0) this.tail.syncMotors();
   }
 
-  /** The catch-step of a stumble: a shove at foot level toward the side it is toppling to. */
+  /** The catch-step of a stumble: a stagger toward the side it is toppling to, which rights it a little. */
   private lurch(mass: number): void {
     const k = this.sim.tuning.kaiju;
     tmp.set(up.x, 0, up.z);
     if (tmp.lengthSq() < 1e-6) return;
-    tmp.normalize().multiplyScalar(mass * k.stumbleLurch);
-    point.copy(pos);
-    point.y -= k.driveOffset;
-    this.body.applyImpulseAtPoint(tmp, point, true);
+    tmp.normalize().multiplyScalar(k.stumbleLurch);
+    this.body.applyImpulse({ x: tmp.x * mass, y: 0, z: tmp.z * mass }, true);
+    const av = this.body.angvel();
+    tmp2.crossVectors(tmp, UP).multiplyScalar(k.lean);
+    this.body.setAngvel({ x: av.x + tmp2.x, y: av.y, z: av.z + tmp2.z }, true);
+  }
+
+  /** Knocks the kaiju flat, toppling toward `direction` (defaults to its left). For hazards and tests. */
+  knockDown(direction: THREE.Vector3 = this.left): void {
+    if (this.state === 'fallen') return;
+    this.setState('fallen');
+    this.falls++;
+    const av = this.body.angvel();
+    tmp.crossVectors(UP, direction).normalize().multiplyScalar(1.6);
+    this.body.setAngvel({ x: av.x + tmp.x, y: av.y, z: av.z + tmp.z }, true);
+    const t = this.body.translation();
+    this.sim.emit('kaijuFall', { x: t.x, y: t.y, z: t.z });
   }
 
   render(alpha: number): void {
     this.legs.render(alpha, this.forward);
+    if (this.ghost) this.ghost.visible = this.sim.tuning.camera.silhouette;
   }
 
   position(target = new THREE.Vector3()): THREE.Vector3 {

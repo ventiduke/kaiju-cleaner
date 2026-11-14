@@ -10,6 +10,10 @@ export class FreeCamera {
   pitch = 0.55;
   distance = 150;
   onClick: ((ndc: THREE.Vector2) => void) | null = null;
+  /** While disabled, drags, wheel and double-clicks are handed to these instead (the follow camera). */
+  onDrag: ((dx: number, dy: number) => void) | null = null;
+  onWheel: ((deltaY: number) => void) | null = null;
+  onDoubleClick: (() => void) | null = null;
   enabled = true;
 
   constructor(
@@ -29,7 +33,10 @@ export class FreeCamera {
       down.x = e.clientX;
       down.y = e.clientY;
       down.moved += Math.abs(dx) + Math.abs(dy);
-      if (!this.enabled) return;
+      if (!this.enabled) {
+        this.onDrag?.(dx, dy);
+        return;
+      }
       if (down.button === 0) {
         this.yaw -= dx * 0.005;
         this.pitch = Math.max(0.05, Math.min(1.5, this.pitch + dy * 0.005));
@@ -49,11 +56,15 @@ export class FreeCamera {
       }
       down = null;
     });
+    dom.addEventListener('dblclick', () => {
+      if (!this.enabled) this.onDoubleClick?.();
+    });
     dom.addEventListener(
       'wheel',
       (e) => {
         e.preventDefault();
         if (this.enabled) this.distance = Math.max(20, Math.min(600, this.distance * Math.exp(e.deltaY * 0.001)));
+        else this.onWheel?.(e.deltaY);
       },
       { passive: false },
     );

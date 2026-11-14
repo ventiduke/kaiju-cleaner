@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ALL_GROUPS, FIXED_DT, Group, groups, type RigidBody } from '../core/physics';
 import type { Sim, System } from '../sim';
 import { buildingChunks } from './building';
-import { chunkCount, totalFloors, type BuildingSpec } from './cityGen';
+import { chunkCount, totalFloors, type BridgeSpec, type BuildingSpec } from './cityGen';
 import type { Damage } from './damage';
 import { InstancedBodies } from './instanced';
 
@@ -27,6 +27,8 @@ export interface Chunk {
   supports: { chunk: number; area: number }[];
   dependents: number[];
   footprint: number;
+  /** Share of its footprint that must stay supported, where it differs from the tuned default. */
+  needs?: number;
   /** Sim time at which a scheduled collapse lets this chunk go, or -1. */
   releaseAt: number;
   /** Recent pressure on the chunk (decaying sum of contact impulses), and when it was last updated. */
@@ -108,8 +110,10 @@ export class ChunkField implements System {
     private sim: Sim,
     private damage: Damage,
     specs: BuildingSpec[],
+    bridges: BridgeSpec[] = [],
   ) {
-    const capacity = specs.reduce((n, b) => n + chunkCount(b), 0);
+    const bridgePieces = (b: BridgeSpec) => Math.max(2, Math.round((b.to - b.from) / sim.tuning.city.chunkSize));
+    const capacity = specs.reduce((n, b) => n + chunkCount(b), 0) + bridges.reduce((n, b) => n + bridgePieces(b), 0);
     this.field = new InstancedBodies(
       sim,
       new THREE.BoxGeometry(1, 1, 1),
@@ -117,65 +121,144 @@ export class ChunkField implements System {
       capacity,
     );
     for (const spec of specs) this.addBuilding(spec);
+    for (const bridge of bridges) this.addBridge(bridge, bridgePieces(bridge));
     sim.onContactForce((a, b, force) => this.onForce(a, b, force));
   }
 
-  private addBuilding(spec: BuildingSpec): void {
+  private createChunk(
+    building: number,
+    floor: number,
+    x: number,
+    y: number,
+    z: number,
+    hx: number,
+    hy: number,
+    hz: number,
+    color: number,
+    supports: Chunk['supports'],
+    needs?: number,
+  ): number {
     const { R, world, tuning } = this.sim;
     const d = tuning.destruction;
+    const mass = 8 * hx * hy * hz * d.chunkDensity;
+    const body = world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(x, y, z));
+    const collider = world.createCollider(
+      R.ColliderDesc.cuboid(hx - 0.03, hy - 0.03, hz - 0.03)
+        .setDensity(d.chunkDensity)
+        .setFriction(d.friction)
+        .setRestitution(0)
+        .setCollisionGroups(groups(Group.CHUNK, ALL_GROUPS))
+        .setActiveEvents(R.ActiveEvents.CONTACT_FORCE_EVENTS)
+        .setContactForceEventThreshold((mass * EVENT_SPEED) / FIXED_DT),
+      body,
+    );
+    const index = this.chunks.length;
+    for (const s of supports) this.chunks[s.chunk].dependents.push(index);
+    this.chunks.push({
+      building,
+      floor,
+      x,
+      y,
+      z,
+      radius: Math.hypot(hx, hy, hz),
+      body,
+      collider: collider.handle,
+      mass,
+      state: ChunkState.Fixed,
+      supports,
+      dependents: [],
+      footprint: supports.reduce((a, s) => a + s.area, 0),
+      needs,
+      releaseAt: -1,
+      stress: 0,
+      stressTick: 0,
+    });
+    this.byCollider.set(collider.handle, index);
+    this.field.add(body, hx * 2 - GROOVE, hy * 2 - GROOVE, hz * 2 - GROOVE, color);
+    const record = this.buildings[building];
+    record.floorTotal[floor]++;
+    record.floorFixed[floor]++;
+    record.count++;
+    this.fixedCount++;
+    return index;
+  }
+
+  private addBuilding(spec: BuildingSpec): void {
     const first = this.chunks.length;
     const floors = totalFloors(spec);
-    const record: BuildingRecord = {
+    const building = this.buildings.length;
+    this.buildings.push({
       first,
       count: 0,
       floorTotal: new Array(floors).fill(0),
       floorFixed: new Array(floors).fill(0),
       failedFrom: Infinity,
       fellFloors: [],
-    };
-    const building = this.buildings.length;
-    for (const c of buildingChunks(spec, tuning.city.floorHeight)) {
-      const mass = 8 * c.hx * c.hy * c.hz * d.chunkDensity;
-      const body = world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(c.x, c.y, c.z));
-      const collider = world.createCollider(
-        R.ColliderDesc.cuboid(c.hx - 0.03, c.hy - 0.03, c.hz - 0.03)
-          .setDensity(d.chunkDensity)
-          .setFriction(d.friction)
-          .setRestitution(0)
-          .setCollisionGroups(groups(Group.CHUNK, ALL_GROUPS))
-          .setActiveEvents(R.ActiveEvents.CONTACT_FORCE_EVENTS)
-          .setContactForceEventThreshold((mass * EVENT_SPEED) / FIXED_DT),
-        body,
-      );
-      const index = this.chunks.length;
+    });
+    for (const c of buildingChunks(spec, this.sim.tuning.city.floorHeight)) {
       const supports = c.supports.map((s) => ({ chunk: first + s.chunk, area: s.area }));
-      for (const s of supports) this.chunks[s.chunk].dependents.push(index);
-      this.chunks.push({
-        building,
-        floor: c.floor,
-        x: c.x,
-        y: c.y,
-        z: c.z,
-        radius: Math.hypot(c.hx, c.hy, c.hz),
-        body,
-        collider: collider.handle,
-        mass,
-        state: ChunkState.Fixed,
-        supports,
-        dependents: [],
-        footprint: supports.reduce((a, s) => a + s.area, 0),
-        releaseAt: -1,
-        stress: 0,
-        stressTick: 0,
-      });
-      this.byCollider.set(collider.handle, index);
-      this.field.add(body, c.hx * 2 - GROOVE, c.hy * 2 - GROOVE, c.hz * 2 - GROOVE, c.color);
-      record.floorTotal[c.floor]++;
-      record.floorFixed[c.floor]++;
-      record.count++;
-      this.fixedCount++;
+      this.createChunk(building, c.floor, c.x, c.y, c.z, c.hx, c.hy, c.hz, c.color, supports);
     }
-    this.buildings.push(record);
+  }
+
+  /**
+   * A skybridge: a row of chunks hung between two buildings. Each piece holds onto its
+   * neighbour on both sides (the end pieces onto the buildings), and needs both: break
+   * one link and the span lets go piece by piece from there.
+   */
+  private addBridge(spec: BridgeSpec, pieces: number): void {
+    const floorHeight = this.sim.tuning.city.floorHeight;
+    const y = floorHeight * (spec.floor + 0.5);
+    const anchor = (buildingIndex: number, at: number): number => {
+      const b = this.buildings[buildingIndex];
+      let best = -1;
+      let bestDist = Infinity;
+      for (let i = b.first; i < b.first + b.count; i++) {
+        const c = this.chunks[i];
+        if (c.floor !== spec.floor) continue;
+        const dist = spec.along === 'x' ? Math.hypot(c.x - at, c.z - spec.center) : Math.hypot(c.z - at, c.x - spec.center);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = i;
+        }
+      }
+      return best;
+    };
+    const start = anchor(spec.a, spec.from);
+    const end = anchor(spec.b, spec.to);
+    if (start < 0 || end < 0) return;
+
+    const building = this.buildings.length;
+    const first = this.chunks.length;
+    this.buildings.push({
+      first,
+      count: 0,
+      floorTotal: new Array(spec.floor + 1).fill(0),
+      floorFixed: new Array(spec.floor + 1).fill(0),
+      failedFrom: Infinity,
+      fellFloors: [],
+    });
+    // A little short of the gap at each end, so loose pieces drop clear instead of wedging.
+    const slack = 0.3;
+    const length = (spec.to - spec.from - 2 * slack) / pieces;
+    for (let i = 0; i < pieces; i++) {
+      const along = spec.from + slack + length * (i + 0.5);
+      const [x, z, hx, hz] =
+        spec.along === 'x' ? [along, spec.center, length / 2, spec.width / 2] : [spec.center, along, spec.width / 2, length / 2];
+      const before = i === 0 ? start : first + i - 1;
+      const index = this.createChunk(building, spec.floor, x, y, z, hx, floorHeight * 0.42, hz, spec.color, [{ chunk: before, area: 0.5 }], 1);
+      // Link forward as well, once the next piece (or the far building) is known.
+      if (i > 0) this.link(index - 1, index);
+      if (i === pieces - 1) this.link(index, end);
+    }
+  }
+
+  /** Makes `chunk` rest on `support` as well as whatever it already rests on. */
+  private link(chunk: number, support: number): void {
+    const c = this.chunks[chunk];
+    c.supports.push({ chunk: support, area: 0.5 });
+    c.footprint += 0.5;
+    this.chunks[support].dependents.push(chunk);
   }
 
   /** Registers a heavy body so its momentum carries through what it breaks. */
@@ -268,7 +351,7 @@ export class ChunkField implements System {
           // Kick the chunk with the hitter's own pre-contact velocity at that point.
           v1.set(c.x, c.y, c.z).sub(hitter.pp);
           v2.copy(hitter.pw).cross(v1).add(hitter.pv).multiplyScalar(d.handoff).clampLength(0, MAX_KICK);
-          hitter.cost += d.breakDrag * d.breakSpeed * c.mass;
+          hitter.cost += d.crunch;
           hitter.hit = true;
           this.loosen(pb.chunk, v2);
         } else {
@@ -289,9 +372,10 @@ export class ChunkField implements System {
         const c = this.chunks[i];
         for (const h of this.hitters.values()) {
           const p = h.body.translation();
-          const near = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z) < h.reach + c.radius + 2;
+          // Near enough to be the far side of one chunk-thick sandwich.
+          const near = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z) < h.reach + c.radius * 2.5;
           if (near && h.pv.lengthSq() > 1) {
-            h.cost += d.breakDrag * d.breakSpeed * c.mass;
+            h.cost += d.crunch;
             h.hit = true;
           }
         }
@@ -306,10 +390,12 @@ export class ChunkField implements System {
       if (speed < 1e-3) continue;
       h.body.setLinvel(h.pv, true);
       h.body.setAngvel(h.pw, true);
-      const cost = Math.min(h.cost, h.body.mass() * speed);
+      // `cost` is in m/s: the speed lost to everything broken this step.
+      const cost = h.body.mass() * Math.min(h.cost, speed);
       v1.copy(h.pv).multiplyScalar(-cost / speed);
       const p = h.body.translation();
-      v2.set(p.x, p.y + d.impactHeight, p.z);
+      // Never outside the body itself: a ball has no head to be knocked back by.
+      v2.set(p.x, p.y + Math.min(d.impactHeight, h.reach * 0.9), p.z);
       h.body.applyImpulseAtPoint(v1, v2, true);
     }
     this.brokeThisStep.length = 0;
@@ -380,7 +466,7 @@ export class ChunkField implements System {
       if (dep.state !== ChunkState.Fixed) continue;
       let area = 0;
       for (const s of dep.supports) if (this.chunks[s.chunk].state === ChunkState.Fixed) area += s.area;
-      if (area / dep.footprint < d.supportFraction) this.schedule(di, time + d.collapseDelay);
+      if (area / dep.footprint < (dep.needs ?? d.supportFraction)) this.schedule(di, time + d.collapseDelay);
     }
 
     // A floor that has lost too many pieces fails, and takes everything above with it.

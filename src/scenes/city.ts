@@ -12,7 +12,7 @@ import { addEnvironment } from './common';
 /** Asphalt, block slabs and lane dashes. Purely visual. */
 function addStreets(sim: Sim, layout: CityLayout): void {
   const asphalt = new THREE.Mesh(
-    new THREE.PlaneGeometry(layout.size, layout.size),
+    new THREE.PlaneGeometry(layout.sizeX, layout.sizeZ),
     new THREE.MeshLambertMaterial({ color: 0x4b4f58 }),
   );
   asphalt.rotation.x = -Math.PI / 2;
@@ -28,13 +28,21 @@ function addStreets(sim: Sim, layout: CityLayout): void {
     sim.scene.add(slab);
   }
 
+  const plazaMaterial = new THREE.MeshLambertMaterial({ color: 0xd6cdb8 });
+  for (const b of layout.plazas) {
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(b.w - 3, 0.3, b.d - 3), plazaMaterial);
+    slab.position.set(b.x, 0.12, b.z);
+    slab.receiveShadow = true;
+    sim.scene.add(slab);
+  }
+
   const dashes: THREE.Matrix4[] = [];
-  const half = layout.size / 2;
   const m = new THREE.Matrix4();
   const quarter = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
   const none = new THREE.Quaternion();
   const one = new THREE.Vector3(1, 1, 1);
   for (const s of layout.streets) {
+    const half = (s.along === 'z' ? layout.sizeZ : layout.sizeX) / 2;
     for (let t = -half + 4; t < half - 4; t += 9) {
       const pos = s.along === 'z' ? new THREE.Vector3(s.center, 0.05, t) : new THREE.Vector3(t, 0.05, s.center);
       dashes.push(m.compose(pos, s.along === 'z' ? none : quarter, one).clone());
@@ -54,7 +62,7 @@ export function populate(sim: Sim, layout: CityLayout): void {
   const damage = new Damage();
   sim.parts.damage = damage;
   sim.parts.layout = layout;
-  const chunks = sim.add(new ChunkField(sim, damage, layout.buildings));
+  const chunks = sim.add(new ChunkField(sim, damage, layout.buildings, layout.bridges));
   sim.parts.chunks = chunks;
   const ball = sim.parts.ball as BallTool;
   ball.onSpawn = (body) => chunks.addHitter(body, sim.tuning.debug.ballRadius);
@@ -66,7 +74,7 @@ export function populate(sim: Sim, layout: CityLayout): void {
 
 export function buildCity(sim: Sim): void {
   const layout = generateCity(sim.tuning.city);
-  addEnvironment(sim, Math.max(300, layout.size * 1.25));
+  addEnvironment(sim, Math.max(300, Math.max(layout.sizeX, layout.sizeZ) * 1.25));
   addStreets(sim, layout);
   populate(sim, layout);
 }

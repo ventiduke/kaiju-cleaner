@@ -12,10 +12,13 @@ function lerpAngle(from: number, to: number, t: number): number {
 /**
  * Third-person camera: high, behind, and lazy. It trails the kaiju's position and
  * heading with separate lags, so turns swing the view after the body has gone.
+ * The mouse (or Q/E) swings it round and up and down; the wheel zooms.
  */
 export class FollowCamera {
-  /** Manual orbit offset in radians. */
+  /** View offsets on top of the tuned distance and height: swing (rad), tilt (rad), zoom (x). */
   orbit = 0;
+  pitch = 0;
+  zoom = 1;
   private yaw: number;
   private focus = new THREE.Vector3();
   private trauma = 0;
@@ -33,6 +36,23 @@ export class FollowCamera {
     sim.on('kaijuFall', (e) => this.shake(0.6, e));
   }
 
+  /** Mouse drag: swing round the kaiju and raise or lower the view. */
+  drag(dx: number, dy: number): void {
+    this.orbit -= dx * 0.005;
+    this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.004, -1.2, 1.2);
+  }
+
+  wheel(deltaY: number): void {
+    this.zoom = THREE.MathUtils.clamp(this.zoom * Math.exp(deltaY * 0.001), 0.35, 3);
+  }
+
+  /** Back to straight behind, at the tuned height and distance. */
+  reset(): void {
+    this.orbit = 0;
+    this.pitch = 0;
+    this.zoom = 1;
+  }
+
   /** Adds shake, fading with distance from the kaiju. */
   private shake(amount: number, at: { x: number; z: number }): void {
     const d = Math.hypot(at.x - this.focus.x, at.z - this.focus.z);
@@ -44,17 +64,19 @@ export class FollowCamera {
     const input = this.sim.players[this.kaiju.player];
     this.time += frameDt;
     this.orbit += (input?.camYaw ?? 0) * 1.6 * frameDt;
-    // Drift back behind the kaiju once it is walking again.
-    if (!input?.camYaw && Math.abs(input?.thrust ?? 0) > 0.1) this.orbit *= Math.exp(-frameDt / 1.5);
 
     this.focus.lerp(this.kaiju.visual.position, 1 - Math.exp(-frameDt / Math.max(0.01, c.followLag)));
     this.yaw = lerpAngle(this.yaw, this.kaiju.yaw, 1 - Math.exp(-frameDt / Math.max(0.01, c.yawLag)));
 
+    // The tuned distance and height set the resting view; the mouse offsets move along a dome.
+    const range = Math.hypot(c.distance, c.height) * this.zoom;
+    const elevation = THREE.MathUtils.clamp(Math.atan2(c.height, c.distance) + this.pitch, 0.08, 1.5);
     const a = this.yaw + this.orbit;
+    const flat = Math.cos(elevation) * range;
     this.camera.position.set(
-      this.focus.x - Math.sin(a) * c.distance,
-      c.height,
-      this.focus.z - Math.cos(a) * c.distance,
+      this.focus.x - Math.sin(a) * flat,
+      Math.sin(elevation) * range,
+      this.focus.z - Math.cos(a) * flat,
     );
     if (this.camera.fov !== c.fov) {
       this.camera.fov = c.fov;

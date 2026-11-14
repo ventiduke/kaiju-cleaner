@@ -23,20 +23,48 @@ Scenes are picked with a URL parameter:
 
 ## Controls
 
-| Action | Keyboard | Gamepad |
+| Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
-| Walk forward / back | W / S | Left stick up / down |
+| Run forward / back | W / S | Left stick up / down |
 | Turn | A / D | Left stick left / right |
-| Look around | Q / E | Right stick |
+| Look around, raise or lower the view | Drag the mouse (or Q / E to swing) | Right stick |
+| Zoom | Mouse wheel | |
+| Reset the view | Double-click | |
+| Note for Claude | N | |
 | Free camera on / off | C | |
-| Throw a debug ball | Click | |
+| Throw a debug ball at the cursor | B (or click, in the free camera) | |
 
-In the free camera: drag to orbit, wheel to zoom, right-drag to pan.
+Fast and sharp tips it over: hold a hard turn at speed and it stumbles, then falls. Let go when it stumbles
+and it saves itself. Slow down, or feather the turn, to corner cleanly.
+
+## Tuning the feel
+
+The panel opens on six **Feel** dials: speed, pickup, turning, grip, wobble and balance. They drive the
+detailed numbers under **Advanced**, which you can still fine-tune by hand afterwards.
+
+## Giving feedback an agent can use
+
+1. Play. Press **N** whenever something is worth saying; the note is saved with the settings and what the
+   kaiju was doing at that moment.
+2. Press **copy settings + notes** and paste into the chat. It is a few lines: only the settings you changed,
+   your notes, and stats for the run (stumbles, falls, lean, damage).
+3. For more detail, **save full session file** and attach it, or commit it to `feedback/`. It also holds your
+   inputs, so the run can be replayed.
+
+To read a session file, or to see how any settings handle:
+
+```sh
+npm run feel                          # handling numbers for the shipped defaults
+npm run feel -- feedback/session.json # your notes, your run, your settings vs the defaults, and a replay
+```
+
+The handling numbers come from fixed scripted maneuvers (`test/feel/maneuvers.ts`): time to top speed, lean,
+and whether a set of turns at different speeds ends steady, in a stumble, or in a fall.
 
 ## Status
 
-M0 (scaffold), M1 (destructible city), M2 (kaiju movement) and M3 (kaiju in the city) are built. Each has
-measurable checks in `test/`; whether the movement is *fun* is a playtest call, made by tuning the sliders.
+M0 (scaffold), M1 (destructible city), M2 (kaiju movement) and M3 (kaiju in the city) are built, and have had one
+round of playtest changes. Each has measurable checks in `test/`; whether the movement is *fun* is a playtest call.
 
 ## How the code is laid out
 

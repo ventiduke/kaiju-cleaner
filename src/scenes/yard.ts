@@ -16,9 +16,13 @@ export function yardLayout(): CityLayout {
   for (let i = 0; i < 5; i++) props.push({ kind: 'tree', x: 30 + i * 10, z: 4, rotY: i, color: 0xffffff });
   props.push({ kind: 'cart', x: 20, z: -12, rotY: 0.4, color: 0xe07b39 });
   return {
-    size: 0,
+    sizeX: 0,
+    sizeZ: 0,
     blocks: [],
+    plazas: [],
     streets: [],
+    // A skybridge between the low block and the slim tower, to practise on.
+    bridges: [{ a: 0, b: 1, along: 'x', from: -37, to: -8, center: -57, floor: 2, width: 5, color: 0x8fc7d8 }],
     buildings: [
       { x: -45, z: -55, color: 0xcfa98f, tiers: [{ floors: 3, w: 16, d: 16, nx: 2, nz: 2 }] },
       { x: 0, z: -60, color: 0xb5c4cf, tiers: [{ floors: 8, w: 16, d: 16, nx: 2, nz: 2 }] },
@@ -33,14 +37,24 @@ export function yardLayout(): CityLayout {
       },
     ],
     props,
-    spawn: { x: 0, z: 40, yaw: Math.PI },
+    spawn: { x: 0, z: 70, yaw: Math.PI },
   };
 }
 
 /** Nothing but ground and a kaiju: for judging movement on its own, and for the movement tests. */
 export function buildPlane(sim: Sim): void {
   addEnvironment(sim);
-  populate(sim, { size: 0, blocks: [], streets: [], buildings: [], props: [], spawn: { x: 0, z: 0, yaw: 0 } });
+  populate(sim, {
+    sizeX: 0,
+    sizeZ: 0,
+    blocks: [],
+    plazas: [],
+    streets: [],
+    buildings: [],
+    bridges: [],
+    props: [],
+    spawn: { x: 0, z: 0, yaw: 0 },
+  });
 }
 
 /** The test yard: a flat plane with a few things to knock about. The permanent tuning scene. */

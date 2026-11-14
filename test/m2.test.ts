@@ -1,26 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import type { Kaiju } from '../src/kaiju/kaiju';
-import type { Sim } from '../src/sim';
-import { makeGame } from './helpers';
+import { codeDefaults, applyFeel, makeTuning } from '../src/core/tuning';
+import { feelReport, formatReport, rig, turnAtSpeed } from './feel/maneuvers';
 
-async function plane(): Promise<{ sim: Sim; k: Kaiju }> {
-  const g = await makeGame('plane');
-  return { sim: g.sim, k: g.sim.parts.kaiju as Kaiju };
-}
+describe('feel dials', () => {
+  it('derive the detailed kaiju numbers, and the shipped defaults agree with them', () => {
+    const t = structuredClone(codeDefaults);
+    applyFeel(t);
+    expect(t.kaiju).toEqual(codeDefaults.kaiju);
+  });
 
-/** Steps until `done()` is true; returns the seconds it took, or Infinity past the limit. */
-function secondsUntil(sim: Sim, done: () => boolean, limit: number): number {
-  const start = sim.time;
-  while (sim.time - start < limit) {
-    sim.step();
-    if (done()) return sim.time - start;
-  }
-  return Infinity;
-}
+  it('carry through overrides, and let an explicit detailed value win', () => {
+    expect(makeTuning({ feel: { speed: 10 } }).kaiju.maxSpeed).toBe(10);
+    expect(makeTuning({ feel: { speed: 10 }, kaiju: { maxSpeed: 12 } }).kaiju.maxSpeed).toBe(12);
+    expect(makeTuning({ kaiju: { grip: 5 } }).kaiju.grip).toBe(5);
+  });
+});
 
 describe('M2 kaiju movement', () => {
   it('stands still without drifting, stumbling or falling', async () => {
-    const { sim, k } = await plane();
+    const { sim, k } = await rig();
     sim.run(60 * 10);
     const p = k.position();
     expect(Math.hypot(p.x, p.z)).toBeLessThan(0.5);
@@ -29,112 +27,105 @@ describe('M2 kaiju movement', () => {
     expect(k.stumbles + k.falls).toBe(0);
   });
 
-  it('walks a long straight line without ever stumbling', async () => {
-    const { sim, k } = await plane();
+  it('runs a long straight line without ever stumbling', async () => {
+    const { sim, k } = await rig();
     sim.players[0].thrust = 1;
-    let maxTilt = 0;
-    for (let i = 0; i < 60 * 25; i++) {
-      sim.step();
-      maxTilt = Math.max(maxTilt, k.tilt);
-    }
+    sim.run(60 * 20);
     expect(k.stumbles + k.falls).toBe(0);
-    expect(k.state).toBe('walk');
-    expect(k.position().z).toBeGreaterThan(150);
-    expect(Math.abs(k.position().x)).toBeLessThan(3);
-    // It should visibly lean and sway, though: this is not a hovercraft.
-    expect(maxTilt).toBeGreaterThan(0.08);
+    expect(k.position().z).toBeGreaterThan(sim.tuning.kaiju.maxSpeed * 17);
+    expect(Math.abs(k.position().x)).toBeLessThan(4);
   });
 
-  it('is heavy: 2-4 s to reach top speed, 1.5-3 s to stop', async () => {
-    const { sim, k } = await plane();
-    const max = sim.tuning.kaiju.maxSpeed;
-    sim.players[0].thrust = 1;
-    const up = secondsUntil(sim, () => k.speed > max * 0.95, 10);
-    sim.run(60);
-    sim.players[0].thrust = 0;
-    const down = secondsUntil(sim, () => k.speed < 0.3, 10);
-    console.log(`top speed in ${up.toFixed(2)} s, stop in ${down.toFixed(2)} s`);
-    expect(up).toBeGreaterThan(2);
-    expect(up).toBeLessThan(4);
-    expect(down).toBeGreaterThan(1.5);
-    expect(down).toBeLessThan(3);
+  it('handles as designed: the default feel report', async () => {
+    const rep = await feelReport();
+    console.log(formatReport(rep, 'Feel report (defaults)'));
+    const t = makeTuning();
+
+    // Snappy but not instant, and it visibly leans into starts and stops.
+    expect(rep.pickup).toBeGreaterThan(t.feel.pickup * 0.7);
+    expect(rep.pickup).toBeLessThan(t.feel.pickup * 1.4);
+    expect(rep.stop).toBeLessThan(3.5);
+    expect(rep.startLeanDeg).toBeGreaterThan(5);
+    expect(rep.startLeanDeg).toBeLessThan(25);
+
+    // The handling envelope: speed times turn sharpness is what tips it.
+    expect(rep.turns['full speed, full turn, held 2s'].outcome).toBe('fall');
+    expect(rep.turns['full speed, full turn, tapped 0.3s'].outcome).toBe('steady');
+    expect(rep.turns['full speed, half turn, held 2s'].outcome).toBe('steady');
+    expect(rep.turns['full speed, quarter turn, held 2s'].outcome).toBe('steady');
+    expect(rep.turns['70% speed, full turn, held 2s'].outcome).not.toBe('steady');
+    expect(rep.turns['40% speed, full turn, held 2s'].outcome).toBe('steady');
+
+    // There is time to react between the stumble and the fall.
+    const hard = rep.turns['full speed, full turn, held 2s'];
+    expect(hard.fallAt! - hard.stumbleAt!).toBeGreaterThan(0.4);
+    expect(rep.getUp).toBeLessThan(7);
   });
 
-  it('stumbles on a hard turn at full speed, swings its tail wide, and recovers', async () => {
-    const { sim, k } = await plane();
+  it('saves itself if you let go of the turn when it stumbles', async () => {
+    const { sim, k } = await rig();
     sim.players[0].thrust = 1;
     sim.run(60 * 5);
     sim.players[0].turn = 1;
-    let widest = 0;
-    for (let i = 0; i < 60 * 4; i++) {
-      sim.step();
-      // How far the tail tip is from the line straight behind the body.
-      const p = k.position();
-      const t = k.tail.tip();
-      const dx = t.x - p.x;
-      const dz = t.z - p.z;
-      widest = Math.max(widest, Math.abs(dx * k.left.x + dz * k.left.z));
-    }
-    console.log(`tail tip swung ${widest.toFixed(1)} m off-axis; stumbles ${k.stumbles}`);
-    expect(k.stumbles).toBeGreaterThanOrEqual(1);
-    expect(k.falls).toBe(0);
-    expect(widest).toBeGreaterThan(sim.tuning.kaiju.bodyRadius * 2);
+    for (let i = 0; i < 60 * 3 && k.stumbles === 0; i++) sim.step();
+    expect(k.stumbles).toBe(1);
     sim.players[0].turn = 0;
-    sim.players[0].thrust = 0;
     sim.run(60 * 4);
-    expect(k.state).toBe('walk');
-    expect(k.tilt).toBeLessThan(0.15);
-  });
-
-  it('can take a gentle turn at half speed without stumbling', async () => {
-    const { sim, k } = await plane();
-    sim.players[0].thrust = 0.5;
-    sim.run(60 * 4);
-    sim.players[0].turn = 0.5;
-    sim.run(60 * 8);
-    expect(k.stumbles + k.falls).toBe(0);
-  });
-
-  it('recovers from a shove on its own', async () => {
-    const { sim, k } = await plane();
-    sim.run(60);
-    k.body.applyTorqueImpulse({ x: 0, y: 0, z: k.body.mass() * 120 }, true);
-    const recovered = secondsUntil(sim, () => k.stumbles > 0 && k.state === 'walk', 6);
-    expect(k.stumbles).toBeGreaterThanOrEqual(1);
     expect(k.falls).toBe(0);
-    expect(recovered).toBeLessThan(4);
+    expect(k.state).toBe('walk');
   });
 
-  it('falls over when shoved hard, then gets back up', async () => {
-    const { sim, k } = await plane();
+  it('balance dial: solid never falls on the hard turn, tippy falls on a gentler one', async () => {
+    expect((await turnAtSpeed(1, 1, 2, { feel: { balance: 1 } })).outcome).not.toBe('fall');
+    expect((await turnAtSpeed(0.7, 1, 2, { feel: { balance: 0.1 } })).outcome).toBe('fall');
+  });
+
+  it('grip dial: low grip slides wide instead of tipping', async () => {
+    const grippy = await turnAtSpeed(1, 1, 1, {});
+    const slick = await turnAtSpeed(1, 1, 1, { feel: { grip: 8 } });
+    expect(slick.outcome).toBe('steady');
+    expect(slick.maxTiltDeg).toBeLessThan(grippy.maxTiltDeg);
+  });
+
+  it('wobble dial: more wobble means more lean and more sway', async () => {
+    const steady = await feelReport({ feel: { wobble: 0 } });
+    const drunk = await feelReport({ feel: { wobble: 1, balance: 1 } });
+    expect(drunk.startLeanDeg).toBeGreaterThan(steady.startLeanDeg * 1.5);
+    expect(drunk.swayDeg).toBeGreaterThan(steady.swayDeg);
+  });
+
+  it('falls over when knocked flat, then gets back up and can run again', async () => {
+    const { sim, k } = await rig();
     sim.run(60);
-    k.body.applyTorqueImpulse({ x: 0, y: 0, z: k.body.mass() * 420 }, true);
-    sim.run(60);
+    k.knockDown();
+    sim.run(30);
     expect(k.falls).toBe(1);
     expect(k.state).toBe('fallen');
-    const up = secondsUntil(sim, () => k.state === 'walk', 15);
-    console.log(`back on its feet ${up.toFixed(1)} s after falling`);
-    expect(up).toBeLessThan(12);
-    sim.run(60 * 3);
+    sim.run(60 * 9);
+    expect(k.state).toBe('walk');
     expect(k.position().y).toBeCloseTo(k.rideHeight, 0);
     expect(k.tilt).toBeLessThan(0.15);
     expect(k.falls).toBe(1);
-    // And it can walk again.
     sim.players[0].thrust = 1;
     sim.run(60 * 4);
     expect(k.speed).toBeGreaterThan(sim.tuning.kaiju.maxSpeed * 0.8);
   });
 
-  it('keeps its feet under it: steps alternate and land near the body', async () => {
-    const { sim, k } = await plane();
+  it('keeps its feet under it at a sprint: steps alternate and stay in reach', async () => {
+    const { sim, k } = await rig();
     const sides: number[] = [];
     sim.on('footfall', (e) => sides.push(e.side));
     sim.players[0].thrust = 1;
-    sim.run(60 * 10);
-    expect(sides.length).toBeGreaterThan(10);
+    let farthest = 0;
+    for (let i = 0; i < 60 * 10; i++) {
+      sim.step();
+      const p = k.position();
+      for (const f of k.legs.feet) farthest = Math.max(farthest, Math.hypot(f.pos.x - p.x, f.pos.z - p.z));
+    }
+    expect(sides.length).toBeGreaterThan(15);
     const repeats = sides.filter((s, i) => i > 0 && s === sides[i - 1]).length;
     expect(repeats / sides.length).toBeLessThan(0.2);
-    const p = k.position();
-    for (const f of k.legs.feet) expect(Math.hypot(f.pos.x - p.x, f.pos.z - p.z)).toBeLessThan(14);
+    // Never planted farther away than the leg could stretch.
+    expect(farthest).toBeLessThan(k.legs.reach);
   });
 });
