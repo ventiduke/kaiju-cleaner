@@ -1,5 +1,6 @@
 import { Rng } from '../core/rng';
 import type { Tuning } from '../core/tuning';
+import { shade } from './building';
 
 /** One stacked section of a building. Tiers are centred on the building and listed bottom-up. */
 export interface Tier {
@@ -64,7 +65,35 @@ export interface BridgeSpec {
   thickness?: number;
   /** How far down the piers go (road bridges). */
   pierDepth?: number;
+  /** Index of a deck piece that is missing: a repair job. */
+  gap?: number;
   width: number;
+  color: number;
+}
+
+/** One box of a repair piece, relative to the centre of the piece's base. */
+export interface PieceBox {
+  x: number;
+  y: number;
+  z: number;
+  hx: number;
+  hy: number;
+  hz: number;
+  color: number;
+}
+
+/** Something broken off that has to be carried back to where it belongs. */
+export interface JobSpec {
+  kind: 'top' | 'span';
+  boxes: PieceBox[];
+  height: number;
+  /** Where the piece is lying at the start. */
+  start: { x: number; z: number; yaw: number };
+  /** Where its base belongs. */
+  socket: { x: number; y: number; z: number; yaw: number };
+  /** It looks the same every this many radians of turn (a square top: a quarter turn). */
+  symmetry: number;
+  /** Marker colour shared by the piece and its place. */
   color: number;
 }
 
@@ -94,6 +123,7 @@ export interface CityLayout {
   bridges: BridgeSpec[];
   props: PropSpec[];
   hazards: Hazard[];
+  jobs: JobSpec[];
   river: River | null;
   /** Where a kaiju starts: at the south end of the widest street, facing north (-z). */
   spawn: { x: number; z: number; yaw: number };
@@ -308,6 +338,65 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     }
   }
 
+  // Repair jobs, part one: towers that have lost their top three floors. The top sits in the
+  // nearest crossroads (the one spot guaranteed clear of parked cars and lamp posts).
+  const jobs: JobSpec[] = [];
+  const JOB_COLORS = [0xffd23f, 0x3fd0ff, 0xff7ad9, 0x8cff66, 0xff9a3f, 0xb69cff];
+  const crossings: { x: number; z: number; taken: boolean }[] = [];
+  for (const sx of ax.streets) {
+    az.streets.forEach((sz, i) => {
+      if (i !== riverRow) crossings.push({ x: sx.center, z: sz.center, taken: false });
+    });
+  }
+  const tops = Math.max(0, cfg.repairJobs - (riverRow >= 0 ? 1 : 0));
+  const order = buildings.map((_, i) => i).sort(() => rng.next() - 0.5);
+  for (const i of order) {
+    if (jobs.length >= tops) break;
+    const b = buildings[i];
+    const t = b.tiers[0];
+    if (b.tiers.length !== 1 || t.nx !== 2 || t.nz !== 2 || t.floors < 6) continue;
+    if (jobs.some((j) => Math.hypot(j.socket.x - b.x, j.socket.z - b.z) < 90)) continue;
+    const crossing = crossings
+      .filter((c) => !c.taken)
+      .sort((p, q) => Math.hypot(p.x - b.x, p.z - b.z) - Math.hypot(q.x - b.x, q.z - b.z))[0];
+    if (!crossing) break;
+    crossing.taken = true;
+    const pieceFloors = 3;
+    // The stump is kept low enough for the piece to be carried over it.
+    const stump = Math.min(t.floors - pieceFloors, 5);
+    t.floors = stump;
+    const boxes: PieceBox[] = [];
+    const cw = t.w / t.nx;
+    const cd = t.d / t.nz;
+    for (let f = 0; f < pieceFloors; f++) {
+      for (let ix = 0; ix < t.nx; ix++) {
+        for (let iz = 0; iz < t.nz; iz++) {
+          const tone = ((stump + f) % 2 === 0 ? 1.0 : 0.92) * ((ix + iz) % 2 === 0 ? 1 : 0.96);
+          boxes.push({
+            x: -t.w / 2 + cw * (ix + 0.5),
+            y: cfg.floorHeight * (f + 0.5),
+            z: -t.d / 2 + cd * (iz + 0.5),
+            hx: cw / 2,
+            hy: cfg.floorHeight / 2,
+            hz: cd / 2,
+            color: shade(b.color, tone),
+          });
+        }
+      }
+    }
+    // A little roof cap, so the top reads as the top.
+    boxes.push({ x: 0, y: cfg.floorHeight * pieceFloors + 0.6, z: 0, hx: t.w * 0.3, hy: 0.6, hz: t.d * 0.3, color: shade(b.color, 0.7) });
+    jobs.push({
+      kind: 'top',
+      boxes,
+      height: cfg.floorHeight * pieceFloors + 1.2,
+      start: { x: crossing.x, z: crossing.z, yaw: rng.range(0.3, 1.2) },
+      socket: { x: b.x, y: cfg.floorHeight * stump, z: b.z, yaw: 0 },
+      symmetry: Math.PI / 2,
+      color: JOB_COLORS[jobs.length % JOB_COLORS.length],
+    });
+  }
+
   // Skybridges: join buildings that face each other across a street, a few floors up.
   const bridges: BridgeSpec[] = [];
   const candidates: BridgeSpec[] = [];
@@ -350,7 +439,25 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
   if (theRiver) {
     for (const s of ax.streets) {
       if (s.width <= cfg.sideStreetWidth) continue;
+      // Repair jobs, part two: the first avenue bridge is missing a span, which is lying on the quay.
+      let gap: number | undefined;
+      if (cfg.repairJobs > 0 && s !== boulevard && !jobs.some((j) => j.kind === 'span')) {
+        const width = Math.min(s.width - 8, 12);
+        const pieces = Math.max(2, Math.round((theRiver.z1 - theRiver.z0) / cfg.chunkSize));
+        const length = (theRiver.z1 - theRiver.z0 - 0.6) / pieces;
+        gap = Math.floor(pieces / 2);
+        jobs.push({
+          kind: 'span',
+          boxes: [{ x: 0, y: 0.75, z: 0, hx: width / 2, hy: 0.75, hz: length / 2 - 0.1, color: 0x9a9690 }],
+          height: 1.5,
+          start: { x: s.center, z: theRiver.z1 + quay * 0.55, yaw: 0.45 },
+          socket: { x: s.center, y: -1.1, z: theRiver.z0 + 0.3 + length * (gap + 0.5), yaw: 0 },
+          symmetry: Math.PI,
+          color: JOB_COLORS[jobs.length % JOB_COLORS.length],
+        });
+      }
       bridges.push({
+        gap,
         kind: 'road',
         a: -1,
         b: -1,
@@ -392,6 +499,7 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     bridges,
     props,
     hazards,
+    jobs,
     river: theRiver,
     // Just off the centre line, so the kaiju doesn't start on top of the boulevard's trees.
     spawn: { x: main.center + (boulevard ? boulevard.width / 4 + 0.75 : 0), z: az.span / 2 + perimeter * 0.5, yaw: Math.PI },

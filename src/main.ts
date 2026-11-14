@@ -4,6 +4,7 @@ import type { ChunkField } from './city/destruction';
 import type { BallTool } from './core/ball';
 import { buildTuningGui, Hud, makeNoteBox, makeToast } from './core/debug';
 import type { Citizens } from './city/citizens';
+import type { Pieces } from './city/pieces';
 import { GameAudio } from './core/audio';
 import { FreeCamera } from './core/freeCamera';
 import { InputManager } from './core/input';
@@ -46,6 +47,41 @@ async function boot(): Promise<void> {
   const chunks = sim.parts.chunks as ChunkField;
   const kaiju = sim.parts.kaiju as Kaiju | undefined;
   const citizens = sim.parts.citizens as Citizens | undefined;
+  const pieces = sim.parts.pieces as Pieces | undefined;
+  const balance = document.getElementById('balance') as HTMLCanvasElement;
+  const balanceCtx = balance.getContext('2d')!;
+  /** The balance dial, shown while carrying. */
+  const drawBalance = () => {
+    const held = pieces?.held;
+    balance.style.display = held ? 'block' : 'none';
+    if (!held || !pieces) return;
+    const c = balanceCtx;
+    const R = 56;
+    c.clearRect(0, 0, 140, 140);
+    c.translate(70, 70);
+    c.fillStyle = 'rgba(20,24,32,0.55)';
+    c.beginPath();
+    c.arc(0, 0, R + 8, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = 'rgba(255,255,255,0.5)';
+    c.lineWidth = 1.5;
+    c.beginPath();
+    c.arc(0, 0, R, 0, Math.PI * 2);
+    c.stroke();
+    // The ring is the hands; the dot is where they need to be. Ring on the dot holds the load
+    // steady, ring past the dot rights it.
+    const share = held.tilt / tuning.carry.dropAngle;
+    c.fillStyle = share > 0.7 ? '#ff5544' : share > 0.4 ? '#ffd23f' : '#7dff9a';
+    c.beginPath();
+    c.arc(pieces.needed.x * R, -pieces.needed.z * R, 8, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = '#ffffff';
+    c.lineWidth = 3;
+    c.beginPath();
+    c.arc(pieces.hand.x * R, -pieces.hand.z * R, 13, 0, Math.PI * 2);
+    c.stroke();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+  };
   const recorder = sim.add(new SessionRecorder(sim, sceneName, kaiju, damage));
   const audio = new GameAudio(sim, kaiju);
   if (sceneName === 'city') {
@@ -108,7 +144,8 @@ async function boot(): Promise<void> {
 
   document.getElementById('help')!.textContent = [
     'W/S run   A/D turn   Shift: tiptoe   Space: crouch      going over? steer into the fall to save it',
-    'mouse drag: look around   wheel: zoom   double-click: reset view   Q/E: swing',
+    'hold E: pick up / carry, keep the hands under it with the mouse (or IJKL); let go over its marker to place',
+    'mouse drag: look around   wheel: zoom   double-click: reset view   Q/Z: swing',
     'N: note for Claude   M: sound   C: free camera   B: throw ball',
   ].join('\n');
   document.getElementById('boot')?.remove();
@@ -129,6 +166,7 @@ async function boot(): Promise<void> {
       sun.position.copy(sunOffset).add(follow && kaiju ? kaiju.visual.position : freeCam.target);
       sun.target.position.copy(sun.position).sub(sunOffset);
       audio.update();
+      drawBalance();
       renderer.render(sim.scene, camera);
       hud.frame(sim.lastStepMs);
       hud.update(() => {
@@ -147,6 +185,13 @@ async function boot(): Promise<void> {
           ...k,
           `damage: ${damage.chunksBroken} chunks   ${damage.propsDisturbed} props   ${damage.buildingsDamaged} buildings` +
             (citizens ? `   people: ${citizens.alive} left, ${damage.citizensSquished} squished` : ''),
+          ...(pieces && pieces.pieces.length
+            ? [
+                `repairs: ${pieces.placed}/${pieces.pieces.length}` +
+                  (pieces.crooked ? ` (${pieces.crooked} crooked)` : '') +
+                  (pieces.held ? '   CARRYING: keep the hands under it' : pieces.nearest() ? '   hold E to pick up' : ''),
+              ]
+            : []),
           `bodies ${c.bodies}   awake ${c.awake}   debris ${chunks.looseCount}   build ${BUILD}`,
         ];
       });

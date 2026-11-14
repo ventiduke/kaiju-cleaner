@@ -54,6 +54,8 @@ export const codeDefaults = {
     skybridges: 8,
     /** Oil spills on the roads: no grip at all. */
     oilSlicks: 6,
+    /** Things to put back: tower tops lying in the road, and a bridge span. */
+    repairJobs: 4,
     /** Leave the centre block open as a plaza. */
     plaza: true,
     propDensity: 1,
@@ -155,6 +157,33 @@ export const codeDefaults = {
     crouchBalance: 1.7,
     /** How far the camera drops while crouched (share of its height). */
     crouchView: 0.45,
+  },
+  carry: {
+    /** How close (m) a piece has to be to the hands to be grabbed. */
+    reach: 16,
+    /** How far in front of the belly, and how high above the body's centre, it is held (m). */
+    holdForward: 11,
+    handHeight: 1,
+    /** How far the balance control can shift the hands in any direction (m). */
+    handRange: 6,
+    /** Share of a held piece's urge to topple that the kaiju cancels by itself. 1 = no skill needed. */
+    assist: 0.7,
+    /** Past this lean (rad) the piece slips out of its hands. */
+    dropAngle: 0.75,
+    liftTime: 0.5,
+    /** Share of normal speed, and of normal acceleration and braking, while carrying. */
+    speed: 0.6,
+    accel: 0.25,
+    /**
+     * Shares of normal turn rate and turn acceleration while carrying. The load is held well
+     * out in front, so any quick swing of the body whips it sideways.
+     */
+    turn: 0.25,
+    turnAccel: 0.08,
+    /** Released within this distance (m) of where it belongs, a piece goes in. */
+    snapRadius: 6,
+    /** Within this distance (m), and nearly square and upright, it goes in straight. */
+    straightRadius: 2,
   },
   citizens: {
     /** How many people stroll each block's sidewalks (x5). */
@@ -279,6 +308,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     riverDepth: [1, 12, 0.5],
     skybridges: [0, 16, 1],
     oilSlicks: [0, 20, 1],
+    repairJobs: [0, 10, 1],
     propDensity: [0, 3, 0.1],
   },
   destruction: {
@@ -342,6 +372,21 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     crouchLean: [0, 1, 0.05],
     crouchBalance: [1, 4, 0.1],
     crouchView: [0, 0.8, 0.05],
+  },
+  carry: {
+    reach: [4, 40, 0.5],
+    holdForward: [4, 20, 0.5],
+    handHeight: [-6, 8, 0.5],
+    handRange: [1, 10, 0.5],
+    assist: [0, 1.2, 0.01],
+    dropAngle: [0.2, 1.4, 0.01],
+    liftTime: [0.1, 2, 0.05],
+    speed: [0.2, 1, 0.05],
+    accel: [0.1, 1, 0.05],
+    turn: [0.1, 1, 0.05],
+    turnAccel: [0.02, 1, 0.01],
+    snapRadius: [1, 15, 0.5],
+    straightRadius: [0.5, 8, 0.1],
   },
   citizens: { density: [0, 4, 0.1] },
   audio: { volume: [0, 1, 0.01] },

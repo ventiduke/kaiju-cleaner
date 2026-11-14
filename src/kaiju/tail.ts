@@ -62,7 +62,7 @@ export class Tail {
           .setRotation({ x: lay.x, y: lay.y, z: lay.z, w: lay.w })
           .setDensity(t.density)
           .setFriction(0.4)
-          .setCollisionGroups(groups(Group.TAIL, Group.GROUND | Group.CHUNK | Group.PROP | Group.BALL)),
+          .setCollisionGroups(groups(Group.TAIL, Group.GROUND | Group.CHUNK | Group.PROP | Group.BALL | Group.PIECE)),
         body,
       );
       const joint = world.createImpulseJoint(

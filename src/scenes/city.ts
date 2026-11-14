@@ -3,6 +3,7 @@ import { generateCity, type CityLayout } from '../city/cityGen';
 import { Damage } from '../city/damage';
 import { Citizens } from '../city/citizens';
 import { ChunkField } from '../city/destruction';
+import { Pieces } from '../city/pieces';
 import { PropField } from '../city/props';
 import type { BallTool } from '../core/ball';
 import { Dust } from '../core/dust';
@@ -105,6 +106,7 @@ export function populate(sim: Sim, layout: CityLayout): void {
   const kaiju = sim.add(new Kaiju(sim, 0, layout.spawn, chunks));
   sim.parts.kaiju = kaiju;
   sim.parts.citizens = sim.add(new Citizens(sim, layout, kaiju, damage));
+  sim.parts.pieces = sim.add(new Pieces(sim, layout.jobs, kaiju));
   sim.add(new Dust(sim));
 }
 

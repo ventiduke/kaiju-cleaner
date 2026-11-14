@@ -123,7 +123,7 @@ describe('river, oil and townsfolk', () => {
 
   it('drops a road bridge when a pier is knocked out', async () => {
     const g = await makeGame('city');
-    const index = g.layout.buildings.length + g.layout.bridges.findIndex((b) => b.kind === 'road');
+    const index = g.layout.buildings.length + g.layout.bridges.findIndex((b) => b.kind === 'road' && b.gap === undefined);
     const bridge = g.chunks.buildings[index];
     const pieces = g.chunks.chunks.slice(bridge.first, bridge.first + bridge.count);
     const piers = pieces.filter((c) => c.floor === 0);

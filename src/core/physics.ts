@@ -25,6 +25,8 @@ export const Group = {
   TAIL: 1 << 4,
   FOOT: 1 << 5,
   BALL: 1 << 6,
+  /** Repair pieces: tower tops, bridge spans. */
+  PIECE: 1 << 7,
 } as const;
 
 export const ALL_GROUPS = 0xffff;

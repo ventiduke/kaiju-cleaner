@@ -45,6 +45,18 @@ export class GameAudio {
       this.tone({ gain: 0.3, time: 0.14, from: 330, to: 440, type: 'triangle' });
       this.tone({ gain: 0.3, time: 0.22, from: 495, to: 660, type: 'triangle', delay: 0.13 });
     });
+    sim.on('pieceGrab', () => this.tone({ gain: 0.3, time: 0.25, from: 180, to: 320, type: 'triangle' }));
+    sim.on('pieceDrop', (e) => {
+      this.tone({ gain: 0.7 * this.near(e), time: 0.5, from: 110, to: 40, type: 'sine' });
+      this.burst({ gain: 0.4 * this.near(e), time: 0.35, from: 700, to: 150, q: 0.8 });
+    });
+    sim.on('piecePlace', (e) => {
+      // A clean fit gets a proper chime; a crooked one gets the chime with a sour last note.
+      this.tone({ gain: 0.6, time: 0.4, from: 80, to: 50, type: 'sine' });
+      this.tone({ gain: 0.3, time: 0.2, from: 523, to: 523, type: 'triangle', delay: 0.05 });
+      this.tone({ gain: 0.3, time: 0.2, from: 659, to: 659, type: 'triangle', delay: 0.2 });
+      this.tone({ gain: 0.3, time: 0.45, from: e.straight ? 784 : 740, to: e.straight ? 784 : 690, type: 'triangle', delay: 0.35 });
+    });
     sim.on('citizenSquish', (e) => this.tone({ gain: 0.35 * this.near(e), time: 0.16, from: 1500, to: 520, type: 'square' }));
     sim.on('citizenScare', (e) => {
       const now = performance.now();

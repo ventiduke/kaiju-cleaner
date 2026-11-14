@@ -12,12 +12,17 @@ export interface PlayerInput {
   tiptoe: boolean;
   /** Held to crouch: slow and steady, tail tucked. */
   crouch: boolean;
+  /** Held to pick up the nearest repair piece and keep hold of it. */
+  grab: boolean;
+  /** Where to shift the hands under a held piece: -1..1, x to the right, z forward. */
+  balanceX: number;
+  balanceZ: number;
   /** Camera orbit input (-1..1). */
   camYaw: number;
 }
 
 export function emptyInput(): PlayerInput {
-  return { thrust: 0, turn: 0, tiptoe: false, crouch: false, camYaw: 0 };
+  return { thrust: 0, turn: 0, tiptoe: false, crouch: false, grab: false, balanceX: 0, balanceZ: 0, camYaw: 0 };
 }
 
 export interface System {
@@ -39,6 +44,9 @@ export interface SimEvents {
   citizenSquish: { x: number; y: number; z: number };
   citizenScare: { x: number; y: number; z: number };
   propHit: { x: number; y: number; z: number };
+  pieceGrab: { x: number; y: number; z: number };
+  pieceDrop: { x: number; y: number; z: number };
+  piecePlace: { x: number; y: number; z: number; straight: boolean };
   chunkBreak: { x: number; y: number; z: number; size: number };
   kaijuFall: { x: number; y: number; z: number };
 }

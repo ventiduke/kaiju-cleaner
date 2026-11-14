@@ -5,7 +5,7 @@ import type { Sim } from '../sim';
 import { populate } from './city';
 import { addEnvironment } from './common';
 
-/** Hand-placed test pieces: a low block, a slim tower, a stepped tower, and a row of props. */
+/** Hand-placed test pieces: a low block, a slim tower, a topless tower to repair, and a row of props. */
 export function yardLayout(): CityLayout {
   const props: PropSpec[] = [];
   const colors = [0xd9482b, 0x2f6fb5, 0xf2c230, 0xf4f1ea, 0x4d9a5b];
@@ -30,15 +30,34 @@ export function yardLayout(): CityLayout {
         x: 50,
         z: -60,
         color: 0xc9b79c,
-        tiers: [
-          { floors: 7, w: 25.5, d: 25.5, nx: 3, nz: 3 },
-          { floors: 4, w: 17, d: 17, nx: 2, nz: 2 },
-        ],
+        tiers: [{ floors: 5, w: 17, d: 17, nx: 2, nz: 2 }],
       },
     ],
     props,
     // An oil slick off to one side, for practising slides.
     hazards: [{ kind: 'oil', x: -60, z: 30, radius: 12 }],
+    // A repair job to practise on: the stepped tower's top, sitting in the open.
+    jobs: [
+      {
+        kind: 'top',
+        boxes: [
+          { x: -4.25, y: 2, z: -4.25, hx: 4.25, hy: 2, hz: 4.25, color: 0xc9b79c },
+          { x: 4.25, y: 2, z: -4.25, hx: 4.25, hy: 2, hz: 4.25, color: 0xc1b096 },
+          { x: -4.25, y: 2, z: 4.25, hx: 4.25, hy: 2, hz: 4.25, color: 0xc1b096 },
+          { x: 4.25, y: 2, z: 4.25, hx: 4.25, hy: 2, hz: 4.25, color: 0xc9b79c },
+          { x: -4.25, y: 6, z: -4.25, hx: 4.25, hy: 2, hz: 4.25, color: 0xb9a98f },
+          { x: 4.25, y: 6, z: -4.25, hx: 4.25, hy: 2, hz: 4.25, color: 0xb2a289 },
+          { x: -4.25, y: 6, z: 4.25, hx: 4.25, hy: 2, hz: 4.25, color: 0xb2a289 },
+          { x: 4.25, y: 6, z: 4.25, hx: 4.25, hy: 2, hz: 4.25, color: 0xb9a98f },
+          { x: 0, y: 8.6, z: 0, hx: 5, hy: 0.6, hz: 5, color: 0x8d8170 },
+        ],
+        height: 9.2,
+        start: { x: 40, z: 20, yaw: 0.6 },
+        socket: { x: 50, y: 20, z: -60, yaw: 0 },
+        symmetry: Math.PI / 2,
+        color: 0xffd23f,
+      },
+    ],
     river: null,
     spawn: { x: 0, z: 70, yaw: Math.PI },
   };
@@ -57,6 +76,7 @@ export function buildPlane(sim: Sim): void {
     bridges: [],
     props: [],
     hazards: [],
+    jobs: [],
     river: null,
     spawn: { x: 0, z: 0, yaw: 0 },
   });

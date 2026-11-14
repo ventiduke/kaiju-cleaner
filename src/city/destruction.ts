@@ -249,13 +249,18 @@ export class ChunkField implements System {
       spec.along === 'x' ? [along, spec.center, halfLength, halfWidth] : [spec.center, along, halfWidth, halfLength];
     const deck: number[] = [];
     for (let i = 0; i < pieces; i++) {
+      // A missing span (a repair job) leaves the two halves standing on their own.
+      if (i === spec.gap) {
+        deck.push(-1);
+        continue;
+      }
       const [x, z, hx, hz] = place(spec.from + slack + length * (i + 0.5), length / 2, spec.width / 2);
       const before = i === 0 ? start : deck[i - 1];
       const supports = before >= 0 ? [{ chunk: before, area: 0.5 }] : [];
       const index = this.createChunk(building, spec.floor, x, y, z, hx, hy, hz, spec.color, supports, 1);
       deck.push(index);
       // Link forward as well, once the next piece (or the far building) is known.
-      if (i > 0) this.link(deck[i - 1], index);
+      if (i > 0 && deck[i - 1] >= 0) this.link(deck[i - 1], index);
       if (i === pieces - 1 && end >= 0) this.link(index, end);
     }
     // Road bridges stand on piers, one under each joint. Knock a pier out and the deck goes.
@@ -265,8 +270,8 @@ export class ChunkField implements System {
       for (let i = 1; i < pieces; i++) {
         const [x, z, hx, hz] = place(spec.from + slack + length * i, 1.6, spec.width * 0.36);
         const pier = this.createChunk(building, 0, x, top - pierHalf, z, hx, pierHalf, hz, spec.color, []);
-        this.link(deck[i - 1], pier);
-        this.link(deck[i], pier);
+        if (deck[i - 1] >= 0) this.link(deck[i - 1], pier);
+        if (deck[i] >= 0) this.link(deck[i], pier);
       }
     }
   }

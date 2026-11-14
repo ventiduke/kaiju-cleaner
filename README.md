@@ -29,7 +29,9 @@ Scenes are picked with a URL parameter:
 | Turn | A / D | Left stick left / right |
 | Tiptoe: slow, narrow, quiet, until the calves give out | Hold Shift | A or right trigger |
 | Crouch: slow, low, hard to tip, tail tucked | Hold Space | B or left trigger |
-| Look around, raise or lower the view | Drag the mouse (or Q / E to swing) | Right stick |
+| Pick up and carry a repair piece | Hold E | Hold X or right bumper |
+| Balance what you are carrying | Mouse position (or I J K L) | Right stick |
+| Look around, raise or lower the view | Drag the mouse (or Q / Z to swing) | Right stick |
 | Zoom | Mouse wheel | |
 | Reset the view | Double-click | |
 | Note for Claude | N | |
@@ -40,6 +42,14 @@ Scenes are picked with a URL parameter:
 Fast and sharp tips it over: hold a hard turn at speed and it stumbles, then starts to go. Let go at the
 stumble and it rights itself. Once it is going over there is a short window to **save it by steering into the
 fall** (toppling right, steer right). If it does go down, mashing a direction scrambles it up sooner.
+
+**Repair jobs.** Tower tops are sitting in the road and a bridge is missing a span; each has a coloured
+marker, and a matching marker floats over where it belongs. Stand facing a piece and hold E to hoist it. It
+balances on the kaiju's hands like a broom on a palm, and a dial appears: the ring is the hands, the dot is
+where they need to be. Keep the ring on the dot and the load holds; let the dot pin against the rim and it
+slips. Starting, stopping and turning all shove the load, so the kaiju moves more gently with its hands
+full. Let go over the marker to set the piece in place: straight if it was lined up, crooked (and visibly so)
+if it was not. A placed piece can be knocked off again.
 
 The city is split by a river you can wade (slowly). The road bridges stand on piers and will not take a kaiju.
 Dark patches on the roads are oil: no grip at all. The townsfolk run from a stomping kaiju, less so from one on
@@ -72,7 +82,8 @@ and whether a set of turns at different speeds ends steady, in a stumble, or in 
 ## Status
 
 M0 (scaffold), M1 (destructible city), M2 (kaiju movement), M3 (kaiju in the city) and M4 (tiptoe, plus crouch)
-are built, and have had two rounds of playtest changes. Picking things up and repair jobs come next. Each has measurable checks in `test/`; whether the movement is *fun* is a playtest call.
+are built, and have had two rounds of playtest changes. The first repair jobs (carry a piece back, balancing
+it on the way) are in; standing a toppled building back up by pushing is not built yet. Each has measurable checks in `test/`; whether the movement is *fun* is a playtest call.
 
 ## How the code is laid out
 

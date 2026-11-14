@@ -1,4 +1,5 @@
 import type { Damage } from '../city/damage';
+import type { Pieces } from '../city/pieces';
 import type { Kaiju } from '../kaiju/kaiju';
 import type { Sim, System } from '../sim';
 import { diffTuning, type Tuning } from './tuning';
@@ -26,7 +27,7 @@ export interface SessionFile {
   /** Rows of [seconds, x, z, yawDeg, speed, tiltDeg, state, thrust, turn, chunksBroken], 5 a second. */
   samples: number[][];
   events: { tick: number; type: string }[];
-  /** [tick, thrust, turn, tiptoe, crouch] whenever the input changed (older files stop at turn). */
+  /** [tick, thrust, turn, tiptoe, crouch, grab, balanceX, balanceZ] whenever the input changed (older files are shorter). */
   inputs: number[][];
   /** [tick, ox, oy, oz, dx, dy, dz] for each debug ball thrown. */
   balls: number[][];
@@ -60,6 +61,11 @@ export interface SessionStats {
   secondsOnTiptoe?: number;
   secondsCrouched?: number;
   citizensSquished?: number;
+  /** Repair pieces set in place (and how many of those sit crooked), and pieces that slipped. */
+  repairs?: number;
+  repairsCrooked?: number;
+  piecesDropped?: number;
+  secondsCarrying?: number;
   secondsStumbling: number;
   secondsDown: number;
   secondsStalled: number;
@@ -108,6 +114,7 @@ export class SessionRecorder implements System {
     hardTurn: 0,
     tiptoe: 0,
     crouch: 0,
+    carrying: 0,
   };
 
   constructor(
@@ -130,9 +137,12 @@ export class SessionRecorder implements System {
     const p = this.sim.players[0];
     const thrust = r(p.thrust, 2);
     const turn = r(p.turn, 2);
-    const held = (p.tiptoe ? 1 : 0) + (p.crouch ? 2 : 0);
+    // The balance input only matters (and is only logged) while something is being held.
+    const bx = p.grab ? r(p.balanceX, 1) : 0;
+    const bz = p.grab ? r(p.balanceZ, 1) : 0;
+    const held = (p.tiptoe ? 1 : 0) + (p.crouch ? 2 : 0) + (p.grab ? 4 : 0) + (bx + 1) * 100 + (bz + 1) * 10000;
     if (thrust !== this.lastThrust || turn !== this.lastTurn || held !== this.lastHeld) {
-      this.inputs.push([this.sim.tick, thrust, turn, p.tiptoe ? 1 : 0, p.crouch ? 1 : 0]);
+      this.inputs.push([this.sim.tick, thrust, turn, p.tiptoe ? 1 : 0, p.crouch ? 1 : 0, p.grab ? 1 : 0, bx, bz]);
       this.lastThrust = thrust;
       this.lastTurn = turn;
       this.lastHeld = held;
@@ -163,6 +173,7 @@ export class SessionRecorder implements System {
     if (k.stall > 0.5) a.stalled += dt;
     if (k.mode === 'tiptoe') a.tiptoe += dt;
     if (k.mode === 'crouch') a.crouch += dt;
+    if (k.carrying) a.carrying += dt;
 
     if (this.sim.tick % SAMPLE_EVERY === 0) {
       const p = this.sim.players[0];
@@ -228,6 +239,7 @@ export class SessionRecorder implements System {
   stats(): SessionStats {
     const a = this.acc;
     const moving = Math.max(a.moving, 1e-6);
+    const pieces = this.sim.parts.pieces as Pieces | undefined;
     return {
       seconds: r(this.sim.time),
       secondsMoving: r(a.moving),
@@ -242,6 +254,10 @@ export class SessionRecorder implements System {
       secondsOnTiptoe: r(a.tiptoe),
       secondsCrouched: r(a.crouch),
       citizensSquished: this.damage?.citizensSquished ?? 0,
+      repairs: pieces?.placed ?? 0,
+      repairsCrooked: pieces?.crooked ?? 0,
+      piecesDropped: pieces?.drops ?? 0,
+      secondsCarrying: r(a.carrying),
       secondsStumbling: r(a.stumbling),
       secondsDown: r(a.down),
       secondsStalled: r(a.stalled),
@@ -307,7 +323,8 @@ export function formatSession(f: SessionFile): string {
     `  moving ${s.secondsMoving}s of ${s.seconds}s, ${s.distance} m, top ${s.topSpeed} m/s, average ${s.averageSpeedMoving} m/s`,
     `  lean: max ${s.maxTiltDeg} deg, average ${s.averageTiltDegMoving} deg while moving; hard turns ${Math.round(s.hardTurnShare * 100)}% of the time`,
     `  ${s.stumbles} stumbles (${s.secondsStumbling}s), ${s.saves ?? 0} saves, ${s.falls} falls (${s.secondsDown}s down), stalled ${s.secondsStalled}s`,
-    `  tiptoe ${s.secondsOnTiptoe ?? 0}s, crouched ${s.secondsCrouched ?? 0}s`,
+    `  tiptoe ${s.secondsOnTiptoe ?? 0}s, crouched ${s.secondsCrouched ?? 0}s, carrying ${s.secondsCarrying ?? 0}s`,
+    `  repairs: ${s.repairs ?? 0} placed (${s.repairsCrooked ?? 0} crooked), ${s.piecesDropped ?? 0} pieces dropped`,
     `  damage: ${s.chunksBroken} chunks, ${s.propsDisturbed} props, ${s.buildingsDamaged} buildings, ${s.citizensSquished ?? 0} people squished`,
   ];
   return lines.join('\n');

@@ -33,7 +33,8 @@ export async function makeGame(scene: SceneName, overrides: unknown = {}): Promi
       const own = new Set([kaiju.body, ...kaiju.tail.segments, ...kaiju.legs.feet.map((f) => f.body)].map((b) => b.handle));
       let n = 0;
       sim.world.forEachActiveRigidBody((b) => {
-        if (!own.has(b.handle)) n++;
+        // Only free bodies count: kinematic helpers (feet, the carrying hands) are never asleep.
+        if (!own.has(b.handle) && b.isDynamic()) n++;
       });
       return n;
     },

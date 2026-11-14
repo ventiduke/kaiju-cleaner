@@ -12,6 +12,7 @@
       #toast { position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%); color: #fff; font-size: 13px; background: rgba(20, 24, 32, 0.85); padding: 8px 14px; border-radius: 6px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
       #note { position: fixed; left: 50%; top: 38%; transform: translateX(-50%); width: min(640px, 80vw); display: none; background: rgba(20, 24, 32, 0.92); padding: 14px; border-radius: 8px; color: #fff; font-size: 13px; }
       #note input { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px; font: inherit; font-size: 14px; border-radius: 4px; border: 1px solid #556; background: #111; color: #fff; }
+      #balance { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); display: none; pointer-events: none; }
       #boot { position: fixed; inset: 0; display: grid; place-items: center; color: #fff; font-size: 16px; }
     </style>
   </head>
@@ -20,6 +21,7 @@
     <div id="hud"></div>
     <div id="help"></div>
     <div id="toast"></div>
+    <canvas id="balance" width="140" height="140"></canvas>
     <div id="note">Note for Claude: what just happened, or how it feels. Enter to save, Esc to cancel.<input type="text" maxlength="400" /></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

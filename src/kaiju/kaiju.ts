@@ -55,6 +55,8 @@ export class Kaiju implements System {
   wading = 0;
   /** Traction under it right now: 1 normal, near 0 on oil. */
   traction = 1;
+  /** 1 while it has its hands full (set by the repair pieces system). */
+  carrying = 0;
   private toeLock = false;
   private stanceOffset = 0;
   /** Seconds spent pushing without getting anywhere. */
@@ -96,7 +98,7 @@ export class Kaiju implements System {
         .setDensity(k.density)
         .setFriction(0.35)
         .setRestitution(0)
-        .setCollisionGroups(groups(Group.BODY, Group.GROUND | Group.CHUNK | Group.PROP | Group.BALL)),
+        .setCollisionGroups(groups(Group.BODY, Group.GROUND | Group.CHUNK | Group.PROP | Group.BALL | Group.PIECE)),
       this.body,
     );
     chunks?.addHitter(this.body, k.bodyHalfHeight + k.bodyRadius);
@@ -271,7 +273,10 @@ export class Kaiju implements System {
       0,
       1,
     );
-    const speedShare = (tiptoe ? m.tiptoeSpeed : crouch ? m.crouchSpeed : 1) * (1 - 0.45 * this.wading);
+    const speedShare =
+      (tiptoe ? m.tiptoeSpeed : crouch ? m.crouchSpeed : 1) *
+      (1 - 0.45 * this.wading) *
+      (1 - (1 - this.sim.tuning.carry.speed) * this.carrying);
     const leanScale = tiptoe ? m.tiptoeLean : crouch ? m.crouchLean : 1;
     const stumbleAngle = k.stumbleAngle * (crouch ? m.crouchBalance : 1);
     const fallAngle = Math.max(k.fallAngle, stumbleAngle * 1.6);
@@ -386,13 +391,17 @@ export class Kaiju implements System {
       const traction = this.sim.traction(pos.x, pos.z);
       this.traction = traction;
       const speedingUp = Math.sign(diff) === Math.sign(target) && target !== 0;
+      // Hands full: gentler on the pedals, or the load goes flying.
+      const gentle = 1 - (1 - this.sim.tuning.carry.accel) * this.carrying;
       // Stalled against something? Lean into it: the push builds until the obstacle gives.
+      // "Stalled" means gaining far less speed than it should be, whatever is limiting that.
       const gained = (this.forwardSpeed - this.lastForwardSpeed) / dt;
       this.lastForwardSpeed = this.forwardSpeed;
       const wanted = Math.abs(diff) > 1 && speedingUp;
-      this.stall = wanted && Math.abs(gained) < k.acceleration * 0.3 ? this.stall + dt : Math.max(0, this.stall - dt * 3);
+      const expected = k.acceleration * gentle * traction * control;
+      this.stall = wanted && Math.abs(gained) < expected * 0.3 ? this.stall + dt : Math.max(0, this.stall - dt * 3);
       const boost = 1 + (k.pushBoost - 1) * smooth((this.stall - 0.3) / 0.8);
-      const rate = (speedingUp ? k.acceleration * boost : k.braking) * (speedingUp ? control : 1);
+      const rate = (speedingUp ? k.acceleration * boost : k.braking) * (speedingUp ? control : 1) * gentle;
       const along = THREE.MathUtils.clamp(diff / dt, -rate * traction, rate * traction);
       const across = THREE.MathUtils.clamp(-sideSpeed / dt, -k.grip * traction, k.grip * traction);
       tmp.copy(this.forward).multiplyScalar(along).addScaledVector(this.left, across);
@@ -432,8 +441,10 @@ export class Kaiju implements System {
     }
     if (standing) {
       const authority = 1 - k.turnSpeedPenalty * Math.min(1, Math.abs(this.forwardSpeed) / k.maxSpeed);
-      const targetRate = input.turn * k.maxTurnRate * authority * control * (tiptoe ? m.tiptoeTurn : 1);
-      const accel = THREE.MathUtils.clamp((targetRate - av.y) / dt, -k.turnAcceleration, k.turnAcceleration);
+      const careful = (tiptoe ? m.tiptoeTurn : 1) * (1 - (1 - this.sim.tuning.carry.turn) * this.carrying);
+      const targetRate = input.turn * k.maxTurnRate * authority * control * careful;
+      const swing = k.turnAcceleration * (1 - (1 - this.sim.tuning.carry.turnAccel) * this.carrying);
+      const accel = THREE.MathUtils.clamp((targetRate - av.y) / dt, -swing, swing);
       tmp.y += accel * dt;
     }
     body.setAngvel(tmp, true);
