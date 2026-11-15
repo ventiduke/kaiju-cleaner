@@ -22,6 +22,8 @@ export class Nose implements System {
   /** Seconds until the sneeze, once it has started (0 when none is coming). */
   windup = 0;
   sneezes = 0;
+  /** The time until which its nose is clear after the last sneeze. */
+  private clearUntil = 0;
 
   constructor(
     private sim: Sim,
@@ -30,6 +32,7 @@ export class Nose implements System {
     private props: PropField | null,
   ) {
     const dust = (amount: number) => (e: { x: number; y: number; z: number }) => {
+      if (sim.time < this.clearUntil) return;
       const p = kaiju.body.translation();
       const d = Math.hypot(e.x - p.x, e.z - p.z);
       this.tickle = Math.min(1, this.tickle + (sim.tuning.sneeze.dust * amount) / (1 + (d / 30) ** 2));
@@ -81,6 +84,7 @@ export class Nose implements System {
 
     this.tickle = 0;
     this.windup = 0;
+    this.clearUntil = this.sim.time + t.rest;
     this.sneezes++;
     this.sim.emit('sneeze', { x: origin.x, y: origin.y, z: origin.z, dx: dir.x, dz: dir.z });
   }

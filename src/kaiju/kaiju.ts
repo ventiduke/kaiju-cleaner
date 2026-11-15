@@ -12,6 +12,8 @@ const UP = new THREE.Vector3(0, 1, 0);
 const tmpQuat = new THREE.Quaternion();
 const AXIS_X = new THREE.Vector3(1, 0, 0);
 const AXIS_Z = new THREE.Vector3(0, 0, 1);
+/** Eight directions round the compass. */
+const RING = Array.from({ length: 8 }, (_, i) => [Math.sin((i * Math.PI) / 4), Math.cos((i * Math.PI) / 4)]);
 const pos = new THREE.Vector3();
 const vel = new THREE.Vector3();
 const quat = new THREE.Quaternion();
@@ -165,6 +167,9 @@ export class Kaiju implements System {
   private jumpBuffer = 0;
   private jumpCut = false;
   private slideQueued = false;
+  /** The velocity it set itself last step (to tell, next step, whether something stopped it). */
+  private askedX = 0;
+  private askedZ = 0;
   private wasRunner = false;
   /** How far into a bow it is (0 upright, 1 bent right over), and how many it has made. */
   bow = 0;
@@ -844,15 +849,13 @@ export class Kaiju implements System {
     this.load = 0;
     this.stall = 0;
 
+    // The ground under it: the highest of where it stands and a ring of points just beyond its
+    // body, so that pressed against a step (a river bank) from any angle it is lifted over it.
+    // (Four points on its own axes missed a bank met on the diagonal, and it stuck there.)
     const ground = this.sim.ground;
-    const reach = k.bodyRadius;
-    const groundY = Math.max(
-      ground(p.x, p.z),
-      ground(p.x + this.forward.x * reach, p.z + this.forward.z * reach),
-      ground(p.x - this.forward.x * reach, p.z - this.forward.z * reach),
-      ground(p.x + this.left.x * reach, p.z + this.left.z * reach),
-      ground(p.x - this.left.x * reach, p.z - this.left.z * reach),
-    );
+    const reach = k.bodyRadius * 1.15;
+    let groundY = ground(p.x, p.z);
+    for (let i = 0; i < 8; i++) groundY = Math.max(groundY, ground(p.x + RING[i][0] * reach, p.z + RING[i][1] * reach));
     this.wading = THREE.MathUtils.clamp(-ground(p.x, p.z) / (k.legLength * 0.8), 0, 1);
     const traction = this.sim.traction(p.x, p.z);
     this.traction = traction;
@@ -886,6 +889,10 @@ export class Kaiju implements System {
       this.slides++;
       this.sim.emit('kaijuSlide', { x: p.x, y: p.y, z: p.z });
     }
+
+    // How far it is being held up: what it asked for last step against what it got.
+    const asked = Math.hypot(this.askedX, this.askedZ);
+    const blocked = asked > 3 && !this.airborne ? THREE.MathUtils.smoothstep(Math.hypot(this.askedX - vx, this.askedZ - vz) / asked, 0.2, 0.55) : 0;
 
     const pace = THREE.MathUtils.clamp(speed / r.sprint, 0, 1);
     let turnTo = this.yaw;
@@ -930,9 +937,12 @@ export class Kaiju implements System {
       let s = vx * this.left.x + vz * this.left.z;
       // Across: its feet scrub sideways speed off as hard as they can hold. Turned faster than
       // that at speed, the rest carries it wide: a drift.
-      const hold = r.grip * traction * (this.airborne ? 0.04 : 1);
+      // (Not while it is pushing against something that will not move. What the wall leaves of
+      // its speed is the part along the wall, and scrubbing that off as "sideways" left it stuck
+      // fast to anything it met at an angle. So it slides along walls.)
+      const hold = r.grip * traction * (this.airborne ? 0.04 : 1) * (1 - blocked);
       s -= THREE.MathUtils.clamp(s, -hold * dt, hold * dt);
-      slip = Math.abs(s);
+      slip = Math.abs(s) * (1 - blocked);
 
       // Along: it drives for the speed asked for, in so far as it is facing that way. Asked to go
       // somewhere behind it, it brakes hard while it swings round.
@@ -1031,6 +1041,8 @@ export class Kaiju implements System {
       vy += (THREE.MathUtils.clamp(error * 14, -40, 40) - vy) * Math.min(1, dt * 20);
     }
     body.setLinvel({ x: vx, y: vy, z: vz }, true);
+    this.askedX = vx;
+    this.askedZ = vz;
     this.speed = Math.hypot(vx, vz);
     this.forwardSpeed = vx * this.forward.x + vz * this.forward.z;
 

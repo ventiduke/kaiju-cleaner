@@ -2,6 +2,19 @@
   "about": "Things the playtester has said they like (keep) or dislike (avoid), in their words, with the settings behind them. test/pins.test.ts fails if a pinned value moves: that is the cue to ask before changing it, then update the pin with the new quote.",
   "keep": [
     {
+      "said": "I like that movement style, and we should make it the default everywhere else (the style in the runner course)",
+      "when": "playtest 10, 15 Nov 2026",
+      "values": {
+        "move.controller": 1,
+        "move.style": 3
+      }
+    },
+    {
+      "said": "Clicking and holding to keep hold of an item works",
+      "when": "playtest 10, 15 Nov 2026",
+      "outcome": "one-click-takes-hold"
+    },
+    {
       "said": "that's feeling a lot better",
       "when": "playtest 9, 15 Nov 2026 (the Runner, rebuilt as an animal)",
       "values": {
@@ -43,13 +56,6 @@
       "said": "we still want that Hard to Control but Fun feel",
       "when": "playtest 1, 14 Nov 2026",
       "outcome": "tapped-turn-stays-up"
-    },
-    {
-      "said": "Sneeze meter needs to fill up faster (then: no complaint about the faster one)",
-      "when": "playtest 4, 15 Nov 2026",
-      "values": {
-        "sneeze.dust": 0.03
-      }
     }
   ],
   "avoid": [
@@ -117,6 +123,16 @@
       "said": "after I click the screen to activate mouse control, I can't figure out how to unlock the mouse; that persists after the end of a run also",
       "when": "playtest 9",
       "means": "The game never holds the mouse without saying on the screen how to free it, frees it on Esc and Tab itself, and gives it back unasked whenever something needs clicking (a results card, the dials, a note). `npm run smoke` checks each of these."
+    },
+    {
+      "said": "The 'move mouse' to keep hold of something doesn't work",
+      "when": "playtest 10",
+      "means": "The mouse is for looking, and nothing else: no mechanic may need the mouse moved, because the Runner has it captured for the view. Skill checks are a key press."
+    },
+    {
+      "said": "Sneezing happens too much I think; and we don't need the 'hold breath'",
+      "when": "playtest 10",
+      "means": "A sneeze is an occasional event, not a rhythm: a careful shift should see one or two (`npm run playbot` prints the count). No meters to nurse."
     }
   ],
   "superseded": [
@@ -132,6 +148,21 @@
         "feel.balance": 0.75
       },
       "then": "playtest 6: \"movement is OK, but not fun. It feels very sluggish.\" Those values are kept as the Lumbering style (key 1); they are no longer the default."
+    },
+    {
+      "said": "Sneeze meter needs to fill up faster (then: no complaint about the faster one)",
+      "when": "playtest 4, 15 Nov 2026",
+      "values": {
+        "sneeze.dust": 0.03
+      },
+      "then": "playtest 10: \"Sneezing happens too much I think; and we don't need the 'hold breath'.\" Dust per chunk 0.03 → 0.014, the nose rests for 25 s after a sneeze, and the breath key is gone."
+    }
+  ],
+  "ideas": [
+    {
+      "said": "right now there's no 'balance' and potential to fall down; which is ok right now, but maybe something to address later",
+      "when": "playtest 10",
+      "means": "Not asked for now. A way for the Runner to lose its footing (and get it back) is a candidate for a later pass."
     }
   ]
 }

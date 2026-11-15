@@ -42,6 +42,31 @@ const OUTCOMES: Record<string, () => Promise<void>> = {
     expect(turned, 'and not spin it on the spot').toBeLessThan(2.6);
     expect(lean).toBeGreaterThan(0.03);
   },
+  'one-click-takes-hold': async () => {
+    // Taking hold is one click, and it stays held with nothing pressed; the next click lets go.
+    const g = await makeGame('yard', { city: { propDensity: 0 } });
+    const pieces = g.sim.parts.pieces as { held: unknown; pieces: { job: { start: { x: number; z: number } } }[]; nearest(): unknown };
+    const k = g.kaiju;
+    const to = pieces.pieces[0].job.start;
+    const d = g.sim.tuning.kaiju.bodyRadius + g.sim.tuning.carry.holdForward;
+    const p = k.position();
+    for (const b of [k.body, ...k.tail.segments]) {
+      const q = b.translation();
+      b.setTranslation({ x: q.x + to.x - k.forward.x * d - p.x, y: q.y, z: q.z + to.z - k.forward.z * d - p.z }, true);
+    }
+    g.sim.run(60);
+    const click = () => {
+      g.sim.players[0].grab = true;
+      g.sim.step();
+      g.sim.players[0].grab = false;
+    };
+    click();
+    g.sim.run(120);
+    expect(pieces.held, 'one click should take hold, and keep hold with no button down').not.toBe(null);
+    click();
+    g.sim.run(10);
+    expect(pieces.held, 'the next click should let go').toBe(null);
+  },
   'hard-turn-at-speed-falls': async () => {
     const g = await makeGame('plane', SHIPPED_FEEL);
     g.sim.players[0].thrust = 1;

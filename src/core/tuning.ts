@@ -230,9 +230,11 @@ export const codeDefaults = {
   },
   sneeze: {
     /** How much each chunk breaking right beside it tickles (1 = a sneeze). Crumbling counts double. */
-    dust: 0.03,
+    dust: 0.014,
     /** How fast the tickle clears in clean air (per second). */
-    clear: 0.04,
+    clear: 0.05,
+    /** Seconds after a sneeze in which its nose is clear and takes no dust (or one sneeze's wreckage would bring on the next). */
+    rest: 25,
     /** Seconds between "ah... ah..." and the sneeze. */
     windup: 0.9,
     /** How hard it is thrown backwards (m/s). */
@@ -630,6 +632,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
   sneeze: {
     dust: [0, 0.2, 0.002],
     clear: [0, 1, 0.01],
+    rest: [0, 120, 1],
     windup: [0.1, 3, 0.05],
     kick: [0, 40, 0.5],
     range: [10, 200, 5],

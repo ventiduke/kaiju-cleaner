@@ -23,6 +23,8 @@ export const REF = {
   // (The balancing body: it is what most of these tests are about. The Runner, which the game
   // now ships with, has its own in test/runner.test.ts.)
   move: { style: 1, jump: 0, slide: 0, relative: 1, controller: 0 },
+  // (How often it sneezes is tuned to taste; what a sneeze does is what is tested.)
+  sneeze: { dust: 0.03, clear: 0.04, rest: 0 },
 };
 
 export interface Rig {
