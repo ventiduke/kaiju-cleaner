@@ -38,9 +38,9 @@ export const codeDefaults = {
     blocks: 8,
     blockSize: 30,
     /** One extra-wide street through the middle. */
-    boulevardWidth: 38,
-    avenueWidth: 22,
-    sideStreetWidth: 14,
+    boulevardWidth: 44,
+    avenueWidth: 30,
+    sideStreetWidth: 24,
     sidewalk: 2,
     lotGap: 3,
     floorHeight: 4,
@@ -123,6 +123,8 @@ export const codeDefaults = {
     uprightDamping: 0.45,
     /** How hard the body tips for each m/s^2 the feet push (rad/s^2 per m/s^2). */
     lean: 0.24,
+    /** Share of its own acceleration that leans it (1: all of it). Set from the feel dials. */
+    pitchShare: 1,
     /** How strongly a lean pulls it that way (m/s^2 at 90 degrees). Leaning becomes staggering. */
     stagger: 4,
     /** Sideways roll kick on each footfall (rad/s). */
@@ -239,6 +241,12 @@ export const codeDefaults = {
     muted: false,
   },
   tail: {
+    /**
+     * 1: the tail smashes buildings as it swings. 0: it only brushes them. Off by default: on the
+     * test course the tail, whipping round at corners behind the player, did about half of all
+     * the damage (33 buildings against 18 for the same careful run).
+     */
+    wrecks: 0,
     segments: 5,
     length: 34,
     baseRadius: 3.8,
@@ -260,6 +268,22 @@ export const codeDefaults = {
     footLength: 8,
     footWidth: 4.4,
     footHeight: 2.2,
+  },
+  /**
+   * Moves beyond walking and turning. A movement style (see STYLES) sets these and the feel
+   * dials together; each can still be changed by hand afterwards.
+   */
+  move: {
+    /** Which style was last chosen: 0 lumbering, 1 steady, 2 wild. Only a label; the numbers are what count. */
+    style: 1,
+    /** How high it can leap, in metres (0: it cannot). It comes down hard. */
+    jump: 0,
+    /** 1: pressing crawl at a run throws it into a belly-slide, keeping its speed. */
+    slide: 0,
+    /** 1: the direction keys mean "that way on the screen" and the kaiju turns to go there. 0: A and D turn it, W and S drive it. */
+    relative: 1,
+    /** Extra gravity while in the air, so that a leap is quick rather than floaty (multiples of normal). */
+    hangGravity: 2.6,
   },
   /** Which shift this is: each one is a new city. */
   game: { shift: 1 },
@@ -312,6 +336,9 @@ export function applyFeel(t: Tuning): void {
   // A little over speed/pickup, because leaning back into the start costs some push.
   k.acceleration = round(f.speed / (Math.max(0.2, f.pickup) * 0.82));
   k.braking = round(k.acceleration * 0.85);
+  // How much of its own speeding up and slowing down leans it. A slow kaiju leans into all of
+  // it; a quick one would be thrown flat by its own start, so it feels less of it in proportion.
+  k.pitchShare = round(Math.min(1, 18 / k.acceleration));
   k.maxTurnRate = round(f.turning);
   k.turnAcceleration = round(f.turning * 2.5);
   k.grip = round(f.grip);
@@ -328,6 +355,41 @@ export function applyFeel(t: Tuning): void {
 
 applyFeel(codeDefaults);
 
+/**
+ * Movement styles: whole characters to try, each a setting of the six feel dials plus which
+ * extra moves it has. They are starting points for a playtester to pick between and then
+ * adjust, not fixed modes: choosing one just writes these numbers.
+ */
+export const STYLES: { name: string; blurb: string; feel: Tuning['feel']; move: { jump: number; slide: number; relative: number } }[] = [
+  {
+    name: 'Lumbering',
+    blurb: 'heavy, wobbly, slow to answer: how it was',
+    feel: { speed: 32, pickup: 2.1, turning: 2, grip: 35.5, wobble: 0.77, balance: 0.75 },
+    move: { jump: 0, slide: 0, relative: 0 },
+  },
+  {
+    name: 'Steady',
+    blurb: 'answers at once, corners cleanly, still falls if you ask for it',
+    feel: { speed: 40, pickup: 0.8, turning: 2.9, grip: 62, wobble: 0.32, balance: 0.8 },
+    move: { jump: 0, slide: 0, relative: 1 },
+  },
+  {
+    name: 'Wild',
+    blurb: 'fast, with a leap (Space) and a belly-slide (C at a run)',
+    feel: { speed: 56, pickup: 0.55, turning: 3.5, grip: 70, wobble: 0.4, balance: 0.78 },
+    move: { jump: 13, slide: 1, relative: 1 },
+  },
+];
+
+/** Switches to a movement style: sets the feel dials and the extra moves, and works out the detailed numbers. */
+export function applyStyle(t: Tuning, index: number): void {
+  const style = STYLES[index];
+  if (!style) return;
+  Object.assign(t.feel, style.feel);
+  Object.assign(t.move, style.move, { style: index });
+  applyFeel(t);
+}
+
 /** Plain-language labels for the feel dials. */
 export const feelLabels: { [K in keyof Tuning['feel']]: string } = {
   speed: 'speed  (top speed, m/s)',
@@ -341,10 +403,10 @@ export const feelLabels: { [K in keyof Tuning['feel']]: string } = {
 /** Slider ranges for the GUI: [min, max, step]. Missing keys get a guessed range. */
 export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, number, number] } } = {
   feel: {
-    speed: [4, 45, 0.5],
-    pickup: [0.4, 6, 0.1],
-    turning: [0.5, 4, 0.05],
-    grip: [3, 50, 0.5],
+    speed: [4, 80, 0.5],
+    pickup: [0.2, 6, 0.05],
+    turning: [0.5, 5, 0.05],
+    grip: [3, 120, 0.5],
     wobble: [0, 1, 0.01],
     balance: [0, 1, 0.01],
   },
@@ -406,6 +468,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     uprightFrequency: [0.1, 2, 0.01],
     uprightDamping: [0.02, 2, 0.01],
     lean: [0, 0.8, 0.01],
+    pitchShare: [0, 1, 0.01],
     stagger: [0, 20, 0.1],
     footfallKick: [0, 0.6, 0.01],
     maxSpeed: [1, 45, 0.5],
@@ -474,6 +537,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
   citizens: { density: [0, 4, 0.1] },
   audio: { volume: [0, 1, 0.01] },
   tail: {
+    wrecks: [0, 1, 1],
     segments: [2, 8, 1],
     length: [8, 60, 1],
     baseRadius: [1, 6, 0.1],
@@ -493,6 +557,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     footWidth: [1, 8, 0.1],
     footHeight: [0.5, 4, 0.1],
   },
+  move: { style: [0, 2, 1], jump: [0, 30, 0.5], slide: [0, 1, 1], relative: [0, 1, 1], hangGravity: [1, 5, 0.1] },
   game: { shift: [1, 99, 1] },
   gfx: {
     hour: [6, 22, 0.1],
@@ -517,7 +582,7 @@ export const restartKeys: { [G in TuningGroup]?: readonly string[] | 'all' } = {
   city: 'all',
   citizens: 'all',
   kaiju: ['bodyRadius', 'bodyHalfHeight', 'legLength', 'density'],
-  tail: ['segments', 'length', 'baseRadius', 'tipRadius', 'density'],
+  tail: ['wrecks', 'segments', 'length', 'baseRadius', 'tipRadius', 'density'],
   legs: ['footLength', 'footWidth', 'footHeight'],
   destruction: ['chunkDensity', 'friction'],
 };

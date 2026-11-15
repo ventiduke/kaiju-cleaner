@@ -26,6 +26,32 @@ The city takes about a minute per run to simulate. Styles (`src/bot/playbot.ts`)
 - **reckless**: straight at everything, flat out.
 - **idle**: never touches the controls. Nothing should finish, break or move.
 
+## The test course: for anything about how the kaiju moves
+
+```sh
+npm run course                  # every movement style, careful and flat out
+npm run course -- 1 careful     # one style (0 Lumbering, 1 Steady, 2 Wild), one effort
+npm run course -- settings.json # the settings in a file pasted from the game
+```
+
+The course (`src/scenes/course.ts`) is a fixed kilometre: a 40 m boulevard, a 26 m avenue with parked cars,
+an 18 m squeeze, two sharp corners, skybridges to get under, and thin ground to cross lightly. The report
+gives time and damage per leg, so a change in handling shows up as "faster through the chicane, but two
+more buildings in the squeeze". The score is time plus a penalty for each building and fall
+(`PENALTY` in `src/city/course.ts`).
+
+Use it before and after any change to movement, the feel dials, the styles, the kaiju's size or the tail,
+and quote both summaries. What to look for:
+
+- **Careful should beat flat-out on score** for a style that is fun to master: if flat-out always wins,
+  care is not being rewarded; if careful is many times better, speed is being punished out of the game.
+- **A leg that costs buildings however carefully it is driven** is too tight for the kaiju, or something
+  unseen is doing the damage. (The tail was: `tail.wrecks`, see `feedback/feel-log.md`.)
+- **Stumbles on the straight** mean the style trips itself up.
+
+The playtester runs the same course by hand and can copy their results from the finish card: compare their
+legs with the bot's, and ask about the legs where they differ most.
+
 ## Reading the report
 
 ```

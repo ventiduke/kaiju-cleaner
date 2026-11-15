@@ -1,3 +1,16 @@
 {
-  "feel": { "speed": 32, "pickup": 2.1, "turning": 2, "grip": 35.5, "wobble": 0.77, "balance": 0.75 }
+  "feel": {
+    "speed": 40,
+    "pickup": 0.8,
+    "turning": 2.9,
+    "grip": 62,
+    "wobble": 0.32,
+    "balance": 0.8
+  },
+  "move": {
+    "style": 1,
+    "jump": 0,
+    "slide": 0,
+    "relative": 1
+  }
 }

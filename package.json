@@ -13,7 +13,8 @@
     "feel": "node scripts/feel.mjs",
     "shots": "node scripts/shots.mjs",
     "verify:live": "node scripts/live.mjs",
-    "playbot": "node scripts/playbot.mjs"
+    "playbot": "node scripts/playbot.mjs",
+    "course": "node scripts/course.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",

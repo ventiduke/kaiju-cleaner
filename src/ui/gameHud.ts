@@ -28,6 +28,8 @@ export interface HudDeps {
   begin: () => void;
   /** Show the briefing first (off for automated runs). */
   intro: boolean;
+  /** Other places to point at (the next gate on the test course): arrows and the map show them, the job list does not. */
+  targets?: () => JobView[];
 }
 
 const hex = (c: number) => '#' + c.toString(16).padStart(6, '0');
@@ -68,6 +70,7 @@ export class GameHud {
   private coachTime = 0;
   private listTimer = 0;
   private jobs: JobView[] = [];
+  private extra: JobView[] = [];
   private scale = 1;
   playing = false;
 
@@ -120,7 +123,11 @@ export class GameHud {
       for (const [k, what] of rows) keys.append(el('kbd', '', k), el('span', '', what));
       card.append(keys);
       const go = el('button', 'gh-go', 'Start the shift');
-      card.append(go, el('div', 'gh-small', 'Enter or click to start   ·   H: all controls   ·   ` : tuning and feedback tools'));
+      const test = el('button', 'gh-go gh-quiet', 'Movement test course');
+      test.addEventListener('click', () => (location.search = '?scene=course'));
+      const row = el('div', 'gh-buttons');
+      row.append(go, test);
+      card.append(row, el('div', 'gh-small', 'Enter or click to start   ·   H: all controls   ·   ` : tuning and feedback tools'));
       const start = () => {
         if (this.playing) return;
         this.playing = true;
@@ -245,7 +252,7 @@ export class GameHud {
       g.arc(x, z, Math.max(1.6, h.radius * this.scale * 0.7), 0, 6.3);
       g.fill();
     }
-    for (const j of this.jobs) {
+    for (const j of [...this.jobs, ...this.extra]) {
       if (j.done) continue;
       const [x, z] = this.toMap(j.x, j.z);
       g.fillStyle = hex(j.color);
@@ -307,7 +314,7 @@ export class GameHud {
 
   private drawArrows(): void {
     const k = this.d.kaiju.visual.position;
-    const open = this.jobs.filter((j) => !j.done).map((j) => ({ j, far: Math.hypot(j.x - k.x, j.z - k.z) }));
+    const open = [...this.jobs, ...this.extra].filter((j) => !j.done).map((j) => ({ j, far: Math.hypot(j.x - k.x, j.z - k.z) }));
     open.sort((a, b) => Number(b.j.active) - Number(a.j.active) || a.far - b.far);
     // Only the job in hand, or the three nearest: more than that is noise.
     const show = open[0]?.j.active ? open.slice(0, 1) : open.slice(0, 3);
@@ -390,6 +397,7 @@ export class GameHud {
     if (this.listTimer <= 0) {
       this.listTimer = 0.2;
       this.jobs = this.d.board.list();
+      this.extra = this.d.targets?.() ?? [];
       this.drawList();
     }
     this.drawMap();

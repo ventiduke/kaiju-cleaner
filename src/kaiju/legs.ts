@@ -64,6 +64,8 @@ function span(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3): void {
   mesh.scale.set(1, len, 1);
 }
 
+const CLAW = new THREE.MeshLambertMaterial({ color: 0xd9d2bd });
+
 /**
  * Procedural legs. The body floats on its hover spring; these feet step to keep up,
  * with a deliberately loose, offbeat rhythm. Each foot carries a kinematic collider,
@@ -120,8 +122,9 @@ export class Legs {
           .setCollisionGroups(groups(Group.FOOT, Group.PROP | Group.BALL)),
         body,
       );
-      const thigh = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 2.3, 1, 8), material);
-      const shin = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.8, 1, 8), material);
+      // Heavy haunches: these carry thirty metres of animal.
+      const thigh = new THREE.Mesh(new THREE.CylinderGeometry(3.0, 3.3, 1, 10), material);
+      const shin = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.4, 1, 10), material);
       const foot = new THREE.Group();
       const sole = new THREE.Mesh(new THREE.BoxGeometry(l.footWidth, l.footHeight, l.footLength * 0.72), material);
       sole.position.set(0, l.footHeight / 2, -l.footLength * 0.1);
@@ -133,6 +136,11 @@ export class Legs {
         );
         toe.position.set(tx * l.footWidth * 0.34, l.footHeight * 0.35, l.footLength * 0.37);
         foot.add(toe);
+        // A blunt claw on the end of each toe.
+        const claw = new THREE.Mesh(new THREE.ConeGeometry(l.footWidth * 0.11, l.footLength * 0.2, 4), CLAW);
+        claw.rotation.x = Math.PI / 2;
+        claw.position.set(tx * l.footWidth * 0.34, l.footHeight * 0.3, l.footLength * 0.6);
+        foot.add(claw);
       }
       for (const m of [thigh, shin, ...foot.children] as THREE.Mesh[]) {
         m.castShadow = true;

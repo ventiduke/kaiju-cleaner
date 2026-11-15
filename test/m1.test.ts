@@ -30,14 +30,15 @@ describe('city layout', () => {
     }
   });
 
-  it('has an avenue the kaiju fits down and a side street that is a squeeze', () => {
+  it('has streets a kaiju can walk down: room either side of the body even on a side street', () => {
     const t = makeTuning();
-    const stance = 2 * t.legs.stanceWidth + t.legs.footWidth;
+    const body = 2 * t.kaiju.bodyRadius;
     // Clear width between building faces is the road plus both sidewalks.
-    expect(cfg.avenueWidth + 2 * cfg.sidewalk).toBeGreaterThan(stance + 6);
-    // The side street leaves only a metre or so either side of the feet.
-    expect(cfg.sideStreetWidth + 2 * cfg.sidewalk).toBeGreaterThan(stance);
-    expect(cfg.sideStreetWidth + 2 * cfg.sidewalk).toBeLessThan(stance + 3);
+    const clear = (road: number) => road + 2 * cfg.sidewalk;
+    // On the test course a street 22 m between faces cost a careful driver ten buildings, and one of 30 m cost one.
+    expect(clear(cfg.sideStreetWidth)).toBeGreaterThan(body + 12);
+    expect(clear(cfg.avenueWidth)).toBeGreaterThan(clear(cfg.sideStreetWidth) + 4);
+    expect(clear(cfg.boulevardWidth)).toBeGreaterThan(clear(cfg.avenueWidth) + 8);
   });
 
   it('gives every chunk above the ground floor something to rest on, whatever the building is made of', () => {

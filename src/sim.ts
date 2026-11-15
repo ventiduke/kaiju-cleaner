@@ -22,12 +22,14 @@ export interface PlayerInput {
   breath: boolean;
   /** Tapped to bow in apology. */
   bow: boolean;
+  /** Tapped to leap, for a kaiju that can. */
+  jump: boolean;
   /** Camera orbit input (-1..1). */
   camYaw: number;
 }
 
 export function emptyInput(): PlayerInput {
-  return { thrust: 0, turn: 0, tiptoe: false, crouch: false, grab: false, balanceX: 0, balanceZ: 0, breath: false, bow: false, camYaw: 0 };
+  return { thrust: 0, turn: 0, tiptoe: false, crouch: false, grab: false, balanceX: 0, balanceZ: 0, breath: false, bow: false, jump: false, camYaw: 0 };
 }
 
 export interface System {
@@ -57,6 +59,13 @@ export interface SimEvents {
   sweepDone: { x: number; y: number; z: number };
   /** The city's opinion just moved: by how much, why, and where it happened. */
   approval: { x: number; y: number; z: number; delta: number; why: string };
+  /** The kaiju has left the ground, come back down (`speed` is how fast it was falling), or thrown itself into a slide. */
+  kaijuJump: { x: number; y: number; z: number };
+  kaijuLand: { x: number; y: number; z: number; speed: number };
+  kaijuSlide: { x: number; y: number; z: number };
+  /** On the test course: a gate passed (`leg` is how many so far), and the run finished. */
+  courseGate: { x: number; y: number; z: number; leg: number; seconds: number };
+  courseDone: { x: number; y: number; z: number; seconds: number; score: number };
   /** A water main has burst. */
   mainBurst: { x: number; y: number; z: number };
   /** Every repair job is done. `approval` is the city's verdict, 0..100. */

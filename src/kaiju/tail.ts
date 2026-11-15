@@ -66,7 +66,9 @@ export class Tail {
           .setRotation({ x: lay.x, y: lay.y, z: lay.z, w: lay.w })
           .setDensity(t.density)
           .setFriction(0.4)
-          .setCollisionGroups(groups(Group.TAIL, Group.GROUND | Group.CHUNK | Group.PROP | Group.BALL | Group.PIECE)),
+          // (A tail that does not wreck buildings passes through them: one that merely bumped them
+          // would snag on every corner and pull the kaiju off its feet.)
+          .setCollisionGroups(groups(Group.TAIL, Group.GROUND | Group.PROP | Group.BALL | Group.PIECE | (sim.tuning.tail.wrecks ? Group.CHUNK : 0))),
         body,
       );
       const joint = world.createImpulseJoint(
@@ -78,7 +80,9 @@ export class Tail {
       joint.setContactsEnabled(false);
       this.joints.push(joint);
       this.segments.push(body);
-      chunks?.addHitter(body, len / 2 + radius);
+      // A tail that wrecks buildings swings through them like the body does. One that does not still
+      // knocks cars, people and loose lumps about, but leaves the walls standing.
+      if (sim.tuning.tail.wrecks) chunks?.addHitter(body, len / 2 + radius);
 
       const next = THREE.MathUtils.lerp(t.baseRadius, t.tipRadius, Math.min(1, (i + 1) / (n - 1)));
       const geometry = new THREE.CylinderGeometry(next * 0.95, radius, len * 1.08, 10);

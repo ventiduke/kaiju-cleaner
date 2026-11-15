@@ -27,7 +27,7 @@ export interface SessionFile {
   /** Rows of [seconds, x, z, yawDeg, speed, tiltDeg, state, thrust, turn, chunksBroken], 5 a second. */
   samples: number[][];
   events: { tick: number; type: string }[];
-  /** [tick, thrust, turn, tiptoe, crouch, grab, balanceX, balanceZ, breath, bow] whenever the input changed (older files are shorter). */
+  /** [tick, thrust, turn, tiptoe, crouch, grab, balanceX, balanceZ, breath, bow, jump] whenever the input changed (older files are shorter). */
   inputs: number[][];
   /** [tick, ox, oy, oz, dx, dy, dz] for each debug ball thrown. */
   balls: number[][];
@@ -149,9 +149,9 @@ export class SessionRecorder implements System {
     const bx = 0;
     const bz = holding || p.grab ? r(p.balanceZ, 2) : 0;
     const held =
-      (p.tiptoe ? 1 : 0) + (p.crouch ? 2 : 0) + (p.grab ? 4 : 0) + (p.breath ? 8 : 0) + (p.bow ? 16 : 0) + (bz + 1) * 1000;
+      (p.tiptoe ? 1 : 0) + (p.crouch ? 2 : 0) + (p.grab ? 4 : 0) + (p.breath ? 8 : 0) + (p.bow ? 16 : 0) + (p.jump ? 32 : 0) + (bz + 1) * 1000;
     if (thrust !== this.lastThrust || turn !== this.lastTurn || held !== this.lastHeld) {
-      this.inputs.push([this.sim.tick, thrust, turn, p.tiptoe ? 1 : 0, p.crouch ? 1 : 0, p.grab ? 1 : 0, bx, bz, p.breath ? 1 : 0, p.bow ? 1 : 0]);
+      this.inputs.push([this.sim.tick, thrust, turn, p.tiptoe ? 1 : 0, p.crouch ? 1 : 0, p.grab ? 1 : 0, bx, bz, p.breath ? 1 : 0, p.bow ? 1 : 0, p.jump ? 1 : 0]);
       this.lastThrust = thrust;
       this.lastTurn = turn;
       this.lastHeld = held;

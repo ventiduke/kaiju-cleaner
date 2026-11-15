@@ -9,6 +9,7 @@ is checked by tests, a scripted player, and headless screenshots. `README.md` sa
 npm run typecheck        npm test                 npm run build && npm run smoke
 npm run feel [-- file]   # handling numbers; with a session file, the playtester's notes and a replay
 npm run playbot [-- <scene> <careful|reckless|idle> <seeds>]   # a scripted player plays a shift
+npm run course [-- <style 0|1|2> <careful|flatout>]              # a bot drives the timed test course on each movement style
 node scripts/shots.mjs '<json>'   # named-state screenshots, each with a state dump (needs a build)
 npm run verify:live      # is the deployed site serving this commit, and does it boot?
 ```

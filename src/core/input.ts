@@ -9,6 +9,27 @@ function axis(v: number): number {
   return (Math.sign(v) * (a - DEADZONE)) / (1 - DEADZONE);
 }
 
+const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/**
+ * Turns "this way on the screen" into the drive-and-turn inputs the kaiju understands.
+ * `fwd` and `side` are the stick (side: +1 is screen-left). With no view (tank controls)
+ * they pass straight through. Otherwise the kaiju is turned toward the direction asked for
+ * and driven harder the more nearly it faces it; pulling straight back just reverses, so
+ * that it never spins round to walk into the camera.
+ */
+export function steerByScreen(fwd: number, side: number, view: { camera: number; kaiju: number } | null): { thrust: number; turn: number } {
+  if (!view) return { thrust: fwd, turn: side };
+  const size = Math.min(1, Math.hypot(fwd, side));
+  if (size < 0.05) return { thrust: 0, turn: 0 };
+  if (fwd < 0 && Math.abs(side) < 0.3) return { thrust: fwd, turn: 0 };
+  // Screen-left is a quarter turn anticlockwise from the camera's heading (seen from above, +yaw).
+  const want = view.camera + Math.atan2(side, fwd);
+  const off = wrap(want - view.kaiju);
+  const facing = Math.abs(off) < 1.3 ? Math.cos(off) : 0.12;
+  return { thrust: size * facing, turn: Math.max(-1, Math.min(1, off * 2.6)) };
+}
+
 /**
  * Reads devices and writes abstract actions into each player's input slot.
  * Player 0 gets the keyboard plus the first gamepad; each further gamepad
@@ -29,7 +50,15 @@ export class InputManager {
    */
   private balance = 0;
 
-  constructor(private players: PlayerInput[]) {
+  /**
+   * @param view when set and it returns headings, the direction keys steer by the screen
+   *   ("up" is away from the camera) instead of turning the kaiju like a tank. Both headings
+   *   are compass angles in radians (0 faces +z).
+   */
+  constructor(
+    private players: PlayerInput[],
+    private view: () => { camera: number; kaiju: number } | null = () => null,
+  ) {
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
       if (e.code === 'Space') e.preventDefault();
@@ -74,14 +103,19 @@ export class InputManager {
       let grab = false;
       let breath = false;
       let bow = false;
+      let jump = false;
       const balanceX = 0;
       let balanceZ = 0;
       if (i === 0) {
-        thrust += this.key('KeyW', 'ArrowUp') - this.key('KeyS', 'ArrowDown');
-        turn += this.key('KeyA', 'ArrowLeft') - this.key('KeyD', 'ArrowRight');
+        const fwd = this.key('KeyW', 'ArrowUp') - this.key('KeyS', 'ArrowDown');
+        const side = this.key('KeyA', 'ArrowLeft') - this.key('KeyD', 'ArrowRight');
+        const steer = steerByScreen(fwd, side, this.view());
+        thrust += steer.thrust;
+        turn += steer.turn;
         camYaw += this.key('KeyZ') - this.key('KeyQ');
         tiptoe = this.key('ShiftLeft', 'ShiftRight') > 0;
-        crouch = this.key('Space') > 0;
+        crouch = this.key('KeyC') > 0;
+        jump = this.key('Space') > 0;
         breath = this.key('KeyF') > 0;
         bow = this.key('KeyV') > 0;
         // One tap of E, or one click, is one press; the game takes hold or lets go on each.
@@ -95,10 +129,12 @@ export class InputManager {
       }
       const pad = pads[i];
       if (pad) {
-        thrust += -axis(pad.axes[1] ?? 0);
-        turn += -axis(pad.axes[0] ?? 0);
+        const steer = steerByScreen(-axis(pad.axes[1] ?? 0), -axis(pad.axes[0] ?? 0), i === 0 ? this.view() : null);
+        thrust += steer.thrust;
+        turn += steer.turn;
+        jump ||= !!pad.buttons[0]?.pressed;
         camYaw += axis(pad.axes[2] ?? 0);
-        tiptoe ||= !!pad.buttons[0]?.pressed || (pad.buttons[7]?.value ?? 0) > 0.4;
+        tiptoe ||= (pad.buttons[7]?.value ?? 0) > 0.4;
         crouch ||= !!pad.buttons[1]?.pressed || (pad.buttons[6]?.value ?? 0) > 0.4;
         breath ||= !!pad.buttons[3]?.pressed;
         grab ||= !!pad.buttons[2]?.pressed || !!pad.buttons[5]?.pressed;
@@ -119,6 +155,7 @@ export class InputManager {
       p.grab = grab;
       p.breath = breath;
       p.bow = bow;
+      p.jump = jump;
       p.balanceX = balanceX;
       p.balanceZ = balanceZ;
     }

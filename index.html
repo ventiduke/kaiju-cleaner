@@ -64,6 +64,21 @@
       .gh-stars { font-size: 34px; color: #ffc928; letter-spacing: 6px; margin-bottom: 4px; }
       .gh-stats { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 5px 14px; text-align: left; font-size: 13px; margin: 0 auto 20px; max-width: 440px; }
       .gh-stats span { opacity: 0.75; }
+      .ch { position: fixed; inset: 0; pointer-events: none; color: #fff; font-family: ui-rounded, "Segoe UI", system-ui, sans-serif; z-index: 3; }
+      .ch-top { position: absolute; left: 30%; top: 10px; transform: translateX(-50%); text-align: center; }
+      .ch-clock { font-size: 44px; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); line-height: 1; }
+      .ch-clock.ch-done { color: #7dff9a; }
+      .ch-leg { margin-top: 6px; font-size: 15px; font-weight: 600; background: rgba(16, 20, 28, 0.7); padding: 6px 14px; border-radius: 16px; display: inline-block; }
+      .ch-splits { position: absolute; left: 14px; top: 96px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-variant-numeric: tabular-nums; }
+      .ch-splits span { background: rgba(16, 20, 28, 0.62); padding: 3px 9px; border-radius: 8px; }
+      .ch-splits .ch-hit { color: #ffb38a; }
+      .ch-card { width: min(620px, 92vw); }
+      .ch-table { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 4px 12px; text-align: left; font-size: 13px; margin: 0 auto 16px; max-width: 520px; font-variant-numeric: tabular-nums; }
+      .ch-table b { font-size: 11px; letter-spacing: 0.08em; opacity: 0.65; text-transform: uppercase; }
+      .ch-history { border-top: 1px solid rgba(255, 255, 255, 0.15); padding-top: 12px; }
+      .ch-best { color: #7dff9a; font-weight: 700; }
+      .ch-now { color: #ffd23f; }
+      body.panel-on .dev-tool { display: flex !important; }
       #hint { position: fixed; left: 12px; bottom: 10px; color: #fff; font-size: 11px; opacity: 0.6; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); pointer-events: none; }
       body.dev-off #hud, body.dev-off .dev-tool { display: none; }
       body.help-off #help { display: none; }

@@ -15,8 +15,10 @@ import { snapshot } from './core/snapshot';
 import { setState } from './core/states';
 import { initRapier } from './core/physics';
 import { BUILD, SessionRecorder } from './core/session';
-import { makeTuning, stashForRestart, takeRestartStash } from './core/tuning';
+import { applyStyle, makeTuning, stashForRestart, STYLES, takeRestartStash } from './core/tuning';
 import type { CityLayout } from './city/cityGen';
+import type { Course } from './city/course';
+import { CourseHud } from './ui/courseHud';
 import { GameHud } from './ui/gameHud';
 import { HOURS, type Look } from './gfx/look';
 import { Post } from './gfx/post';
@@ -212,7 +214,13 @@ async function boot(): Promise<void> {
     ball.throw(raycaster.ray.origin, raycaster.ray.direction);
     recorder.ballThrown(raycaster.ray.origin, raycaster.ray.direction);
   };
-  const input = new InputManager(sim.players);
+  // Steering by the screen needs to know which way the camera and the kaiju are facing.
+  const lookDir = new THREE.Vector3();
+  const input = new InputManager(sim.players, () => {
+    if (!tuning.move.relative || !follow || !kaiju) return null;
+    camera.getWorldDirection(lookDir);
+    return { camera: Math.atan2(lookDir.x, lookDir.z), kaiju: kaiju.yaw };
+  });
   freeCam.onClick = (ndc) => (follow ? input.click() : throwBall(ndc));
 
   const hud = new Hud();
@@ -233,13 +241,31 @@ async function boot(): Promise<void> {
       }
     },
   );
-  buildTuningGui(tuning, { scene: sceneName, scenes: SCENES, recorder, addNote: openNote, toast });
+  const gui = buildTuningGui(tuning, { scene: sceneName, scenes: SCENES, recorder, addNote: openNote, toast });
+  const hint = document.getElementById('hint')!;
+  /** After settings are changed from the keyboard: show the new numbers in the panel, log them, and name the style. */
+  const refreshPanel = () => {
+    for (const c of gui.controllersRecursive()) c.updateDisplay();
+    recorder.tuningChanged();
+    hint.textContent = `1/2/3: movement style (now ${STYLES[tuning.move.style]?.name ?? 'custom'})   X: steering (${tuning.move.relative ? 'by screen' : 'tank'})   H: controls   N: note   \`: tuning panel`;
+  };
+  refreshPanel();
   // The tuning panel is a dev tool: tucked away until the ` key asks for it.
   document.querySelector('.lil-gui')?.classList.add('dev-tool');
 
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement) return;
-    if (e.code === 'KeyC' && followCam) {
+    const digit = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
+    if (digit >= 0) {
+      // A whole movement style at a keypress.
+      applyStyle(tuning, digit);
+      refreshPanel();
+      toast(`${STYLES[digit].name}: ${STYLES[digit].blurb}`);
+    } else if (e.code === 'KeyX') {
+      tuning.move.relative = tuning.move.relative ? 0 : 1;
+      refreshPanel();
+      toast(tuning.move.relative ? 'Steering: by the screen (the kaiju turns to go where you point)' : 'Steering: tank (A and D turn, W and S drive)');
+    } else if (e.code === 'Backslash' && followCam) {
       follow = !follow;
       freeCam.enabled = !follow;
       if (!follow && kaiju) freeCam.target.copy(kaiju.visual.position).setY(8);
@@ -261,12 +287,12 @@ async function boot(): Promise<void> {
   });
 
   document.getElementById('help')!.textContent = [
-    'W/S run   A/D turn   Shift: tiptoe   Space: crawl (or plant feet while holding)   F: hold breath   V: bow',
-    'CLICK (or E) by a marked piece: take hold. Click again over its marker to put it back. A toppled one is stood up where it lies.',
-    'while holding: watch the gauge on the left and move the mouse up or down when it says so.',
+    'W/A/S/D move   Shift: tiptoe   C: crawl (at a run, in Wild style: slide)   Space: leap (Wild style)   F: hold breath   V: bow',
+    '1 / 2 / 3: movement style (Lumbering, Steady, Wild)   X: steer by the screen, or like a tank',
+    'CLICK (or E) by a marked piece: take hold; click again over its marker to put it back. C while holding plants your feet.',
     'blocked road: shove, kick, tail-sweep or sneeze the rubble off it.      going over? steer into the fall to save it',
     'mouse drag: look around   wheel: zoom   double-click: reset view   Q/Z: swing   T: time of day',
-    'N: note for Claude   M: sound   C: free camera   B: throw ball   `: tuning and feedback panel   H: hide this',
+    'N: note for Claude   M: sound   B: throw ball   \\: free camera   `: tuning and feedback panel   H: hide this',
   ].join('\n');
   document.getElementById('boot')?.remove();
 
@@ -367,6 +393,10 @@ async function boot(): Promise<void> {
           citizens,
           nose,
           intro: (params.has('intro') || !automated) && sceneName === 'city',
+          targets: () => {
+            const gate = course?.next();
+            return gate ? [{ name: gate.name, color: gate.color, done: false, sloppy: false, active: true, x: gate.x, z: gate.z, note: 'next gate' }] : [];
+          },
           begin: () => (loop.paused = false),
           restart: (next) => {
             if (next) {
@@ -379,7 +409,18 @@ async function boot(): Promise<void> {
         })
       : null;
   const theHud = gameHud;
-  hudFrame = (dt) => theHud?.frame(dt);
+  // The test course: its own clock and results, and the tuning panel open from the start.
+  const course = sim.parts.course as Course | undefined;
+  const restartScene = () => {
+    stashForRestart(tuning);
+    location.reload();
+  };
+  const courseHud = course ? new CourseHud(sim, tuning, course, restartScene, toast) : null;
+  if (course) document.body.classList.add('panel-on');
+  hudFrame = (dt) => {
+    theHud?.frame(dt);
+    courseHud?.frame();
+  };
   loop.start();
   // The briefing holds the game until it is dismissed (one frame is drawn behind it first).
   if (theHud && !theHud.playing) setTimeout(() => !theHud.playing && (loop.paused = true), 60);

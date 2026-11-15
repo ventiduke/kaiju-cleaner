@@ -20,6 +20,8 @@ npm run smoke      # boots the build in headless Chromium, screenshots to script
 Scenes are picked with a URL parameter:
 
 - `?scene=city` (default): the city, 8×8 blocks either side of a river.
+- `?scene=course`: the movement test course: a timed kilometre of streets of different widths, with skybridges
+  to get under and thin ground to step lightly over. The tuning dials are open beside it.
 - `?scene=yard`: a flat practice ground with three test buildings, one of each repair job and one of each hazard.
 - `?scene=plane`: nothing but ground, for judging movement on its own.
 
@@ -27,13 +29,15 @@ Scenes are picked with a URL parameter:
 
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
-| Run forward / back | W / S | Left stick up / down |
-| Turn | A / D | Left stick left / right |
-| Tiptoe: slow, narrow, quiet, until the calves give out | Hold Shift | A or right trigger |
-| Crawl on all fours: slow, can't be tipped, fits under skybridges | Hold Space | B or left trigger |
+| Move | W A S D: by default the kaiju turns to go the way you point on screen | Left stick |
+| Switch steering: by the screen, or like a tank (A / D turn, W / S drive) | X | |
+| Movement style: Lumbering, Steady, Wild | 1 / 2 / 3 | |
+| Leap (Wild style) | Space | A |
+| Tiptoe: slow, quiet, light enough for thin ground, until the calves give out | Hold Shift | Right trigger |
+| Crawl on all fours: slow, can't be tipped, fits under skybridges. At a run in Wild style: a belly-slide | Hold C | B or left trigger |
 | Take hold of a repair piece; let go of it | Click (or E); click again | X or right bumper |
 | Steady what you are holding, when the gauge says so | Move the mouse up or down (or I / K) | Right stick up / down |
-| Plant your feet while holding (steadier, but no walking) | Hold Space | B or left trigger |
+| Plant your feet while holding (steadier, but no walking) | Hold C | B or left trigger |
 | Bow (say sorry to the people you just frightened) | V | Left bumper |
 | Hold your breath (keeps dust out of the nose) | Hold F | Y |
 | Look around, raise or lower the view | Drag the mouse, or Q / Z | Right stick left / right |
@@ -44,7 +48,7 @@ Scenes are picked with a URL parameter:
 | Tuning and feedback panel, debug readout | ` (backquote) | |
 | Note for Claude | N | |
 | Sound on / off | M | |
-| Free camera on / off | C | |
+| Free camera on / off | \\ | |
 | Throw a debug ball at the cursor | B (or click, in the free camera) | |
 
 **A shift.** The game opens on a briefing: today's jobs, and the keys. The job list (top right) shows each
@@ -99,6 +103,22 @@ columns and L-shapes. Most loose pieces crumble to dust and a little rubble at t
 sturdy rest stay as lumps. A foot landing on rubble crushes the weak bits and stands on the sturdy ones.
 The townsfolk run from a stomping kaiju (less from one on tiptoe), cheer a repair, and leave a colourful
 splat if stepped on or sent flying into a wall.
+
+## Finding the fun: styles and the test course
+
+How the kaiju should move is an open question, so there are three whole styles to switch between while
+playing (keys 1, 2, 3), each a setting of the six feel dials plus which extra moves it has:
+
+- **Lumbering**: heavy, wobbly, slow to answer.
+- **Steady** (the default): moving within half a second, corners cleanly, still falls if you hold a hard turn.
+- **Wild**: fast, with a leap (Space) that comes down hard enough to shake buildings loose, and a
+  belly-slide (C at a run) that goes under a skybridge without stopping.
+
+The test course (`?scene=course`, or the button on the briefing) is where to judge them. It times each leg
+and counts what was broken on it; the score is the time plus two seconds a building and three a fall, so
+a fast run only wins if the street is still standing. The finish card keeps a list of your runs and has a
+button that copies the results and the settings that made them. `npm run course` drives the same course with
+a bot on every style, which is how a change to the handling is checked before a person tries it.
 
 ## How it looks
 

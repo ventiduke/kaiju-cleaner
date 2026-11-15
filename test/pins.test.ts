@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { makeTuning } from '../src/core/tuning';
+import { makeTuning, STYLES } from '../src/core/tuning';
 import { makeGame } from './helpers';
 
 interface Pin {
@@ -17,6 +17,13 @@ const SHIPPED_FEEL = { feel: { ...shipped.feel } };
 
 /** What a pinned outcome means, as something that can be run. */
 const OUTCOMES: Record<string, () => Promise<void>> = {
+  'three-styles-to-switch-between': async () => {
+    expect(STYLES.map((s) => s.name)).toEqual(['Lumbering', 'Steady', 'Wild']);
+    // One wobbles, one is steady, one can leap and slide.
+    expect(STYLES[0].feel.wobble).toBeGreaterThan(STYLES[1].feel.wobble + 0.3);
+    expect(STYLES[2].move.jump).toBeGreaterThan(0);
+    expect(STYLES[2].move.slide).toBe(1);
+  },
   'hard-turn-at-speed-falls': async () => {
     const g = await makeGame('plane', SHIPPED_FEEL);
     g.sim.players[0].thrust = 1;
@@ -82,7 +89,7 @@ describe('the simulation stays repeatable', () => {
   });
 
   it('the simulation never reaches for the page: no document or window outside the shell', () => {
-    const shell = ['src/main.ts', 'src/core/debug.ts', 'src/core/input.ts', 'src/core/audio.ts', 'src/core/freeCamera.ts', 'src/core/loop.ts', 'src/core/tuning.ts', 'src/core/session.ts', 'src/ui/gameHud.ts', 'src/gfx/post.ts'];
+    const shell = ['src/main.ts', 'src/core/debug.ts', 'src/core/input.ts', 'src/core/audio.ts', 'src/core/freeCamera.ts', 'src/core/loop.ts', 'src/core/tuning.ts', 'src/core/session.ts', 'src/ui/gameHud.ts', 'src/ui/courseHud.ts', 'src/gfx/post.ts'];
     const offenders = files.filter((f) => !shell.includes(f) && /\b(document|window)\./.test(readFileSync(f, 'utf8')));
     expect(offenders).toEqual([]);
   });

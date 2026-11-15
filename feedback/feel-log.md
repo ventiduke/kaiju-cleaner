@@ -5,6 +5,12 @@ why, in the playtester's words where there are any. Settings pasted from the in-
 
 | When | What | From → to | Why |
 | --- | --- | --- | --- |
+| 15 Nov 2026 | city streets: side / avenue / boulevard | 14 / 22 / 38 m → 24 / 30 / 44 m | "The city is also maybe a little too narrow streets." Course bot, careful: an 18 m street cost 10 buildings, a 26 m one cost 1. |
+| 15 Nov 2026 | `tail.wrecks` | 1 → 0 | Course bot: the tail did about half the damage (33 buildings against 18, same careful run), from behind the player. It still knocks cars, people and loose lumps about, and passes through walls rather than snagging on them. |
+| 15 Nov 2026 | lean from its own acceleration | all of it → `18 / acceleration` of it | Course bot: the quick styles stumbled on a straight road just from setting off (Wild: 56 stumbles in one careful run). |
+| 15 Nov 2026 | default movement | Lumbering (speed 32, pickup 2.1, turning 2, grip 35.5, wobble 0.77, balance 0.75) → Steady (40, 0.8, 2.9, 62, 0.32, 0.8) | "movement is OK, but not fun. It feels very sluggish." Three styles to try, on keys 1, 2, 3; the old values are style 1. |
+| 15 Nov 2026 | steering | tank only → by the screen (X switches) | "more normal movement rules" |
+| 15 Nov 2026 | new moves | none → leap (Space) and belly-slide (C at a run) in the Wild style | "really fast and cool movement, like slides, jumps" |
 | 15 Nov 2026 | approval: jobs / crooked / buildings / people | 14 each (uncapped) → 50 shared; 8 → 60% of a job; −1.2 → −0.45; −1 → −0.2 | Playtest bot: a careful, complete nine-job shift scored 0%. Set so that run lands near the middle (47%). |
 | 15 Nov 2026 | placed pieces | knocked off at once → shrug off knocks for 4 s | Playtest bot: a tower top was knocked off one second after being set, turning to leave. |
 | 15 Nov 2026 | bridge span | fitted along the bridge → fitted from the side | Playtest bot: it could only be fitted by standing where the bridge is. |

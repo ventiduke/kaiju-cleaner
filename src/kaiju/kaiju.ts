@@ -28,20 +28,62 @@ function smooth(t: number): number {
 /** A bow: how far it bends (rad) and how long the whole thing takes (s). */
 const BOW_PITCH = 0.95;
 const BOW_SECONDS = 1.9;
+/** The longest a belly-slide lasts. */
+const SLIDE_SECONDS = 1.6;
 
-/** Adds a rim of sky-coloured light round the edges of a shape, so it stands out against a dark street. */
-function rimLit<T extends THREE.MeshLambertMaterial>(material: T): T {
+/**
+ * Adds a rim of sky-coloured light round the edges of a shape, so it stands out against a dark
+ * street. With `hide`, the surface is also mottled like thick skin: blotches a hand's-breadth
+ * across (at this scale, a metre or so), darker in the creases.
+ */
+function rimLit<T extends THREE.MeshLambertMaterial>(material: T, hide = false): T {
   material.onBeforeCompile = (shader) => {
+    if (hide) {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vHide;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHide = position;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          /* glsl */ `#include <common>
+          varying vec3 vHide;
+          float hideHash(vec3 p) {
+            p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+            p += dot(p, p.yxz + 33.33);
+            return fract((p.x + p.y) * p.z);
+          }
+          float hideCells(vec3 p) {
+            vec3 i = floor(p);
+            vec3 f = fract(p);
+            float near = 1.0;
+            for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) for (int z = -1; z <= 1; z++) {
+              vec3 o = vec3(float(x), float(y), float(z));
+              vec3 at = o + vec3(hideHash(i + o), hideHash(i + o + 7.1), hideHash(i + o + 13.7)) - f;
+              near = min(near, dot(at, at));
+            }
+            return sqrt(near);
+          }`,
+        )
+        .replace(
+          '#include <color_fragment>',
+          /* glsl */ `#include <color_fragment>
+          {
+            float cell = hideCells(vHide * 0.85);
+            float blotch = hideHash(floor(vHide * 0.33));
+            diffuseColor.rgb *= (0.8 + 0.26 * smoothstep(0.05, 0.6, cell)) * (0.93 + 0.14 * blotch);
+          }`,
+        );
+    }
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <emissivemap_fragment>',
       /* glsl */ `#include <emissivemap_fragment>
       {
         float rim = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.5);
-        totalEmissiveRadiance += diffuseColor.rgb * rim * 0.55 + vec3(0.25, 0.3, 0.4) * rim * 0.25;
+        totalEmissiveRadiance += diffuseColor.rgb * rim * 0.5 + vec3(0.25, 0.3, 0.4) * rim * 0.22;
       }`,
     );
   };
-  material.customProgramCacheKey = () => 'rim';
+  material.customProgramCacheKey = () => (hide ? 'rim-hide' : 'rim');
   return material;
 }
 
@@ -86,6 +128,15 @@ export class Kaiju implements System {
   carrying = 0;
   /** True while its feet are planted for a lift: it will not walk or turn. */
   planted = false;
+  /** In the air from a leap; how long a belly-slide has left (s); and how many of each it has done. */
+  airborne = false;
+  sliding = 0;
+  jumps = 0;
+  slides = 0;
+  private airTime = 0;
+  private slideSpeed = 0;
+  private jumpHeld = false;
+  private crouchHeld = false;
   /** How far into a bow it is (0 upright, 1 bent right over), and how many it has made. */
   bow = 0;
   bows = 0;
@@ -120,7 +171,7 @@ export class Kaiju implements System {
     private sim: Sim,
     readonly player: number,
     spawn: { x: number; z: number; yaw: number },
-    chunks: ChunkField | null,
+    private chunks: ChunkField | null,
   ) {
     const { R, world, tuning } = sim;
     const k = tuning.kaiju;
@@ -147,8 +198,9 @@ export class Kaiju implements System {
     );
     chunks?.addHitter(this.body, k.bodyHalfHeight + k.bodyRadius);
 
-    const skin = rimLit(new THREE.MeshLambertMaterial({ color: 0x4fa37a }));
-    const dark = rimLit(new THREE.MeshLambertMaterial({ color: 0x3c8463 }));
+    // Hide: a dark grey-green, mottled. (No costume: it is a monster, if a well-meaning one.)
+    const skin = rimLit(new THREE.MeshLambertMaterial({ color: 0x3f4d48 }), true);
+    const dark = rimLit(new THREE.MeshLambertMaterial({ color: 0x2b3532 }), true);
     this.buildVisual(skin, dark);
     sim.track(this.body, this.visual);
 
@@ -183,82 +235,108 @@ export class Kaiju implements System {
     const k = this.sim.tuning.kaiju;
     const r = k.bodyRadius;
     const h = k.bodyHalfHeight;
-    const belly = new THREE.MeshLambertMaterial({ color: 0xe9dfb4 });
-    const white = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    const black = new THREE.MeshLambertMaterial({ color: 0x1c1f24 });
-    const add = (mesh: THREE.Mesh, x: number, y: number, z: number): THREE.Mesh => {
+    const belly = rimLit(new THREE.MeshLambertMaterial({ color: 0x5f5f54 }), true);
+    const bone = new THREE.MeshLambertMaterial({ color: 0xd9d2bd });
+    const mouth = new THREE.MeshLambertMaterial({ color: 0x5a1f26 });
+    // Small, deep-set and amber: they catch the light a little, so the face reads at a distance.
+    const eyeGlow = new THREE.MeshLambertMaterial({ color: 0xffb53a, emissive: 0xb86a10 });
+    const black = new THREE.MeshLambertMaterial({ color: 0x0e1012 });
+    // Back plates: dark, with a cold glow that only shows once the light goes.
+    const plateMaterial = rimLit(new THREE.MeshLambertMaterial({ color: 0x262e2b, emissive: 0x06161b, flatShading: true }), false);
+    const add = (mesh: THREE.Mesh, x: number, y: number, z: number, parent: THREE.Object3D = this.visual): THREE.Mesh => {
       mesh.position.set(x, y, z);
       mesh.castShadow = true;
-      this.visual.add(mesh);
+      parent.add(mesh);
       return mesh;
     };
+
+    // Trunk: the capsule the physics knows, thickened at the hips and across the shoulders.
     add(new THREE.Mesh(new THREE.CapsuleGeometry(r, h * 2, 6, 14), skin), 0, 0, 0);
-    const tum = add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.84, 14, 10), belly), 0, -h * 0.25, r * 0.36);
-    tum.scale.set(0.92, 1.45, 0.86);
-    // Head: big and blunt, set forward so it leads the lean.
-    const headY = h + r * 0.55;
-    add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.92, 14, 10), skin), 0, headY, r * 0.45);
-    add(new THREE.Mesh(new THREE.BoxGeometry(r * 1.15, r * 0.7, r * 1.2), skin), 0, headY - r * 0.25, r * 1.15);
-    // The lower jaw hangs from a hinge at the back of the snout, so it can drop open.
-    const jawGeometry = new THREE.BoxGeometry(r * 1.0, r * 0.16, r * 1.0);
-    jawGeometry.translate(0, 0, r * 0.5);
-    this.jaw = add(new THREE.Mesh(jawGeometry, belly), 0, headY - r * 0.62, r * 0.7);
-    add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.9, r * 0.2, r * 0.9), new THREE.MeshLambertMaterial({ color: 0x7a2e3a })), 0, headY - r * 0.5, r * 1.15);
-    for (const s of [-1, 1]) {
-      const eye = add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.27, 12, 10), white), s * r * 0.5, headY + r * 0.42, r * 0.95);
-      const pupil = add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.13, 8, 6), black), s * r * 0.5, headY + r * 0.44, r * 1.19);
-      // A heavy brow over each eye: most of what its face can say.
-      const brow = add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.5, r * 0.11, r * 0.2), dark), s * r * 0.5, headY + r * 0.74, r * 1.08);
-      this.face.push({ eye, pupil, brow, side: s, pupilX: pupil.position.x, pupilY: pupil.position.y, browY: brow.position.y });
-      add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.09, r * 0.09, r * 0.09), black), s * r * 0.25, headY - r * 0.05, r * 1.76);
-      // Stubby arms.
-      const armGeometry = new THREE.CapsuleGeometry(r * 0.22, r * 0.7, 4, 8);
+    add(new THREE.Mesh(new THREE.SphereGeometry(r * 1.08, 14, 10), skin), 0, -h * 0.72, -r * 0.12).scale.set(1.08, 0.95, 1.16);
+    add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.98, 14, 10), skin), 0, h * 0.5, r * 0.1).scale.set(1.1, 0.8, 0.98);
+    // Underside: overlapping plates down the front, paler than the hide.
+    for (let i = 0; i < 7; i++) {
+      const t = i / 6;
+      const plate = add(new THREE.Mesh(new THREE.SphereGeometry(r * (0.55 + 0.2 * Math.sin(t * Math.PI)), 12, 8), belly), 0, h * (0.7 - t * 1.75), r * (0.5 + 0.14 * Math.sin(t * Math.PI)));
+      plate.scale.set(1, 0.36, 0.55);
+    }
+
+    // Neck and head: carried low and forward, the way a heavy animal carries it.
+    const headY = h + r * 0.62;
+    const neck = add(new THREE.Mesh(new THREE.CylinderGeometry(r * 0.56, r * 0.86, r * 1.25, 12), skin), 0, h + r * 0.12, r * 0.42);
+    neck.rotation.x = 0.55;
+    const skull = add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.6, 14, 10), skin), 0, headY, r * 0.98);
+    skull.scale.set(0.98, 0.86, 1.25);
+    // Snout: long and blunt, narrowing a little toward the nose.
+    const snoutGeometry = new THREE.BoxGeometry(r * 0.86, r * 0.42, r * 1.25, 1, 1, 3);
+    const sp = snoutGeometry.getAttribute('position');
+    for (let i = 0; i < sp.count; i++) {
+      const along = (sp.getZ(i) + r * 0.625) / (r * 1.25);
+      sp.setX(i, sp.getX(i) * (1 - 0.3 * along));
+      sp.setY(i, sp.getY(i) * (1 - 0.25 * along) + (sp.getY(i) > 0 ? -0.06 * r * along : 0));
+    }
+    snoutGeometry.computeVertexNormals();
+    add(new THREE.Mesh(snoutGeometry, skin), 0, headY - r * 0.1, r * 1.78);
+    // The lower jaw hangs from a hinge at the back of the head, so it can drop open.
+    const jawGeometry = new THREE.BoxGeometry(r * 0.74, r * 0.17, r * 1.5);
+    jawGeometry.translate(0, 0, r * 0.75);
+    this.jaw = add(new THREE.Mesh(jawGeometry, skin), 0, headY - r * 0.42, r * 0.92);
+    add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.6, r * 0.12, r * 1.2), mouth), 0, headY - r * 0.31, r * 1.6);
+    // Teeth: a ragged row along each side of the upper jaw, and a few on the lower.
+    const tooth = new THREE.ConeGeometry(r * 0.055, r * 0.2, 4);
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 6; i++) {
+        const z = r * (1.3 + i * 0.19);
+        const inset = 1 - 0.05 * i;
+        const upper = add(new THREE.Mesh(tooth, bone), side * r * 0.36 * inset, headY - r * 0.36, z);
+        upper.rotation.x = Math.PI;
+        upper.scale.setScalar(i % 2 ? 0.8 : 1.15);
+        if (i % 2 === 0) add(new THREE.Mesh(tooth, bone), side * r * 0.31 * inset, r * 0.14, z - r * 0.92 + r * 0.1, this.jaw).scale.setScalar(0.9);
+      }
+      // Nostril.
+      add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.07, r * 0.05, r * 0.1), black), side * r * 0.17, headY + r * 0.06, r * 2.38);
+
+      // Eye: small, under a heavy ridge of bone.
+      const eye = add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.105, 10, 8), eyeGlow), side * r * 0.47, headY + r * 0.2, r * 1.32);
+      const pupil = add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.035, r * 0.15, r * 0.04), black), side * r * 0.5, headY + r * 0.2, r * 1.415);
+      const brow = add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.3, r * 0.08, r * 0.34), dark), side * r * 0.46, headY + r * 0.315, r * 1.3);
+      brow.rotation.y = side * 0.25;
+      this.face.push({ eye, pupil, brow, side, pupilX: pupil.position.x, pupilY: pupil.position.y, browY: brow.position.y });
+      // A short horn swept back behind each eye.
+      const horn = add(new THREE.Mesh(new THREE.ConeGeometry(r * 0.12, r * 0.55, 5), bone), side * r * 0.42, headY + r * 0.52, r * 0.7);
+      horn.rotation.x = -1.0;
+      horn.rotation.z = -side * 0.25;
+
+      // Arms: short for its size, ending in three claws.
+      const armGeometry = new THREE.CapsuleGeometry(r * 0.2, r * 0.75, 4, 8);
       // Hang the arm from its shoulder end, so stretching it (to crawl on) reaches away from the body.
       armGeometry.translate(0, -r * 0.45, 0);
-      const arm = add(new THREE.Mesh(armGeometry, dark), s * r * 0.98, h * 0.45, r * 0.45);
-      arm.rotation.set(-1.0, 0, s * 0.35);
+      const arm = add(new THREE.Mesh(armGeometry, dark), side * r * 1.0, h * 0.42, r * 0.45);
+      arm.rotation.set(-1.0, 0, side * 0.35);
+      for (let c = -1; c <= 1; c++) {
+        const claw = add(new THREE.Mesh(new THREE.ConeGeometry(r * 0.06, r * 0.3, 4), bone), c * r * 0.11, -r * 1.12, r * 0.04, arm);
+        claw.rotation.x = Math.PI + 0.3;
+      }
       this.arms.push(arm);
     }
-    // Back plates.
-    for (let i = 0; i < 5; i++) {
-      const t = i / 4;
-      const plate = add(
-        new THREE.Mesh(new THREE.ConeGeometry(r * (0.34 - 0.1 * Math.abs(t - 0.4)), r * 0.75, 4), dark),
-        0,
-        h * (0.95 - t * 1.5),
-        -r * (0.82 + 0.16 * Math.sin(t * Math.PI)),
-      );
-      plate.rotation.x = -Math.PI / 2 + 0.35;
+
+    // Back plates: three ragged rows from the neck to the root of the tail, biggest in the middle of the back.
+    const plateShape = new THREE.ConeGeometry(1, 1, 5);
+    for (let i = 0; i < 9; i++) {
+      const t = i / 8;
+      const size = r * (0.3 + 0.55 * Math.sin(Math.PI * Math.min(1, t * 1.15)) ** 1.5);
+      const y = h * (1.25 - t * 2.05);
+      const back = -r * (0.72 + 0.34 * Math.sin(t * Math.PI));
+      for (const row of [0, -1, 1]) {
+        if (row !== 0 && (i === 0 || i === 8)) continue;
+        const scale = row === 0 ? 1 : 0.55;
+        const plate = add(new THREE.Mesh(plateShape, plateMaterial), row * r * 0.42, y - (row === 0 ? 0 : h * 0.06), back + Math.abs(row) * r * 0.16);
+        // Thin from side to side, broad from front to back: blades standing out of the spine.
+        plate.scale.set(size * 0.14 * scale + 0.3, size * 1.5 * scale, size * 0.6 * scale);
+        plate.rotation.x = -Math.PI / 2 + 0.5 + (i % 2) * 0.12;
+        plate.rotation.z = row * 0.35;
+      }
     }
-
-    // Site safety: a hard hat (several sizes too small) and a hi-vis vest that will not close over the belly.
-    const hatYellow = new THREE.MeshLambertMaterial({ color: 0xffc928 });
-    const hat = new THREE.Group();
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(r * 0.6, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), hatYellow);
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.78, r * 0.78, r * 0.07, 16), hatYellow);
-    brim.position.z = r * 0.12;
-    const ridge = new THREE.Mesh(new THREE.BoxGeometry(r * 0.14, r * 0.12, r * 1.1), hatYellow);
-    ridge.position.y = r * 0.56;
-    ridge.scale.y = 0.6;
-    hat.add(dome, brim, ridge);
-    hat.position.set(0, headY + r * 0.78, r * 0.4);
-    hat.rotation.x = -0.12;
-    hat.traverse((o) => (o.castShadow = true));
-    this.visual.add(hat);
-
-    const vestOrange = new THREE.MeshLambertMaterial({ color: 0xff6a13, side: THREE.DoubleSide });
-    const stripe = new THREE.MeshLambertMaterial({ color: 0xf2f6d0, emissive: 0x5c5f3a, side: THREE.DoubleSide });
-    // Open at the front (the cylinder's seam is turned to face forward and left gaping).
-    const gap = 1.25;
-    const band = (radius: number, height: number, y: number, material: THREE.Material) => {
-      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 20, 1, true, gap / 2, Math.PI * 2 - gap), material);
-      mesh.position.y = y;
-      mesh.castShadow = true;
-      this.visual.add(mesh);
-    };
-    band(r * 1.035, h * 1.0, h * 0.3, vestOrange);
-    band(r * 1.05, h * 0.09, h * 0.52, stripe);
-    band(r * 1.05, h * 0.09, h * 0.05, stripe);
   }
 
   /**
@@ -354,11 +432,40 @@ export class Kaiju implements System {
     const m = this.sim.tuning.modes;
     const upright = this.state === 'walk' || this.state === 'stumble' || this.state === 'falling';
     if (this.toeLock && this.toeMeter > 0.5) this.toeLock = false;
+    // A belly-slide: for a kaiju that can, dropping to a crawl at a run keeps the run going.
+    const mv = this.sim.tuning.move;
+    const crouchPressed = input.crouch && !this.crouchHeld;
+    this.crouchHeld = input.crouch;
+    if (crouchPressed && mv.slide && this.state === 'walk' && !this.carrying && !this.airborne && this.sliding <= 0 && this.forwardSpeed > k.maxSpeed * 0.5) {
+      this.sliding = SLIDE_SECONDS;
+      this.slideSpeed = this.forwardSpeed;
+      this.slides++;
+      this.sim.emit('kaijuSlide', { x: pos.x, y: pos.y, z: pos.z });
+    }
+    if (this.sliding > 0) {
+      this.sliding -= dt;
+      // It scrubs speed off as it goes, and is over once it is down to a crawl's pace (or knocked out of it).
+      this.slideSpeed *= 1 - 0.3 * dt;
+      if (!upright || this.slideSpeed < k.maxSpeed * m.crawlSpeed * 1.2) this.sliding = 0;
+    }
+    const slidingNow = this.sliding > 0;
+    // A leap: straight up off both feet, keeping whatever speed it had.
+    const jumpPressed = input.jump && !this.jumpHeld;
+    this.jumpHeld = input.jump;
+    if (jumpPressed && mv.jump > 0 && this.state === 'walk' && !this.airborne && !this.carrying && !this.planted && this.bowTime <= 0 && this.crawl < 0.2 && this.wading < 0.2) {
+      const g = this.sim.tuning.world.gravity * mv.hangGravity;
+      body.setLinvel({ x: vel.x, y: Math.sqrt(2 * g * mv.jump), z: vel.z }, true);
+      this.airborne = true;
+      this.airTime = 0;
+      this.jumps++;
+      this.sim.emit('kaijuJump', { x: pos.x, y: pos.y, z: pos.z });
+    }
+    if (this.airborne && !upright) this.airborne = false;
     this.mode =
-      !upright || this.carrying || this.bowTime > 0 ? 'normal' : input.crouch ? 'crawl' : input.tiptoe && !this.toeLock ? 'tiptoe' : 'normal';
+      !upright || this.carrying || this.bowTime > 0 ? 'normal' : input.crouch || slidingNow ? 'crawl' : input.tiptoe && !this.toeLock ? 'tiptoe' : 'normal';
     const tiptoe = this.mode === 'tiptoe';
     // Getting down and back up takes a moment.
-    this.crawl = THREE.MathUtils.clamp(this.crawl + (this.mode === 'crawl' ? dt : -dt) * 1.3, 0, 1);
+    this.crawl = THREE.MathUtils.clamp(this.crawl + (this.mode === 'crawl' ? dt : -dt) * (slidingNow ? 4.5 : 1.3), 0, 1);
     const crawl = smooth(this.crawl);
     // While it is on its way down or up, its spine is nowhere near where it is headed. That is
     // a change of posture, not a loss of balance: hold it firmly and don't call it a stumble.
@@ -387,7 +494,7 @@ export class Kaiju implements System {
     );
     const speedShare =
       (tiptoe ? m.tiptoeSpeed : 1) *
-      (1 - (1 - m.crawlSpeed) * crawl) *
+      (slidingNow ? 1 : 1 - (1 - m.crawlSpeed) * crawl) *
       (1 - 0.45 * this.wading) *
       (1 - (1 - this.sim.tuning.carry.speed) * this.carrying);
     const leanScale = (tiptoe ? m.tiptoeLean : 1) * (1 - 0.9 * crawl);
@@ -496,11 +603,25 @@ export class Kaiju implements System {
         const approach = Math.min((Math.abs(error) * w) / (2 * zeta), Math.sqrt(brake * Math.abs(error)));
         let lift = g + 2 * zeta * w * (Math.sign(error) * approach - vel.y);
         lift = THREE.MathUtils.clamp(lift, 0, g * 2.6) * engaged;
+        if (this.airborne) {
+          // Off the ground: nothing holds it up, and it falls faster than it rose (a leap should snap, not float).
+          this.airTime += dt;
+          lift = -g * (mv.hangGravity - 1);
+          // (Not in the first moments: the velocity read this step is from before the push-off.)
+          if (this.airTime > 0.2 && vel.y < 0 && error > -1.5) {
+            // Down again, hard: the ground shakes, and anything standing close by is shaken loose.
+            this.airborne = false;
+            const speed = -vel.y;
+            this.sim.emit('kaijuLand', { x: pos.x, y: pos.y, z: pos.z, speed });
+            this.sim.emit('footfall', { x: pos.x, y: groundY, z: pos.z, side: 0, strength: 2, wet: this.wading > 0.2 });
+            this.chunks?.shake(pos.x, pos.z, k.bodyRadius + 5 + speed * 0.25);
+          }
+        }
         body.applyImpulse({ x: 0, y: mass * lift * dt, z: 0 }, true);
       }
       // Nothing a standing kaiju does throws it skyward. If something does (a chunk pinched
       // against it, say), take the launch back out.
-      if (standing && vel.y > 9) body.setLinvel({ x: vel.x, y: 9, z: vel.z }, true);
+      if (standing && !this.airborne && vel.y > 9) body.setLinvel({ x: vel.x, y: 9, z: vel.z }, true);
     }
 
     // --- Locomotion ---
@@ -508,8 +629,14 @@ export class Kaiju implements System {
     // acceleration tips the body the other way (`lean`). That one coupling is where
     // the lean into starts and stops, the roll out of corners, and the falls come from.
     tmp.set(0, 0, 0);
+    let pitchTrim = 0;
     if (standing) {
-      const target = this.planted || this.bowTime > 0 ? 0 : (input.thrust >= 0 ? input.thrust * k.maxSpeed : input.thrust * k.reverseSpeed) * speedShare;
+      const target =
+        this.planted || this.bowTime > 0
+          ? 0
+          : slidingNow
+            ? this.slideSpeed
+            : (input.thrust >= 0 ? input.thrust * k.maxSpeed : input.thrust * k.reverseSpeed) * speedShare;
       const diff = target * control - this.forwardSpeed;
       // Oil and the like: the feet can neither push nor hold.
       const traction = this.sim.traction(pos.x, pos.z);
@@ -530,7 +657,12 @@ export class Kaiju implements System {
       // The river bed is slimy: in deep water it has little sideways hold against the current.
       const hold = k.grip * traction * (1 - 0.8 * this.wading);
       const across = THREE.MathUtils.clamp(-sideSpeed / dt, -hold, hold);
-      tmp.copy(this.forward).multiplyScalar(along).addScaledVector(this.left, across);
+      // In the air its feet are off the ground: it keeps the speed it left with, and can only nudge it.
+      const footing = this.airborne ? 0.12 : 1;
+      tmp.copy(this.forward).multiplyScalar(along * footing).addScaledVector(this.left, across * footing);
+      // A quick kaiju would pitch itself onto its face every time it set off, if speeding up
+      // tipped it as much as the same push from outside does. Only part of its own drive leans it.
+      pitchTrim = along * footing * (1 - k.pitchShare);
       // A leaning kaiju staggers the way it leans, which is also what catches it.
       tmp.x += dev.x * k.stagger * (1 - crawl);
       tmp.z += dev.z * k.stagger * (1 - crawl);
@@ -543,6 +675,7 @@ export class Kaiju implements System {
 
     // --- Balance and turning: angular accelerations, independent of mass ---
     const av = body.angvel();
+    tmp.addScaledVector(this.forward, -pitchTrim);
     tmp2.crossVectors(tmp, UP).multiplyScalar(k.lean * leanScale * dt);
     tmp.set(av.x + tmp2.x, av.y, av.z + tmp2.z);
     // Oil: the feet shoot out from under it. The faster it is going, the harder it goes over,
@@ -601,7 +734,8 @@ export class Kaiju implements System {
     ctx.pos.copy(pos);
     ctx.velocity.set(vel.x, 0, vel.z);
     ctx.yaw = this.yaw;
-    ctx.standing = standing;
+    // In the air the legs hang under the body instead of reaching for the ground.
+    ctx.standing = standing && !this.airborne;
     ctx.stanceScale = tiptoe ? m.tiptoeStance : 1;
     ctx.footScale = tiptoe ? m.tiptoeFoot : 1;
     this.legs.update(dt, ctx);
@@ -690,7 +824,7 @@ export class Kaiju implements System {
       f.pupil.position.x = ease(f.pupil.position.x, f.pupilX - input.turn * 0.09 * this.sim.tuning.kaiju.bodyRadius, 10);
       f.pupil.position.y = ease(f.pupil.position.y, f.pupilY - (this.carrying ? 0.07 : 0) * this.sim.tuning.kaiju.bodyRadius, 10);
       f.brow.rotation.z = f.side * this.worry * 0.5;
-      f.brow.position.y = f.browY + (this.worry > 0 ? 0.1 : 0.04) * this.worry * this.sim.tuning.kaiju.bodyRadius;
+      f.brow.position.y = f.browY + (this.worry > 0 ? 0.06 : 0.03) * this.worry * this.sim.tuning.kaiju.bodyRadius;
     }
   }
 
