@@ -52,6 +52,16 @@ export class Dust implements System {
       if (e.wet) for (let i = 0; i < 5; i++) this.puff(e.x, -0.6, e.z, 2.2 * e.strength, 7, 5);
       else for (let i = 0; i < 3; i++) this.puff(e.x, 0.8, e.z, 1.6 * e.strength, 4);
     });
+    // The runner's feet losing their hold, and anything of it scraping along the road.
+    sim.on('kaijuSkid', (e) => {
+      for (let i = 0; i < 6; i++) this.puff(e.x, e.y + 0.8, e.z, 2 + 2 * e.strength, 7);
+    });
+    sim.on('kaijuScuff', (e) => {
+      for (let i = 0; i < 2; i++) this.puff(e.x, e.y + 0.6, e.z, 1.4 + 1.6 * e.strength, 5);
+    });
+    sim.on('kaijuSlide', (e) => {
+      for (let i = 0; i < 8; i++) this.puff(e.x, 1, e.z, 3, 9);
+    });
     sim.on('citizenSquish', (e) => this.puff(e.x, 1, e.z, 1.4, 2));
     sim.on('kaijuFall', (e) => {
       for (let i = 0; i < 10; i++) this.puff(e.x, 2, e.z, 4, 9);

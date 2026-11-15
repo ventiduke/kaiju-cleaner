@@ -24,6 +24,9 @@ export class FollowCamera {
   private focus = new THREE.Vector3();
   private trauma = 0;
   private squat = 1;
+  /** The runner's view: how wide open it is with speed (0..1), and how far it is tipped into a turn (rad). */
+  private rush = 0;
+  private lean = 0;
   private time = 0;
 
   constructor(
@@ -68,26 +71,44 @@ export class FollowCamera {
 
   /**
    * The runner's camera: close behind and a little above, pointing exactly where the player has
-   * turned it. It does not drift round behind the kaiju by itself; the kaiju turns to face it.
+   * turned it (the mouse is never lagged). What trails is its hold on the kaiju: a moment behind
+   * across the ground, so the kaiju surges ahead as it launches and is caught up as it stops, and
+   * slower still up and down, so its stride, its landings and its dive into a slide are seen
+   * against a steady frame. At a sprint the view widens and drops back; in a turn it tips a little.
    */
   private updateRunner(frameDt: number): void {
     const r = this.sim.tuning.runner;
     const c = this.sim.tuning.camera;
-    const input = this.sim.players[this.kaiju.player];
-    const at = this.kaiju.visual.position;
-    this.focus.lerp(at, 1 - Math.exp(-frameDt / 0.05));
-    this.yaw = input?.look ?? this.kaiju.yaw;
+    const k = this.kaiju;
+    const input = this.sim.players[k.player];
+    const at = k.visual.position;
+    const flatLag = 1 - Math.exp(-frameDt / 0.085);
+    this.focus.x += (at.x - this.focus.x) * flatLag;
+    this.focus.z += (at.z - this.focus.z) * flatLag;
+    this.focus.y += (at.y - this.focus.y) * (1 - Math.exp(-frameDt / 0.22));
+    this.yaw = input?.look ?? k.yaw;
+
+    // How hard it is going: 0 at a run, 1 at a full sprint, and a slide counts for most of one.
+    const rush = Math.max(THREE.MathUtils.clamp((k.speed - r.speed) / Math.max(1, r.sprint - r.speed), 0, 1.2), k.sliding > 0 ? 0.7 : 0);
+    this.rush += (rush - this.rush) * (1 - Math.exp(-frameDt * 3.5));
+    this.lean += (k.bank - this.lean) * (1 - Math.exp(-frameDt * 6));
+
     const elevation = THREE.MathUtils.clamp(0.3 + this.pitch, -0.25, 1.35);
-    const range = r.camDistance * this.zoom;
+    const range = r.camDistance * this.zoom * (1 + 0.1 * this.rush);
     const flat = Math.cos(elevation) * range;
     const eye = this.focus.y + r.camHeight * 0.25;
     this.camera.position.set(this.focus.x - Math.sin(this.yaw) * flat, Math.max(2, eye + Math.sin(elevation) * range), this.focus.z - Math.cos(this.yaw) * flat);
-    if (this.camera.fov !== c.fov) {
-      this.camera.fov = c.fov;
+    const fov = c.fov + 9 * this.rush;
+    if (Math.abs(this.camera.fov - fov) > 0.01) {
+      this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
     }
-    // Looking past the kaiju, so that what it is running at is in the middle of the screen.
-    this.camera.lookAt(this.focus.x + Math.sin(this.yaw) * 30, eye + r.camHeight * 0.2 - Math.sin(elevation - 0.3) * 30, this.focus.z + Math.cos(this.yaw) * 30);
+    // Looking a little past the kaiju: what it is running at is above it on the screen, and all
+    // of it, feet and tail included, is in the lower half. (Looking far past it cut its legs off.)
+    const past = 14;
+    this.camera.lookAt(this.focus.x + Math.sin(this.yaw) * past, eye - 4 - Math.sin(elevation - 0.3) * past, this.focus.z + Math.cos(this.yaw) * past);
+    // Tipped into the turn with it (a little: the horizon is there to be steady).
+    this.camera.rotation.z += this.lean * 0.06;
     this.trauma = Math.max(0, this.trauma - frameDt * 1.4);
     const s = this.trauma * this.trauma * c.shake;
     if (s > 0) {

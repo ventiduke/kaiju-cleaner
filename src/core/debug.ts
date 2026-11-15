@@ -96,10 +96,17 @@ export function buildTuningGui(tuning: Tuning, opts: PanelOptions): GUI {
     sprint: 'sprint speed  (m/s)',
     accel: 'secs to get going',
     stop: 'secs to stop',
+    turn: 'turning: standing  (rad/s)',
+    turnFast: 'turning: at a sprint',
+    grip: 'grip  (less: more drift)',
+    lean: 'lean into turns',
     jump: 'jump height  (m)',
     slideBoost: 'slide: kick at the start',
     slideFriction: 'slide: how fast it slows',
+    cadence: 'strides a second',
+    tail: 'tail: how tightly it follows',
     camDistance: 'camera distance',
+    camFollow: 'camera swings behind  (0: never)',
     sensitivity: 'mouse sensitivity',
   };
   for (const key of Object.keys(runnerLabels) as (keyof Tuning['runner'])[]) {

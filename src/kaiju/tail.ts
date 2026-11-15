@@ -7,6 +7,14 @@ type Joint = InstanceType<Sim['R']['ImpulseJoint']>;
 
 /** Which way a positive root-joint angle folds the tail relative to the body's pitch. */
 const BEND_SIGN = -1;
+const UP = new THREE.Vector3(0, 1, 0);
+const q = new THREE.Quaternion();
+const v = new THREE.Vector3();
+const x = new THREE.Vector3();
+const y = new THREE.Vector3();
+const z = new THREE.Vector3();
+const prev = new THREE.Vector3();
+const basis = new THREE.Matrix4();
 
 /** The engine's low-level joint set, which exposes per-axis motors for any joint type. */
 interface RawJointSet {
@@ -150,6 +158,127 @@ export class Tail {
         raw.jointConfigureMotorPosition(j.handle, axis, target, stiffness, damping);
       }
     });
+  }
+
+  /**
+   * Makes the tail weigh `share` of what it is set to. The runner's tail weighs next to nothing:
+   * that body is moved by its controller, and a heavy tail hauling on it through the joint
+   * (worst when the tail is thrown up for a jump or a slide) was costing it a quarter of its speed.
+   */
+  weigh(share: number): void {
+    for (const seg of this.segments) seg.collider(0).setDensity(this.sim.tuning.tail.density * share);
+  }
+
+  /**
+   * The runner's tail. The loose tail above is a weight on a chain: right for a kaiju that is
+   * always about to fall over, wrong for one that turns on a sixpence, because the body turns
+   * underneath it and it is left pointing out in front for seconds. This one is led: each part
+   * follows the one before on its own damped spring, toward a shape set by the body's heading.
+   * So it streams out behind, lags a turn by a fraction of a second and curls into it, and
+   * settles without swinging back through. Its parts are still physical bodies (they knock
+   * props about, and smash what they are whipped into); they are simply told where to be.
+   *
+   * @param root where the tail joins the body, one step from now
+   * @param yaw the body's heading
+   * @param carry the body's velocity: the tail is damped against this, not against the ground
+   * @param stiffness how hard each part is pulled into line (1/s^2)
+   * @param lift how far the tail is held up (rad): 0 trails down to the ground, about 0.5 is level
+   * @param swing how far it is curled to the kaiju's left by its tip (rad)
+   */
+  follow(dt: number, root: THREE.Vector3, yaw: number, carry: { x: number; y: number; z: number }, stiffness: number, lift: number, swing: number): void {
+    const n = this.segments.length;
+    const len = this.sim.tuning.tail.length / n;
+    const ground = this.sim.ground;
+    if (!this.led) {
+      // Taking over from the loose tail: start from wherever it is, and stop its motors pulling.
+      this.led = true;
+      this.nodes = this.segments.map((seg) => {
+        const p = seg.translation();
+        const r = seg.rotation();
+        return new THREE.Vector3(0, 0, -len / 2).applyQuaternion(q.set(r.x, r.y, r.z, r.w)).add(v.set(p.x, p.y, p.z));
+      });
+      this.nodeVel = this.segments.map((seg) => {
+        const l = seg.linvel();
+        return new THREE.Vector3(l.x, l.y, l.z);
+      });
+      this.relax();
+    }
+    const backX = -Math.sin(yaw);
+    const backZ = -Math.cos(yaw);
+    const leftX = Math.cos(yaw);
+    const leftZ = -Math.sin(yaw);
+    prev.copy(root);
+    for (let i = 0; i < n; i++) {
+      const along = (i + 1) / n;
+      // The shape it is pulled toward: down and back from the root, curling up a little at the tip.
+      const rise = -0.5 + lift + 0.28 * along;
+      const side = swing * along;
+      const flat = Math.cos(rise);
+      v.set(flat * (backX * Math.cos(side) + leftX * Math.sin(side)), Math.sin(rise), flat * (backZ * Math.cos(side) + leftZ * Math.sin(side)));
+      const node = this.nodes[i];
+      const vel = this.nodeVel[i];
+      // Looser toward the tip, so that the end of it is the last to arrive.
+      const k = stiffness * (1 - 0.4 * along);
+      const c = 1.5 * Math.sqrt(k);
+      vel.x += (k * (prev.x + v.x * len - node.x) - c * (vel.x - carry.x)) * dt;
+      vel.y += (k * (prev.y + v.y * len - node.y) - c * (vel.y - carry.y)) * dt;
+      vel.z += (k * (prev.z + v.z * len - node.z) - c * (vel.z - carry.z)) * dt;
+      node.addScaledVector(vel, dt);
+      // Each part is as long as it is, and lies on the ground rather than in it.
+      v.subVectors(node, prev);
+      const d = v.length() || 1;
+      node.copy(prev).addScaledVector(v, len / d);
+      const floor = ground(node.x, node.z) + this.reach[i] - len / 2;
+      if (node.y < floor) {
+        node.y = floor;
+        vel.y = Math.max(0, vel.y);
+      }
+      // The body for this part: sent to the middle of its two ends, lying along them.
+      const seg = this.segments[i];
+      const at = seg.translation();
+      const cx = (prev.x + node.x) / 2;
+      const cy = (prev.y + node.y) / 2;
+      const cz = (prev.z + node.z) / 2;
+      seg.setLinvel({ x: (cx - at.x) / dt, y: (cy - at.y) / dt, z: (cz - at.z) / dt }, true);
+      // (Its own +z points back up the tail, toward the body.)
+      z.subVectors(prev, node).normalize();
+      x.crossVectors(UP, z);
+      if (x.lengthSq() < 1e-6) x.set(leftX, 0, leftZ);
+      x.normalize();
+      y.crossVectors(z, x);
+      q.setFromRotationMatrix(basis.makeBasis(x, y, z));
+      seg.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
+      seg.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      prev.copy(node);
+    }
+  }
+
+  /** Whether the tail is being led (the runner's) or left to swing (the balancing kaiju's). */
+  private led = false;
+  private nodes: THREE.Vector3[] = [];
+  private nodeVel: THREE.Vector3[] = [];
+
+  /** Lets the joints go slack: a led tail is placed, not pulled. */
+  private relax(): void {
+    const { JointAxis, MotorModel } = this.sim.R;
+    for (const j of this.joints) {
+      const raw = (j as unknown as { rawSet: RawJointSet }).rawSet;
+      for (const axis of [JointAxis.AngX, JointAxis.AngY, JointAxis.AngZ]) {
+        raw.jointConfigureMotorModel(j.handle, axis, MotorModel.AccelerationBased);
+        raw.jointConfigureMotorPosition(j.handle, axis, 0, 0, 0);
+      }
+    }
+    this.applied = NaN;
+    this.tuck = NaN;
+  }
+
+  /** Hands the tail back to its joints and motors (for the balancing kaiju). */
+  loose(): void {
+    if (!this.led) return;
+    this.led = false;
+    this.applied = NaN;
+    this.tuck = NaN;
+    this.syncMotors();
   }
 
   /**

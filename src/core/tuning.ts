@@ -304,19 +304,28 @@ export const codeDefaults = {
     controller: 0,
   },
   /**
-   * The runner: a conventional third-person character in a kaiju's body. The mouse looks, W A S D
-   * move and strafe, it stops when the keys are let go, and it never loses its balance. What
-   * makes it a kaiju is only what it knocks over.
+   * The runner: a third-person animal. The mouse turns the view; W A S D mean "that way on the
+   * screen", and it turns to go there on an arc that widens with its speed. It carries its
+   * weight: it leans into turns, drifts when turned harder than its feet can hold, skids round
+   * to reverse, and throws itself flat into a slide. It never loses its balance.
    */
   runner: {
     /** Running and sprinting speed (m/s). */
     speed: 30,
     sprint: 48,
-    /** Seconds to get up to speed, and to stop. */
-    accel: 0.2,
-    stop: 0.16,
-    /** How fast it turns to face where the camera points (rad/s). */
-    turn: 12,
+    /** Seconds to reach running speed from rest, for a sprint to build on top of that, and to stop from a run. */
+    accel: 0.42,
+    sprintBuild: 0.9,
+    stop: 0.34,
+    /** How fast it can swing its body round (rad/s): standing still, and at a full sprint. */
+    turn: 10,
+    turnFast: 3.6,
+    /** How long a turn takes to build and to die away (s): the weight in its steering. */
+    turnEase: 0.07,
+    /** Sideways acceleration its feet can hold (m/s^2). Turned harder than this at speed, it drifts. */
+    grip: 90,
+    /** How far it leans into turns and with its speed (1: as drawn; 0: bolt upright). */
+    lean: 1,
     /** Share of its ground steering that works in the air. */
     airControl: 0.35,
     /** Jump height (m), and how much harder than normal gravity pulls it back down. */
@@ -324,15 +333,22 @@ export const codeDefaults = {
     gravity: 2.4,
     /** Crouched, it moves at this share of running speed, and its steps are light. */
     crouchSpeed: 0.45,
-    /** Crouching while faster than this share of running speed starts a slide. */
-    slideFrom: 0.9,
+    /** Crouching while faster than this share of running speed throws it into a slide. */
+    slideFrom: 0.5,
     /** A slide gains this much speed as it starts (m/s), loses this much a second (m/s^2), and can be steered this fast (rad/s). */
-    slideBoost: 8,
-    slideFriction: 11,
-    slideSteer: 0.9,
-    /** Camera: how far behind and how far above, and how fast the mouse turns it. */
+    slideBoost: 6,
+    slideFriction: 18,
+    slideSteer: 1.3,
+    /** Strides a second at running speed (a stride is two steps). Slower reads as heavier. */
+    cadence: 1.25,
+    /** How tightly its tail follows its body (a spring, 1/s^2). The tail's own settings are the balancing body's. */
+    tail: 140,
+    /** Camera: how far behind and how far above. */
     camDistance: 46,
     camHeight: 16,
+    /** How fast the view swings round behind it when it runs across the screen and the mouse is still (rad/s; 0: never). */
+    camFollow: 0.8,
+    /** How fast the mouse turns the view. */
     sensitivity: 1,
   },
   /** Which shift this is: each one is a new city. */
@@ -432,7 +448,7 @@ export const STYLES: { name: string; blurb: string; feel: Tuning['feel'] | null;
   {
     // Not a setting of the feel dials at all: a different body. Its numbers are under "runner".
     name: 'Runner',
-    blurb: 'third-person: the mouse looks, W A S D move and strafe, Shift sprints, Space jumps, C crouches (at a sprint: slides)',
+    blurb: 'a third-person animal: the mouse turns the view, W A S D run that way on the screen, Shift sprints, Space jumps, C crouches (on the move: slides)',
     feel: null,
     move: { jump: 0, slide: 0, relative: 0, controller: 1 },
   },
@@ -641,19 +657,27 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
   runner: {
     speed: [5, 80, 0.5],
     sprint: [5, 120, 0.5],
-    accel: [0.02, 1.5, 0.01],
-    stop: [0.02, 1.5, 0.01],
+    accel: [0.05, 1.5, 0.01],
+    sprintBuild: [0.05, 3, 0.05],
+    stop: [0.05, 1.5, 0.01],
     turn: [1, 30, 0.5],
+    turnFast: [0.5, 15, 0.1],
+    turnEase: [0.01, 0.4, 0.01],
+    grip: [10, 300, 5],
+    lean: [0, 2, 0.05],
     airControl: [0, 1, 0.05],
     jump: [0, 30, 0.5],
     gravity: [1, 5, 0.1],
     crouchSpeed: [0.1, 1, 0.05],
-    slideFrom: [0.3, 1.5, 0.05],
+    slideFrom: [0.2, 1.5, 0.05],
     slideBoost: [0, 30, 0.5],
     slideFriction: [1, 40, 0.5],
     slideSteer: [0, 4, 0.05],
+    cadence: [0.4, 3, 0.05],
+    tail: [10, 400, 5],
     camDistance: [10, 150, 1],
     camHeight: [0, 60, 1],
+    camFollow: [0, 3, 0.05],
     sensitivity: [0.2, 3, 0.05],
   },
   game: { shift: [1, 99, 1] },

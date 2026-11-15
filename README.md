@@ -22,7 +22,7 @@ Scenes are picked with a URL parameter:
 - `?scene=city` (default): the city, 8×8 blocks either side of a river.
 - `?scene=course`: the movement test course: a timed kilometre of streets of different widths, with skybridges
   to get under and thin ground to step lightly over. The tuning dials are open beside it.
-- `?scene=run`: the Runner's course: a sprint, three low walls to jump, towers to strafe round and three low
+- `?scene=run`: the Runner's course: a sprint, three low walls to jump, towers to weave round and three low
   bridges to slide under. It opens in the Runner mode.
 - `?scene=yard`: a flat practice ground with three test buildings, one of each repair job and one of each hazard.
 - `?scene=plane`: nothing but ground, for judging movement on its own.
@@ -118,11 +118,18 @@ playing (keys 1, 2, 3), each a setting of the six feel dials plus which extra mo
   belly-slide (C at a run) that goes under a skybridge without stopping.
 
 There is also a fourth, **Runner** (key 4), which is not a setting of those dials but a different body: a
-conventional third-person character. Click the game to capture the mouse, then the mouse looks, W A S D move
-and strafe, Shift sprints, Space jumps, and C toggles a crouch. Crouching at a sprint is a slide: it drops
-at once, gains a little speed and rides it down. It never leans, wobbles or falls; what is left of being a
-kaiju is what it knocks over. Its numbers are in the panel's Runner folder, and it has a course of its own
-(`?scene=run`).
+third-person animal. Click the game to capture the mouse. The mouse turns the view; W A S D mean "that way on
+the screen", and the kaiju turns to go there (left alone, the view swings round behind it, so holding A or D
+carries it round in an arc). Shift sprints, Space jumps (hold it for height), and C toggles a crouch.
+
+It carries its weight. It takes a moment to get going and runs on a few strides when let go. It turns on an
+arc that widens with speed, leaning into it; turned harder than its feet can hold, it drifts, and asked for
+the opposite way at a sprint it digs in, skids, comes about and launches. C on the move is a slide: it throws
+itself flat on its belly, tail up, and rides its speed down (Space leaps out of it). Its legs run a real
+stride, with both feet off the ground between steps at speed; its head looks where it is going and stays level
+while the body pitches under it; its tail streams out behind and swings wide in a turn. It never wobbles or
+falls. Its numbers are in the panel's Runner folder (grip is the one that sets how much it drifts), and it has
+a course of its own (`?scene=run`).
 
 The kaiju's size is one dial (in the Feel folder; it needs "restart scene"). Legs, feet and stride follow
 the body, and skybridges are hung to suit.

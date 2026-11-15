@@ -55,14 +55,15 @@ export class InputManager {
    *   ("up" is away from the camera) instead of turning the kaiju like a tank. Both headings
    *   are compass angles in radians (0 faces +z).
    */
-  /** The runner's heading (where the camera points), once there is one, and whether it is crouched. */
+  /** Where the runner's camera points (a compass heading), once there is one, and whether it is crouched. */
   private look: number | null = null;
   private crouched = false;
   private padCrouch = false;
 
   /**
-   * @param runner tells whether the kaiju is the runner (mouse looks, keys move and strafe, C toggles a crouch)
-   * @param heading the kaiju's own heading, for the runner's camera to start from
+   * @param runner tells whether the kaiju is the runner (the mouse turns the view, the keys point by the screen, C toggles a crouch)
+   * @param heading the kaiju's own heading: where the runner's view starts, and what it swings round behind
+   * @param follow how fast the view swings round behind it by itself (rad/s)
    */
   constructor(
     private players: PlayerInput[],
@@ -70,6 +71,7 @@ export class InputManager {
     private runner: () => boolean = () => false,
     private heading: () => number = () => 0,
     private sensitivity: () => number = () => 1,
+    private follow: () => number = () => 0,
   ) {
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
@@ -97,7 +99,10 @@ export class InputManager {
   /** The mouse (or a drag) turning the runner's view: `dx` in pixels, right is positive. */
   lookBy(dx: number): void {
     if (this.look !== null) this.look -= dx * 0.0026 * this.sensitivity();
+    if (dx) this.sinceLook = 0;
   }
+  /** Seconds since the view was last turned by hand. */
+  private sinceLook = 10;
 
   /** A click on the game: the same as tapping the grab key. */
   click(): void {
@@ -129,7 +134,7 @@ export class InputManager {
         const fwd = this.key('KeyW', 'ArrowUp') - this.key('KeyS', 'ArrowDown');
         const side = this.key('KeyA', 'ArrowLeft') - this.key('KeyD', 'ArrowRight');
         if (this.runner()) {
-          // The runner: keys drive and strafe, and the view (not the keys) says which way it faces.
+          // The runner: the keys mean "that way on the screen", and the view is the mouse's.
           this.look ??= this.heading();
           thrust += fwd;
           strafe += side;
@@ -186,6 +191,14 @@ export class InputManager {
         if (i === 0) this.balance -= axis(pad.axes[3] ?? 0) * 2.5 * FIXED_DT;
         bow ||= !!pad.buttons[4]?.pressed;
       }
+      if (i === 0 && this.runner() && this.look !== null) {
+        // Left alone, the view swings round behind a kaiju running across the screen, so that
+        // holding A or D carries it round in an arc. (Never while the view is being turned by
+        // hand, and not for one running straight at the camera.)
+        this.sinceLook += FIXED_DT;
+        const off = wrap(this.heading() - this.look);
+        if ((thrust || strafe) && this.sinceLook > 0.4 && Math.abs(off) < 2.6) this.look += Math.sin(off) * this.follow() * FIXED_DT;
+      }
       if (i === 0) {
         // Passed on in hundredths, keeping the remainder, so that a recorded session replays exactly.
         balanceZ = Math.round(Math.max(-1, Math.min(1, this.balance)) * 100) / 100;
@@ -202,7 +215,8 @@ export class InputManager {
       p.jump = jump;
       p.strafe = Math.max(-1, Math.min(1, strafe));
       p.sprint = sprint;
-      if (i === 0) p.look = this.look ?? 0;
+      // (To a thousandth of a radian, which is what a recorded session keeps.)
+      if (i === 0) p.look = Math.round((this.look ?? 0) * 1000) / 1000;
       p.balanceX = balanceX;
       p.balanceZ = balanceZ;
     }

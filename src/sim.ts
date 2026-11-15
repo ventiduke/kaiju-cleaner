@@ -67,6 +67,10 @@ export interface SimEvents {
   kaijuJump: { x: number; y: number; z: number };
   kaijuLand: { x: number; y: number; z: number; speed: number };
   kaijuSlide: { x: number; y: number; z: number };
+  /** The runner's feet have lost their hold (a hard turn or a hard stop at speed): `strength` 0..1. */
+  kaijuSkid: { x: number; y: number; z: number; strength: number };
+  /** Something of the kaiju is scraping along the ground right now (a slide, a skid): a few of these a second. */
+  kaijuScuff: { x: number; y: number; z: number; strength: number };
   /** On the test course: a gate passed (`leg` is how many so far), and the run finished. */
   courseGate: { x: number; y: number; z: number; leg: number; seconds: number };
   courseDone: { x: number; y: number; z: number; seconds: number; score: number };

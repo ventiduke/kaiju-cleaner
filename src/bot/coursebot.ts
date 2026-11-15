@@ -20,6 +20,7 @@ export class CourseBot {
   private stuckAt = new THREE.Vector3();
   private stuckTime = 0;
   private backing = 0;
+  private backTo = 0;
   stalls = 0;
 
   constructor(
@@ -46,10 +47,19 @@ export class CourseBot {
       input.thrust = 1;
       return;
     }
+    const runner = this.sim.tuning.move.controller === 1;
     if (this.backing > 0) {
       this.backing -= 1 / 60;
-      input.thrust = -0.7;
-      input.turn = this.stalls % 2 ? 0.7 : -0.7;
+      if (runner) {
+        // The runner does not reverse: it turns round and runs back out, off to one side.
+        input.look = this.backTo;
+        input.thrust = 0.7;
+        input.strafe = 0;
+        input.sprint = false;
+      } else {
+        input.thrust = -0.7;
+        input.turn = this.stalls % 2 ? 0.7 : -0.7;
+      }
       return;
     }
 
@@ -59,7 +69,6 @@ export class CourseBot {
     const to = this.points[this.at];
     const dist = Math.hypot(to.x - p.x, to.z - p.z);
     const err = wrap(Math.atan2(to.x - p.x, to.z - p.z) - k.yaw);
-    const runner = this.sim.tuning.move.controller === 1;
     // The balancing kaiju is steered; the runner is pointed, and sprints when it is in a hurry.
     input.turn = runner ? 0 : THREE.MathUtils.clamp(err * 2.4, -1, 1);
     input.look = Math.atan2(to.x - p.x, to.z - p.z);
@@ -101,6 +110,7 @@ export class CourseBot {
       if (p.distanceTo(this.stuckAt) < 3 && go > 0.2) {
         this.stalls++;
         this.backing = 1.3;
+        this.backTo = k.yaw + Math.PI + (this.stalls % 2 ? 0.7 : -0.7);
       }
       this.stuckAt.copy(p);
       this.stuckTime = 0;

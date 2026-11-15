@@ -11,6 +11,7 @@ export type KaijuMode = 'normal' | 'tiptoe' | 'crawl';
 const UP = new THREE.Vector3(0, 1, 0);
 const tmpQuat = new THREE.Quaternion();
 const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
 const pos = new THREE.Vector3();
 const vel = new THREE.Vector3();
 const quat = new THREE.Quaternion();
@@ -32,6 +33,8 @@ const BOW_PITCH = 0.95;
 const BOW_SECONDS = 1.9;
 /** The longest a belly-slide lasts. */
 const SLIDE_SECONDS = 1.6;
+/** How far forward the runner is pitched in a slide (rad): all but flat on its belly. */
+const SLIDE_PITCH = 1.46;
 
 /**
  * Adds a rim of sky-coloured light round the edges of a shape, so it stands out against a dark
@@ -101,6 +104,8 @@ export class Kaiju implements System {
   readonly tail: Tail;
   readonly legs: Legs;
   readonly rideHeight: number;
+  /** Where the tail joins the body, in the body's own frame. */
+  private readonly tailAnchor: THREE.Vector3;
 
   state: KaijuState = 'walk';
   stateTime = 0;
@@ -139,6 +144,28 @@ export class Kaiju implements System {
   private slideSpeed = 0;
   private jumpHeld = false;
   private crouchHeld = false;
+  // --- The runner's own state (see `runnerStep`) ---
+  /** How fast it is turning (rad/s, positive to its left). */
+  yawRate = 0;
+  /** How far it is leaning into a turn (rad, positive to its left), and forward with its speed (rad). */
+  bank = 0;
+  nod = 0;
+  private bankRate = 0;
+  private nodRate = 0;
+  /** How far its feet are skating rather than holding (0..1), and how many skids it has been in. */
+  skid = 0;
+  skids = 0;
+  private skidding = false;
+  /** How flat on its belly it is (0..1): only in a slide. */
+  prone = 0;
+  /** How far the last landing has pushed it down (m), and how much it is bouncing with its stride (0..1). */
+  private dip = 0;
+  private bounce = 0;
+  /** Seconds a press of the jump key still has to be used; whether this jump has been cut short; a slide waiting for the ground. */
+  private jumpBuffer = 0;
+  private jumpCut = false;
+  private slideQueued = false;
+  private wasRunner = false;
   /** How far into a bow it is (0 upright, 1 bent right over), and how many it has made. */
   bow = 0;
   bows = 0;
@@ -162,6 +189,20 @@ export class Kaiju implements System {
   readonly left = new THREE.Vector3(1, 0, 0);
   private ghost: THREE.MeshBasicMaterial | null = null;
   private arms: THREE.Mesh[] = [];
+  private armSides: number[] = [];
+  /** The parts of it that turn on their own (the runner's body language; the balancing kaiju leaves them be). */
+  private chest = new THREE.Group();
+  private neck = new THREE.Group();
+  private head = new THREE.Group();
+  /** Where its head is turned (rad, to its left), how hard it is breathing (0..1) and where in a breath it is, and how squashed (-) or stretched (+) it is. */
+  private gaze = 0;
+  private effort = 0;
+  private breathing = 0;
+  private squash = 0;
+  private squashRate = 0;
+  private armSwing = [-1, -1];
+  private armReach = [0, 0];
+  private wasAirborne = false;
   private jaw!: THREE.Mesh;
   private face: { eye: THREE.Mesh; pupil: THREE.Mesh; brow: THREE.Mesh; side: number; pupilX: number; pupilY: number; browY: number }[] = [];
   private blink = 2;
@@ -206,13 +247,8 @@ export class Kaiju implements System {
     this.buildVisual(skin, dark);
     sim.track(this.body, this.visual);
 
-    this.tail = new Tail(
-      sim,
-      this.body,
-      new THREE.Vector3(0, -k.bodyHalfHeight * 0.55, -k.bodyRadius * 0.75),
-      skin,
-      chunks,
-    );
+    this.tailAnchor = new THREE.Vector3(0, -k.bodyHalfHeight * 0.55, -k.bodyRadius * 0.75);
+    this.tail = new Tail(sim, this.body, this.tailAnchor, skin, chunks);
     this.legContext = {
       pos: new THREE.Vector3(spawn.x, this.rideHeight, spawn.z),
       forward: this.forward,
@@ -245,29 +281,46 @@ export class Kaiju implements System {
     const black = new THREE.MeshLambertMaterial({ color: 0x0e1012 });
     // Back plates: dark, with a cold glow that only shows once the light goes.
     const plateMaterial = rimLit(new THREE.MeshLambertMaterial({ color: 0x262e2b, emissive: 0x06161b, flatShading: true }), false);
+    // The parts that move on their own: the chest turns on the hips, the neck on the chest, the
+    // head on the neck. Each is a group set where it hinges; `add` still takes positions in the
+    // body's frame and works out where that is inside the group.
+    const origins = new Map<THREE.Object3D, THREE.Vector3>();
+    const hinge = (group: THREE.Group, parent: THREE.Object3D, x: number, y: number, z: number): THREE.Group => {
+      const from = origins.get(parent);
+      group.position.set(x - (from?.x ?? 0), y - (from?.y ?? 0), z - (from?.z ?? 0));
+      origins.set(group, new THREE.Vector3(x, y, z));
+      parent.add(group);
+      return group;
+    };
+    hinge(this.chest, this.visual, 0, h * 0.1, 0);
+    hinge(this.neck, this.chest, 0, h + r * 0.02, r * 0.3);
+    hinge(this.head, this.neck, 0, h + r * 0.5, r * 0.75);
     const add = (mesh: THREE.Mesh, x: number, y: number, z: number, parent: THREE.Object3D = this.visual): THREE.Mesh => {
-      mesh.position.set(x, y, z);
+      const from = origins.get(parent);
+      mesh.position.set(x - (from?.x ?? 0), y - (from?.y ?? 0), z - (from?.z ?? 0));
       mesh.castShadow = true;
       parent.add(mesh);
       return mesh;
     };
+    const chest = this.chest;
+    const head = this.head;
 
     // Trunk: the capsule the physics knows, thickened at the hips and across the shoulders.
     add(new THREE.Mesh(new THREE.CapsuleGeometry(r, h * 2, 6, 14), skin), 0, 0, 0);
     add(new THREE.Mesh(new THREE.SphereGeometry(r * 1.08, 14, 10), skin), 0, -h * 0.72, -r * 0.12).scale.set(1.08, 0.95, 1.16);
-    add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.98, 14, 10), skin), 0, h * 0.5, r * 0.1).scale.set(1.1, 0.8, 0.98);
+    add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.98, 14, 10), skin), 0, h * 0.5, r * 0.1, chest).scale.set(1.1, 0.8, 0.98);
     // Underside: overlapping plates down the front, paler than the hide.
     for (let i = 0; i < 7; i++) {
       const t = i / 6;
-      const plate = add(new THREE.Mesh(new THREE.SphereGeometry(r * (0.55 + 0.2 * Math.sin(t * Math.PI)), 12, 8), belly), 0, h * (0.7 - t * 1.75), r * (0.5 + 0.14 * Math.sin(t * Math.PI)));
+      const plate = add(new THREE.Mesh(new THREE.SphereGeometry(r * (0.55 + 0.2 * Math.sin(t * Math.PI)), 12, 8), belly), 0, h * (0.7 - t * 1.75), r * (0.5 + 0.14 * Math.sin(t * Math.PI)), i < 3 ? chest : this.visual);
       plate.scale.set(1, 0.36, 0.55);
     }
 
     // Neck and head: carried low and forward, the way a heavy animal carries it.
     const headY = h + r * 0.62;
-    const neck = add(new THREE.Mesh(new THREE.CylinderGeometry(r * 0.56, r * 0.86, r * 1.25, 12), skin), 0, h + r * 0.12, r * 0.42);
+    const neck = add(new THREE.Mesh(new THREE.CylinderGeometry(r * 0.56, r * 0.86, r * 1.25, 12), skin), 0, h + r * 0.12, r * 0.42, this.neck);
     neck.rotation.x = 0.55;
-    const skull = add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.6, 14, 10), skin), 0, headY, r * 0.98);
+    const skull = add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.6, 14, 10), skin), 0, headY, r * 0.98, head);
     skull.scale.set(0.98, 0.86, 1.25);
     // Snout: long and blunt, narrowing a little toward the nose.
     const snoutGeometry = new THREE.BoxGeometry(r * 0.86, r * 0.42, r * 1.25, 1, 1, 3);
@@ -278,34 +331,34 @@ export class Kaiju implements System {
       sp.setY(i, sp.getY(i) * (1 - 0.25 * along) + (sp.getY(i) > 0 ? -0.06 * r * along : 0));
     }
     snoutGeometry.computeVertexNormals();
-    add(new THREE.Mesh(snoutGeometry, skin), 0, headY - r * 0.1, r * 1.78);
+    add(new THREE.Mesh(snoutGeometry, skin), 0, headY - r * 0.1, r * 1.78, head);
     // The lower jaw hangs from a hinge at the back of the head, so it can drop open.
     const jawGeometry = new THREE.BoxGeometry(r * 0.74, r * 0.17, r * 1.5);
     jawGeometry.translate(0, 0, r * 0.75);
-    this.jaw = add(new THREE.Mesh(jawGeometry, skin), 0, headY - r * 0.42, r * 0.92);
-    add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.6, r * 0.12, r * 1.2), mouth), 0, headY - r * 0.31, r * 1.6);
+    this.jaw = add(new THREE.Mesh(jawGeometry, skin), 0, headY - r * 0.42, r * 0.92, head);
+    add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.6, r * 0.12, r * 1.2), mouth), 0, headY - r * 0.31, r * 1.6, head);
     // Teeth: a ragged row along each side of the upper jaw, and a few on the lower.
     const tooth = new THREE.ConeGeometry(r * 0.055, r * 0.2, 4);
     for (const side of [-1, 1]) {
       for (let i = 0; i < 6; i++) {
         const z = r * (1.3 + i * 0.19);
         const inset = 1 - 0.05 * i;
-        const upper = add(new THREE.Mesh(tooth, bone), side * r * 0.36 * inset, headY - r * 0.36, z);
+        const upper = add(new THREE.Mesh(tooth, bone), side * r * 0.36 * inset, headY - r * 0.36, z, head);
         upper.rotation.x = Math.PI;
         upper.scale.setScalar(i % 2 ? 0.8 : 1.15);
         if (i % 2 === 0) add(new THREE.Mesh(tooth, bone), side * r * 0.31 * inset, r * 0.14, z - r * 0.92 + r * 0.1, this.jaw).scale.setScalar(0.9);
       }
       // Nostril.
-      add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.07, r * 0.05, r * 0.1), black), side * r * 0.17, headY + r * 0.06, r * 2.38);
+      add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.07, r * 0.05, r * 0.1), black), side * r * 0.17, headY + r * 0.06, r * 2.38, head);
 
       // Eye: small, under a heavy ridge of bone.
-      const eye = add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.105, 10, 8), eyeGlow), side * r * 0.47, headY + r * 0.2, r * 1.32);
-      const pupil = add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.035, r * 0.15, r * 0.04), black), side * r * 0.5, headY + r * 0.2, r * 1.415);
-      const brow = add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.3, r * 0.08, r * 0.34), dark), side * r * 0.46, headY + r * 0.315, r * 1.3);
+      const eye = add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.105, 10, 8), eyeGlow), side * r * 0.47, headY + r * 0.2, r * 1.32, head);
+      const pupil = add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.035, r * 0.15, r * 0.04), black), side * r * 0.5, headY + r * 0.2, r * 1.415, head);
+      const brow = add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.3, r * 0.08, r * 0.34), dark), side * r * 0.46, headY + r * 0.315, r * 1.3, head);
       brow.rotation.y = side * 0.25;
       this.face.push({ eye, pupil, brow, side, pupilX: pupil.position.x, pupilY: pupil.position.y, browY: brow.position.y });
       // A short horn swept back behind each eye.
-      const horn = add(new THREE.Mesh(new THREE.ConeGeometry(r * 0.12, r * 0.55, 5), bone), side * r * 0.42, headY + r * 0.52, r * 0.7);
+      const horn = add(new THREE.Mesh(new THREE.ConeGeometry(r * 0.12, r * 0.55, 5), bone), side * r * 0.42, headY + r * 0.52, r * 0.7, head);
       horn.rotation.x = -1.0;
       horn.rotation.z = -side * 0.25;
 
@@ -313,8 +366,9 @@ export class Kaiju implements System {
       const armGeometry = new THREE.CapsuleGeometry(r * 0.2, r * 0.75, 4, 8);
       // Hang the arm from its shoulder end, so stretching it (to crawl on) reaches away from the body.
       armGeometry.translate(0, -r * 0.45, 0);
-      const arm = add(new THREE.Mesh(armGeometry, dark), side * r * 1.0, h * 0.42, r * 0.45);
+      const arm = add(new THREE.Mesh(armGeometry, dark), side * r * 1.0, h * 0.42, r * 0.45, chest);
       arm.rotation.set(-1.0, 0, side * 0.35);
+      this.armSides.push(side);
       for (let c = -1; c <= 1; c++) {
         const claw = add(new THREE.Mesh(new THREE.ConeGeometry(r * 0.06, r * 0.3, 4), bone), c * r * 0.11, -r * 1.12, r * 0.04, arm);
         claw.rotation.x = Math.PI + 0.3;
@@ -332,7 +386,7 @@ export class Kaiju implements System {
       for (const row of [0, -1, 1]) {
         if (row !== 0 && (i === 0 || i === 8)) continue;
         const scale = row === 0 ? 1 : 0.55;
-        const plate = add(new THREE.Mesh(plateShape, plateMaterial), row * r * 0.42, y - (row === 0 ? 0 : h * 0.06), back + Math.abs(row) * r * 0.16);
+        const plate = add(new THREE.Mesh(plateShape, plateMaterial), row * r * 0.42, y - (row === 0 ? 0 : h * 0.06), back + Math.abs(row) * r * 0.16, y > h * 0.35 ? chest : this.visual);
         // Thin from side to side, broad from front to back: blades standing out of the spine.
         plate.scale.set(size * 0.14 * scale + 0.3, size * 1.5 * scale, size * 0.6 * scale);
         plate.rotation.x = -Math.PI / 2 + 0.5 + (i % 2) * 0.12;
@@ -406,7 +460,16 @@ export class Kaiju implements System {
   }
 
   preStep(dt: number): void {
-    if (this.sim.tuning.move.controller === 1) {
+    const runner = this.sim.tuning.move.controller === 1;
+    if (runner !== this.wasRunner) {
+      // Changing bodies mid-stride: the two keep their feet differently, so put both down first.
+      this.wasRunner = runner;
+      this.legs.settle();
+      this.tail.weigh(runner ? 0.04 : 1);
+      if (!runner) this.tail.loose();
+      this.yawRate = this.bank = this.nod = this.bankRate = this.nodRate = this.skid = this.prone = this.dip = this.bounce = 0;
+    }
+    if (runner) {
       this.runnerStep(dt);
       return;
     }
@@ -758,10 +821,13 @@ export class Kaiju implements System {
   }
 
   /**
-   * The runner: a conventional third-person character in the kaiju's body. It faces where the
-   * player looks, moves and strafes at once, stops when the keys are let go, jumps, crouches,
-   * and slides if it crouches at a sprint. It does not lean, wobble or fall: all that is left
-   * of being a kaiju is its size, and what that does to the street.
+   * The runner: a third-person animal in the kaiju's body. The player points (W A S D by the
+   * screen, the view by the mouse) and it turns to go there: quickly from a stand, on a wider
+   * arc the faster it is going, because its body can only swing round so fast and its feet can
+   * only hold so much sideways. Ask for more than that and it drifts; ask for the opposite way
+   * and it digs in, skids, swings round and launches. It leans into all of it. It jumps (higher
+   * the longer the key is held), crouches, and at any real speed a crouch is a slide on its
+   * belly. It does not wobble or fall: its weight shows in its momentum, not in its balance.
    */
   private runnerStep(dt: number): void {
     const t = this.sim.tuning;
@@ -775,17 +841,8 @@ export class Kaiju implements System {
     const v = body.linvel();
     pos.set(p.x, p.y, p.z);
     this.state = 'walk';
-    this.tilt = 0;
     this.load = 0;
     this.stall = 0;
-
-    // It turns to face where the camera points. (A turn input, from a script or a pad without
-    // a look stick, steers it instead.)
-    const aim = input.turn ? this.yaw + input.turn * 0.7 : input.look;
-    const off = Math.atan2(Math.sin(aim - this.yaw), Math.cos(aim - this.yaw));
-    this.yaw += THREE.MathUtils.clamp(off, -r.turn * dt, r.turn * dt);
-    this.forward.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-    this.left.set(this.forward.z, 0, -this.forward.x);
 
     const ground = this.sim.ground;
     const reach = k.bodyRadius;
@@ -805,83 +862,162 @@ export class Kaiju implements System {
     let vy = v.y;
     const speed = Math.hypot(vx, vz);
 
-    // A slide: crouching at a sprint throws it flat and forward, and it rides the speed down.
+    // --- What is being asked for: a direction on the ground, by the screen, and how hard.
+    let push = this.planted ? 0 : Math.min(1, Math.hypot(input.thrust, input.strafe));
+    let wish = input.look + Math.atan2(input.strafe, input.thrust);
+    if (input.turn) {
+      // (Steered by hand, by a script or a pad with no view stick: left and right of where it is facing.)
+      wish = this.yaw + input.turn * 0.9;
+      push = this.planted ? 0 : Math.min(1, Math.abs(input.thrust));
+    }
+
+    // --- A slide: crouching on the move throws it flat, and it rides its speed down.
     const crouchPressed = input.crouch && !this.crouchHeld;
     this.crouchHeld = input.crouch;
-    if (crouchPressed && !this.airborne && this.sliding <= 0 && speed > r.speed * r.slideFrom) {
+    // (Asked for in the air, it happens on landing.)
+    if (crouchPressed && this.airborne) this.slideQueued = true;
+    if (!input.crouch) this.slideQueued = false;
+    if ((crouchPressed || this.slideQueued) && !this.airborne && this.sliding <= 0 && !this.carrying && this.wading < 0.3 && speed > r.speed * r.slideFrom) {
       this.sliding = 1;
+      this.slideQueued = false;
       const boost = (speed + r.slideBoost) / speed;
       vx *= boost;
       vz *= boost;
       this.slides++;
       this.sim.emit('kaijuSlide', { x: p.x, y: p.y, z: p.z });
     }
+
+    const pace = THREE.MathUtils.clamp(speed / r.sprint, 0, 1);
+    let turnTo = this.yaw;
+    let maxTurn = THREE.MathUtils.lerp(r.turn, r.turnFast, pace) * (this.airborne ? r.airControl : 1);
+    let forwardAccel = 0;
+    let slip = 0;
     if (this.sliding > 0) {
       const now = Math.hypot(vx, vz);
       const next = now - r.slideFriction * (this.airborne ? 0.1 : 1) * dt;
-      // Standing up ends it, and so does running out of speed (it stays crouched).
-      if (!input.crouch || next < r.speed * r.crouchSpeed) this.sliding = 0;
+      // Getting up ends it (keeping the speed it has left); so does running out of speed (it stays down).
+      if (!input.crouch || next < r.speed * Math.max(r.crouchSpeed, 0.55)) this.sliding = 0;
       else {
-        // It can be leaned a little toward where the player is looking, no more.
+        // It can be carved a little toward where the player wants to go, no more. The body follows the slide.
         const heading = Math.atan2(vx, vz);
-        const want = Math.atan2(Math.sin(this.yaw - heading), Math.cos(this.yaw - heading));
+        const want = push > 0.05 ? Math.atan2(Math.sin(wish - heading), Math.cos(wish - heading)) : 0;
         const steered = heading + THREE.MathUtils.clamp(want, -r.slideSteer * dt, r.slideSteer * dt);
         vx = Math.sin(steered) * next;
         vz = Math.cos(steered) * next;
+        turnTo = steered;
+        maxTurn = Math.max(maxTurn, 6);
+        forwardAccel = -r.slideFriction;
       }
     }
-    if (this.sliding <= 0) {
-      // Where the keys say to go, as a velocity; get there at a fixed rate, and stop the same way.
-      let wx = this.forward.x * input.thrust + this.left.x * input.strafe;
-      let wz = this.forward.z * input.thrust + this.left.z * input.strafe;
-      const push = Math.hypot(wx, wz);
-      if (push > 1) {
-        wx /= push;
-        wz /= push;
+    const sliding = this.sliding > 0;
+    const low = input.crouch || sliding;
+    if (!sliding && push > 0.05) turnTo = wish;
+
+    // --- Facing: it swings toward where it is going, with a moment to get the turn started and to end it.
+    const off = Math.atan2(Math.sin(turnTo - this.yaw), Math.cos(turnTo - this.yaw));
+    const wantRate = THREE.MathUtils.clamp(off * 10, -maxTurn, maxTurn);
+    this.yawRate += (wantRate - this.yawRate) * (1 - Math.exp(-dt / Math.max(0.01, r.turnEase)));
+    this.yaw += this.yawRate * dt;
+    this.forward.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    this.left.set(this.forward.z, 0, -this.forward.x);
+
+    if (!sliding) {
+      // --- Speed, in its own frame: along its nose, and across it.
+      let u = vx * this.forward.x + vz * this.forward.z;
+      let s = vx * this.left.x + vz * this.left.z;
+      // Across: its feet scrub sideways speed off as hard as they can hold. Turned faster than
+      // that at speed, the rest carries it wide: a drift.
+      const hold = r.grip * traction * (this.airborne ? 0.04 : 1);
+      s -= THREE.MathUtils.clamp(s, -hold * dt, hold * dt);
+      slip = Math.abs(s);
+
+      // Along: it drives for the speed asked for, in so far as it is facing that way. Asked to go
+      // somewhere behind it, it brakes hard while it swings round.
+      const sprinting = input.sprint && push > 0.3 && !low && !this.carrying;
+      const top = (low ? r.speed * r.crouchSpeed : sprinting ? r.sprint : r.speed) * (1 - 0.45 * this.wading) * (1 - (1 - t.carry.speed) * this.carrying);
+      const facing = Math.cos(off);
+      const behind = push > 0.05 && facing <= 0;
+      const target = push > 0.05 && !behind ? top * push * Math.max(0.3, facing) : 0;
+      const launch = r.speed / Math.max(0.05, r.accel);
+      const build = Math.max(1, r.sprint - r.speed) / Math.max(0.05, r.sprintBuild);
+      const brake = r.speed / Math.max(0.05, r.stop);
+      const before = u;
+      if (u < target) {
+        // Quick off the mark, and a sprint builds on top of the run. The last of it comes on gently.
+        const rate = (u < r.speed * 0.98 ? launch : build) * THREE.MathUtils.clamp((target - u) / (0.2 * r.speed), 0.3, 1);
+        u = Math.min(target, u + rate * traction * (this.airborne ? r.airControl : 1) * dt);
+      } else {
+        // Let go, it runs on a few strides; eased off (out of a sprint, into a crouch), it coasts down; reversed, it digs in.
+        const rate = brake * (behind ? 1.25 : push > 0.05 ? 0.5 : 1);
+        u = Math.max(target, u - rate * traction * (this.airborne ? 0.08 : 1) * dt);
+        if (behind && !this.airborne) slip = Math.max(slip, u * 0.8);
       }
-      const top =
-        (input.crouch ? r.speed * r.crouchSpeed : input.sprint && input.thrust > 0.3 ? r.sprint : r.speed) *
-        (1 - 0.45 * this.wading) *
-        (1 - (1 - t.carry.speed) * this.carrying) *
-        (this.planted ? 0 : 1);
-      const rate = (r.sprint / Math.max(0.03, push > 0.05 ? r.accel : r.stop)) * traction * (this.airborne ? r.airControl : 1);
-      let dx = wx * top - vx;
-      let dz = wz * top - vz;
-      const gap = Math.hypot(dx, dz);
-      if (gap > rate * dt) {
-        dx *= (rate * dt) / gap;
-        dz *= (rate * dt) / gap;
-      }
-      vx += dx;
-      vz += dz;
+      forwardAccel = (u - before) / dt;
+      vx = this.forward.x * u + this.left.x * s;
+      vz = this.forward.z * u + this.left.z * s;
     }
     if (this.wading > 0) vx += (this.sim.current(p.x, p.z) * (this.planted ? 0.15 : this.carrying ? 0.45 : 1) - vx) * 1.1 * this.wading * dt;
 
-    // Crouching and sliding share the low pose, and it drops into it at once.
-    const low = input.crouch || this.sliding > 0;
-    this.mode = low ? 'crawl' : 'normal';
-    this.crawl = THREE.MathUtils.clamp(this.crawl + (low ? dt : -dt) * 7, 0, 1);
-    const crawl = smooth(this.crawl);
+    // --- Skidding: feet that have lost their hold throw up dust, and say so once as it starts.
+    const skidNow = this.airborne || sliding ? 0 : THREE.MathUtils.clamp((slip - 4) / 10, 0, 1);
+    this.skid += (skidNow - this.skid) * Math.min(1, dt * 16);
+    if (this.skid > 0.45 && !this.skidding) {
+      this.skidding = true;
+      this.skids++;
+      this.sim.emit('kaijuSkid', { x: p.x, y: groundY, z: p.z, strength: this.skid });
+    } else if (this.skid < 0.15) this.skidding = false;
+    if ((sliding || this.skid > 0.25) && !this.airborne && this.sim.tick % 4 === 0) {
+      const back = sliding ? k.bodyHalfHeight : 0;
+      this.sim.emit('kaijuScuff', { x: p.x - this.forward.x * back, y: groundY, z: p.z - this.forward.z * back, strength: sliding ? Math.min(1, speed / r.sprint + 0.3) : this.skid });
+    }
 
+    // --- Pose: down for a crouch, flat for a slide, and both at once (not "getting down slowly").
+    this.mode = low ? 'crawl' : 'normal';
+    this.crawl = THREE.MathUtils.clamp(this.crawl + (low ? dt : -dt) * 8, 0, 1);
+    this.prone = THREE.MathUtils.clamp(this.prone + (sliding ? dt * 11 : -dt * 6), 0, 1);
+    const crawl = smooth(this.crawl);
+    const prone = smooth(this.prone);
+
+    // --- Jumping. A press just before landing still counts; letting go early cuts it short.
     const jumpPressed = input.jump && !this.jumpHeld;
     this.jumpHeld = input.jump;
-    if (jumpPressed && !this.airborne && this.wading < 0.3 && !this.carrying && r.jump > 0) {
+    this.jumpBuffer = jumpPressed ? 0.14 : Math.max(0, this.jumpBuffer - dt);
+    if (this.jumpBuffer > 0 && !this.airborne && this.wading < 0.3 && !this.carrying && r.jump > 0) {
       vy = Math.sqrt(2 * g * r.gravity * r.jump);
       this.airborne = true;
       this.airTime = 0;
+      this.jumpBuffer = 0;
+      this.jumpCut = false;
+      this.sliding = 0;
       this.jumps++;
       this.sim.emit('kaijuJump', { x: p.x, y: p.y, z: p.z });
     }
 
-    // Height: held at standing (or crouching) height by a stiff spring, or in free flight.
+    // --- Height: held at standing (or crouching, or sliding) height by a stiff spring, or in free flight.
+    // Running, it rises between steps and sinks onto each one; a landing pushes it down, and it comes back up.
+    const stride = this.legs.striding ? Math.min(1.3, speed / r.speed) : 0;
+    this.bounce += (stride - this.bounce) * Math.min(1, dt * 6);
+    // (Asked for a moment early, because the spring that holds its height is a moment late: it
+    // should be at its lowest in the middle of a step, not as the foot leaves the ground.)
+    const lead = 0.075 * this.legs.cadence;
+    const bob = -Math.cos(4 * Math.PI * (this.legs.cycle + lead - this.legs.duty / 2)) * this.rideHeight * 0.05 * this.bounce * (1 - crawl * 0.6);
+    this.dip *= Math.exp(-dt * 6);
     const standingHeight = this.rideHeight + this.legs.lift * 0.6;
-    const want = standingHeight + (k.bodyRadius + m.crawlClearance - standingHeight) * crawl;
+    const crouchHeight = k.bodyRadius + m.crawlClearance;
+    const flatHeight = k.bodyRadius + k.bodyHalfHeight * Math.cos(SLIDE_PITCH) + 0.4;
+    const want = standingHeight + (crouchHeight - standingHeight) * crawl + (flatHeight - crouchHeight) * prone + (bob - this.dip) * (1 - prone);
     const error = want - (p.y - groundY);
     if (this.airborne) {
       this.airTime += dt;
-      vy -= g * (r.gravity - 1) * dt;
+      // (Falls a little faster than it rises: up is effort, down is weight.)
+      vy -= g * (r.gravity * (vy < 0 ? 1.2 : 1) - 1) * dt;
+      if (!input.jump && !this.jumpCut && vy > 0 && this.airTime > 0.06) {
+        vy *= 0.5;
+        this.jumpCut = true;
+      }
       if (this.airTime > 0.15 && vy < 0 && error > -1) {
         this.airborne = false;
+        this.dip = Math.min(this.rideHeight * 0.3, -vy * 0.09);
         this.sim.emit('kaijuLand', { x: p.x, y: p.y, z: p.z, speed: -vy });
         this.sim.emit('footfall', { x: p.x, y: groundY, z: p.z, side: 0, strength: 2, wet: this.wading > 0.2 });
         this.chunks?.shake(p.x, p.z, k.bodyRadius + 2 + -vy * 0.15);
@@ -892,27 +1028,63 @@ export class Kaiju implements System {
       vy += (THREE.MathUtils.clamp(error * 14, -40, 40) - vy) * Math.min(1, dt * 20);
     }
     body.setLinvel({ x: vx, y: vy, z: vz }, true);
-
-    // Always upright (tipped forward only by the crouch), facing where it faces.
-    const pitch = crawl * m.crawlPitch;
-    quat.setFromAxisAngle(UP, this.yaw).multiply(tmpQuat.setFromAxisAngle(AXIS_X, pitch));
-    body.setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true);
-    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-
     this.speed = Math.hypot(vx, vz);
     this.forwardSpeed = vx * this.forward.x + vz * this.forward.z;
 
+    // --- Lean. Into the turn, by how hard it is turning for its speed (and a little more while it
+    // drifts); forward as it gets going and at a sprint, back on its heels as it brakes; nose up
+    // going into a jump and down coming out of it. On springs, so that it settles rather than snaps.
+    const sideSlip = vx * this.left.x + vz * this.left.z;
+    const bankTo =
+      r.lean *
+      (0.36 * THREE.MathUtils.clamp((this.yawRate * this.speed) / Math.max(1, r.grip), -1, 1) -
+        0.16 * THREE.MathUtils.clamp(sideSlip / r.speed, -1, 1) +
+        THREE.MathUtils.clamp(this.yawRate * 0.012, -0.12, 0.12)) *
+      (this.airborne ? 0.5 : 1);
+    const charge = THREE.MathUtils.smoothstep(this.speed, r.speed * 1.05, r.sprint);
+    const nodTo = this.airborne
+      ? THREE.MathUtils.clamp(-vy * 0.009, -0.3, 0.3)
+      : r.lean * (0.17 * THREE.MathUtils.clamp(forwardAccel / (r.speed / Math.max(0.05, r.accel)), -1.5, 1) + 0.3 * charge) * (1 - crawl);
+    this.bankRate += ((bankTo - this.bank) * 90 - this.bankRate * 12) * dt;
+    this.bank += this.bankRate * dt;
+    this.nodRate += ((nodTo - this.nod) * 70 - this.nodRate * 11) * dt;
+    this.nod += this.nodRate * dt;
+    this.tilt = Math.abs(this.bank);
+
+    // Facing where it faces; pitched by the crouch, the slide and the lean; rolled about its line of travel.
+    const pitch = crawl * m.crawlPitch + prone * (SLIDE_PITCH - m.crawlPitch) + this.nod * (1 - prone);
+    quat
+      .setFromAxisAngle(UP, this.yaw)
+      .multiply(tmpQuat.setFromAxisAngle(AXIS_Z, -this.bank * (1 - 0.5 * crawl)))
+      .multiply(tmpQuat.setFromAxisAngle(AXIS_X, pitch));
+    body.setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+
+    // --- Legs: a stride that turns over faster the faster it goes (and to step round a turn on the spot).
     const ctx = this.legContext;
     ctx.pos.copy(pos);
     ctx.velocity.set(vx, 0, vz);
     ctx.yaw = this.yaw;
-    ctx.standing = !this.airborne;
+    // In the air they are drawn up, then reach for the ground; in a slide they trail out behind.
+    ctx.standing = !this.airborne && this.prone < 0.4;
+    ctx.tuck = this.airborne ? THREE.MathUtils.clamp(0.45 + vy / 45, 0.05, 0.9) : 0;
     ctx.stanceScale = 1;
     ctx.footScale = 1;
-    this.legs.update(dt, ctx);
     ctx.crawl = crawl;
-    this.tail.setPose(crawl, pitch);
-    if (this.sim.tick % 30 === 0) this.tail.syncMotors();
+    const going = this.speed > 1.5 || Math.abs(this.yawRate) > 1.5;
+    const cadence = going ? r.cadence * (0.55 + 0.45 * Math.sqrt(Math.min(2.2, this.speed / r.speed))) + Math.abs(this.yawRate) * 0.08 : 0;
+    this.legs.stride(dt, ctx, cadence, this.skid, low);
+
+    // --- Tail: streams out behind it, held up as a counterweight the faster it goes (and high in
+    // the air and in a slide); swung to the outside of a turn; and it beats with the stride, or sways idly.
+    const time = this.sim.tick * dt;
+    const going01 = Math.min(1, this.speed / r.speed);
+    const lift = -0.25 + 0.45 * going01 + 0.13 * charge + (this.airborne ? 0.25 : 0) + prone * 0.55 - crawl * (1 - prone) * 0.05;
+    const beat = this.legs.striding ? Math.sin(2 * Math.PI * this.legs.cycle) * 0.3 * going01 : Math.sin(time * 1.2) * 0.2;
+    const swing = THREE.MathUtils.clamp(-this.yawRate * 0.06, -0.6, 0.6) + beat;
+    // (Where the tail joins it, once this step has moved it.)
+    tmp.copy(this.tailAnchor).applyQuaternion(quat).add(pos).addScaledVector(tmp2.set(vx, vy, vz), dt);
+    this.tail.follow(dt, tmp, this.yaw, { x: vx, y: vy, z: vz }, r.tail, lift, swing);
     this.tail.arm(body.linvel());
   }
 
@@ -964,12 +1136,107 @@ export class Kaiju implements System {
     if (this.ghost) this.ghost.visible = this.sim.tuning.camera.silhouette;
     // Down on all fours the arms become front legs: swung to point at the ground and stretched to reach it.
     const c = smooth(this.crawl);
-    for (const arm of this.arms) {
-      // Standing they reach forward and down; crawling, the body's "forward" is the ground.
-      arm.rotation.x = -1.0 - c * 0.57;
-      arm.scale.set(1 + c * 0.7, 1 + c * 0.12, 1 + c * 0.7);
+    if (this.sim.tuning.move.controller === 1) this.bodyLanguage(Math.min(frameDt, 1 / 30), c);
+    else {
+      if (this.posed) this.unpose();
+      for (const arm of this.arms) {
+        // Standing they reach forward and down; crawling, the body's "forward" is the ground.
+        arm.rotation.x = -1.0 - c * 0.57;
+        arm.scale.set(1 + c * 0.7, 1 + c * 0.12, 1 + c * 0.7);
+      }
     }
     this.expression(frameDt);
+  }
+
+  /**
+   * The runner's body language, drawn over what the simulation has decided: where its head is
+   * turned, how its chest and arms go with its stride, its breathing, the squash of a landing.
+   * It is what makes a capsule that turns into an animal that turns. None of it feeds back
+   * into the game.
+   */
+  private bodyLanguage(dt: number, crawl: number): void {
+    const r = this.sim.tuning.runner;
+    const m = this.sim.tuning.modes;
+    const input = this.input;
+    const ease = (from: number, to: number, rate: number) => from + (to - from) * Math.min(1, dt * rate);
+    const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    const clamp = THREE.MathUtils.clamp;
+    this.posed = true;
+    const prone = smooth(this.prone);
+    const pace = Math.min(1.3, this.speed / r.speed);
+    const striding = this.legs.striding;
+    const stride = 2 * Math.PI * this.legs.cycle;
+    const push = Math.hypot(input.thrust, input.strafe);
+
+    // Head: it looks where it is about to go and, standing, where the player is looking. And it
+    // keeps its head level while the body under it pitches and rolls, as animals do.
+    let look = 0;
+    if (this.sliding > 0) look = 0;
+    else if (push > 0.05) look = clamp(wrap(input.look + Math.atan2(input.strafe, input.thrust) - this.yaw), -1, 1) * 0.75 + clamp(this.yawRate * 0.05, -0.3, 0.3);
+    else {
+      const view = wrap(input.look - this.yaw);
+      look = Math.abs(view) < 1.9 ? clamp(view, -1.1, 1.1) * 0.7 : 0;
+    }
+    this.gaze = ease(this.gaze, look, 7);
+    const pitch = crawl * m.crawlPitch + prone * (SLIDE_PITCH - m.crawlPitch) + this.nod * (1 - prone);
+    const level = -pitch * 0.8;
+    const bobble = striding ? Math.sin(2 * stride) * 0.035 * Math.min(1, pace) : 0;
+    this.neck.rotation.set(level * 0.5, this.gaze * 0.45, this.bank * 0.3);
+    this.head.rotation.set(level * 0.5 + bobble, this.gaze * 0.55, this.bank * 0.35);
+
+    // Chest: swings against the hips with each stride, and follows the head into a turn. It breathes,
+    // harder for a while after a sprint.
+    const twist = striding ? Math.sin(stride) * 0.13 * Math.min(1, pace) * (1 - prone) : 0;
+    this.chest.rotation.set(0, ease(this.chest.rotation.y, twist + this.gaze * 0.18, 12), 0);
+    const spent = clamp((this.speed - r.speed * 0.8) / Math.max(1, r.sprint - r.speed * 0.8), 0, 1);
+    this.effort = ease(this.effort, spent, spent > this.effort ? 0.6 : 0.25);
+    this.breathing += dt * (1.6 + 4.4 * this.effort);
+    const breath = Math.sin(this.breathing) * (0.012 + 0.022 * this.effort);
+    this.chest.scale.set(1 + breath, 1 + breath * 0.5, 1 + breath * 1.5);
+
+    // Arms: front legs on all fours, flung out ahead in a slide, up going into a jump; otherwise
+    // they pump against the legs, tucked in closer the faster it goes.
+    const charge = THREE.MathUtils.smoothstep(this.speed, r.speed * 1.05, r.sprint);
+    for (let i = 0; i < this.arms.length; i++) {
+      const arm = this.arms[i];
+      const side = this.armSides[i];
+      const pump = striding ? side * Math.cos(stride) * Math.min(1, pace) : 0;
+      let swing: number;
+      let spread = 0.35;
+      if (prone > 0.5) swing = -2.75;
+      else if (this.airborne) {
+        swing = this.body.linvel().y > 0 ? -2.2 : -0.7;
+        spread = 0.8;
+      } else if (crawl > 0.5) swing = -1.57 - pump * 0.3;
+      else swing = -1.0 + 0.3 * charge + pump * 0.55;
+      this.armSwing[i] = ease(this.armSwing[i], swing, 14);
+      this.armReach[i] = ease(this.armReach[i], crawl * (1 - prone), 14);
+      const reach = this.armReach[i];
+      arm.rotation.x = this.armSwing[i];
+      arm.rotation.z = ease(arm.rotation.z, side * spread, 10);
+      arm.scale.set(1 + reach * 0.7, 1 + reach * 0.12, 1 + reach * 0.7);
+    }
+
+    // Squash and stretch: long for a moment as it leaves the ground, squat for a moment as it comes back.
+    if (this.airborne !== this.wasAirborne) this.squashRate += this.airborne ? 1.1 : -1.6;
+    this.wasAirborne = this.airborne;
+    this.squashRate += (-this.squash * 180 - this.squashRate * 15) * dt;
+    this.squash = clamp(this.squash + this.squashRate * dt, -0.16, 0.14);
+    this.visual.scale.set(1 - this.squash * 0.5, 1 + this.squash, 1 - this.squash * 0.5);
+  }
+
+  private posed = false;
+
+  /** Puts the parts the runner moves back as they were built (for the balancing kaiju). */
+  private unpose(): void {
+    this.posed = false;
+    for (const part of [this.chest, this.neck, this.head]) {
+      part.rotation.set(0, 0, 0);
+      part.scale.set(1, 1, 1);
+    }
+    this.visual.scale.set(1, 1, 1);
+    this.arms.forEach((arm, i) => (arm.rotation.z = this.armSides[i] * 0.35));
+    this.gaze = this.squash = this.squashRate = 0;
   }
 
   /** Its face: brows that knit when things go wrong, eyes that widen and dart, a jaw that drops. */
@@ -980,7 +1247,10 @@ export class Kaiju implements System {
     const ease = (from: number, to: number, rate: number) => from + (to - from) * Math.min(1, dt * rate);
     // Worry: 1 knits the brows up in the middle; -1 pulls them down flat (concentrating, or cross with itself).
     this.worry = ease(this.worry, alarmed ? 1 : down ? -0.6 : this.carrying || this.mode === 'tiptoe' ? -0.45 : this.bow > 0 ? 0.7 : 0, 9);
-    this.mouth = ease(this.mouth, this.state === 'falling' ? 1 : alarmed ? 0.55 : this.gasp > 0 ? 0.9 : 0.04, 12);
+    // (The runner's jaw drops in the air and in a slide, and it pants after a sprint.)
+    const runner = this.sim.tuning.move.controller === 1;
+    const thrill = !runner ? 0 : this.airborne ? 0.5 : this.sliding > 0 ? 0.6 : this.effort * (0.16 + 0.1 * Math.sin(this.breathing));
+    this.mouth = ease(this.mouth, this.state === 'falling' ? 1 : alarmed ? 0.55 : this.gasp > 0 ? 0.9 : Math.max(0.04, thrill), 12);
     this.gasp = Math.max(0, this.gasp - dt);
     this.jaw.rotation.x = this.mouth * 0.55;
     this.blink -= dt;
@@ -993,7 +1263,7 @@ export class Kaiju implements System {
       // Pupils lead a turn, and shrink to dots in alarm.
       const size = alarmed ? 0.6 : 1;
       f.pupil.scale.setScalar(size);
-      f.pupil.position.x = ease(f.pupil.position.x, f.pupilX - input.turn * 0.09 * this.sim.tuning.kaiju.bodyRadius, 10);
+      f.pupil.position.x = ease(f.pupil.position.x, f.pupilX + (runner ? this.gaze * 0.9 : -input.turn) * 0.09 * this.sim.tuning.kaiju.bodyRadius, 10);
       f.pupil.position.y = ease(f.pupil.position.y, f.pupilY - (this.carrying ? 0.07 : 0) * this.sim.tuning.kaiju.bodyRadius, 10);
       f.brow.rotation.z = f.side * this.worry * 0.5;
       f.brow.position.y = f.browY + (this.worry > 0 ? 0.06 : 0.03) * this.worry * this.sim.tuning.kaiju.bodyRadius;

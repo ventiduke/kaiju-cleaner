@@ -165,7 +165,11 @@ async function boot(): Promise<void> {
       kaiju.mode === 'tiptoe'
         ? 'TIPTOE'
         : kaiju.mode === 'crawl'
-          ? 'CRAWLING (no limit)'
+          ? tuning.move.controller === 1
+            ? kaiju.sliding > 0
+              ? 'SLIDING  (Space: leap out of it   C: get up)'
+              : 'CROUCHED  (C: stand up)'
+            : 'CRAWLING (no limit)'
           : kaiju.toeLocked
             ? 'calves resting…'
             : 'tiptoe recovering';
@@ -234,6 +238,7 @@ async function boot(): Promise<void> {
     isRunner,
     () => kaiju?.yaw ?? 0,
     () => tuning.runner.sensitivity,
+    () => tuning.runner.camFollow,
   );
   // The runner's view: the captured mouse (or a drag) turns it and tips it.
   const canvas = renderer.domElement;
@@ -322,7 +327,7 @@ async function boot(): Promise<void> {
   document.getElementById('help')!.textContent = [
     'W/A/S/D move   Shift: tiptoe   C: crawl (at a run, in Wild style: slide)   Space: leap (Wild style)   F: hold breath   V: bow',
     '1 / 2 / 3: movement style (Lumbering, Steady, Wild)   X: steer by the screen, or like a tank',
-    '4: Runner, a plain third-person body: mouse looks (click to capture), W A S D move and strafe, Shift sprints, Space jumps, C crouches; C at a sprint slides',
+    '4: Runner, a third-person animal: the mouse turns the view (click to capture), W A S D run that way on the screen, Shift sprints, Space jumps (hold for height), C crouches; C on the move slides',
     'CLICK (or E) by a marked piece: take hold; click again over its marker to put it back. C while holding plants your feet.',
     'blocked road: shove, kick, tail-sweep or sneeze the rubble off it.      going over? steer into the fall to save it',
     'mouse drag: look around   wheel: zoom   double-click: reset view   Q/Z: swing   T: time of day',

@@ -102,6 +102,15 @@ export class GameAudio {
     sim.on('repairsDone', () => {
       [523, 659, 784, 1047].forEach((f, i) => this.tone({ gain: 0.4, time: i === 3 ? 0.9 : 0.22, from: f, to: f, type: 'triangle', delay: 0.6 + i * 0.2 }));
     });
+    // The runner. A jump is a grunt of effort; a slide is a body hitting the road and then
+    // scraping along it; a skid is claws on tarmac.
+    sim.on('kaijuJump', () => this.tone({ gain: 0.3, time: 0.22, from: 120, to: 210, type: 'sawtooth', vary: 'small' }));
+    sim.on('kaijuSlide', () => {
+      this.tone({ gain: 0.8, time: 0.3, from: 85, to: 34, type: 'sine' });
+      this.burst({ gain: 0.5, time: 0.5, from: 1500, to: 350, q: 0.7 });
+    });
+    sim.on('kaijuSkid', (e) => this.burst({ gain: 0.25 + 0.3 * e.strength, time: 0.4, from: 2400, to: 700, q: 2.2, vary: 'small' }));
+    sim.on('kaijuScuff', (e) => this.burst({ gain: 0.16 * e.strength, time: 0.14, from: 700, to: 300, q: 0.9, vary: 'small' }));
     sim.on('citizenSquish', (e) => this.tone({ gain: 0.35 * this.near(e), time: 0.16, from: 1500, to: 520, type: 'square', vary: 'small' }));
     sim.on('citizenScare', (e) => {
       const now = performance.now();

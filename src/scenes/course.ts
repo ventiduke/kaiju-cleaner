@@ -52,7 +52,7 @@ export function courseSpec(): CourseSpec {
 
 /**
  * The runner's course: short, and each leg asks for one of its moves. A straight to sprint
- * down, three low walls to jump, towers in the road to strafe round, and three low bridges
+ * down, three low walls to jump, towers in the road to weave round, and three low bridges
  * in a row, close enough together to take in one slide.
  */
 export function runSpec(): CourseSpec {
@@ -61,12 +61,12 @@ export function runSpec(): CourseSpec {
     { name: 'Hurdles 34m', brief: 'Low walls: jump them (Space)', width: 34, path: [P(0, -40)] },
     {
       name: 'Slalom 44m',
-      brief: 'Towers in the road: strafe round them (A / D)',
+      brief: 'Towers in the road: weave round them (A / D, or steer with the mouse)',
       width: 44,
       path: [P(-175, -40)],
       line: [P(-34, -52), P(-68, -28), P(-102, -52), P(-136, -28), P(-175, -40)],
     },
-    { name: 'Low bars 28m', brief: 'Three low bridges: crouch (C), or slide under all three at a sprint', width: 28, path: [P(-175, 150)] },
+    { name: 'Low bars 28m', brief: 'Three low bridges: C at a run slides under all three', width: 28, path: [P(-175, 150)] },
   ];
   return {
     name: 'Runner course',
