@@ -28,10 +28,11 @@ Scenes are picked with a URL parameter:
 | Run forward / back | W / S | Left stick up / down |
 | Turn | A / D | Left stick left / right |
 | Tiptoe: slow, narrow, quiet, until the calves give out | Hold Shift | A or right trigger |
-| Crouch: slow, low, hard to tip, tail tucked | Hold Space | B or left trigger |
-| Pick up and carry a repair piece | Hold E | Hold X or right bumper |
-| Balance what you are carrying | Mouse position (or I J K L) | Right stick |
-| Look around, raise or lower the view | Drag the mouse (or Q / Z to swing) | Right stick |
+| Crawl on all fours: slow, can't be tipped, fits under skybridges | Hold Space | B or left trigger |
+| Pick up and carry a repair piece | Hold the left mouse button (or E) | Hold X or right bumper |
+| Balance what you are carrying | Move the mouse (or I J K L) | Right stick |
+| Hold your breath (keeps dust out of the nose) | Hold F | Y |
+| Look around, raise or lower the view | Drag the mouse (right-drag while carrying), or Q / Z | Right stick |
 | Zoom | Mouse wheel | |
 | Reset the view | Double-click | |
 | Note for Claude | N | |
@@ -39,21 +40,36 @@ Scenes are picked with a URL parameter:
 | Free camera on / off | C | |
 | Throw a debug ball at the cursor | B (or click, in the free camera) | |
 
-Fast and sharp tips it over: hold a hard turn at speed and it stumbles, then starts to go. Let go at the
-stumble and it rights itself. Once it is going over there is a short window to **save it by steering into the
-fall** (toppling right, steer right). If it does go down, mashing a direction scrambles it up sooner.
+A bar at the bottom of the screen shows what the kaiju is doing and how long it can keep it up: tiptoe
+stamina, held breath, or dust building toward a sneeze.
+
+**Staying upright.** Fast and sharp tips it over: hold a hard turn at speed and it stumbles, then starts to
+go. Let go at the stumble and it rights itself. Once it is going over there is a short window to save it by
+steering into the fall (toppling right, steer right). If it does go down, mashing a direction scrambles it
+up sooner.
 
 **Repair jobs.** Tower tops are sitting in the road and a bridge is missing a span; each has a coloured
-marker, and a matching marker floats over where it belongs. Stand facing a piece and hold E to hoist it. It
-balances on the kaiju's hands like a broom on a palm, and a dial appears: the ring is the hands, the dot is
-where they need to be. Keep the ring on the dot and the load holds; let the dot pin against the rim and it
-slips. Starting, stopping and turning all shove the load, so the kaiju moves more gently with its hands
-full. Let go over the marker to set the piece in place: straight if it was lined up, crooked (and visibly so)
-if it was not. A placed piece can be knocked off again.
+marker, and a matching marker floats over where it belongs. Stand facing a piece and hold the left mouse
+button to hoist it. A dial appears: the white dot is the load, shoved about by the kaiju's own starts, stops
+and turns; the ring is yours and follows the mouse. Keep the ring on the dot. While they are apart the grip
+(the arc round the dial) burns down, and when it is gone the load slips. Let go over the marker to set the
+piece in place: straight if it was steady and lined up, crooked (and visibly so) if not.
 
-The city is split by a river you can wade (slowly). The road bridges stand on piers and will not take a kaiju.
-Dark patches on the roads are oil: no grip at all. The townsfolk run from a stomping kaiju, less so from one on
-tiptoe, and a foot landing on one squashes it.
+**Hazards.**
+
+- Oil (dark, glossy patches): at a run its feet shoot out from under it. Tiptoe or crawl across.
+- Weak ground (pale, cracked patches): a heavy step brings it down, trips the kaiju and shakes loose the
+  buildings around. Tiptoe is light enough to cross.
+- Dust: every chunk that breaks nearby tickles its nose. When the bar fills it sneezes, which throws it
+  backwards and blasts everything in front of it. Hold F to hold its breath through the worst of it.
+- The river: 13 m deep with a current. It pushes the kaiju downstream as it wades, and carries floating
+  rubble out of the city. The road bridges stand on piers and will not take a kaiju.
+
+**The city.** Buildings are built four ways: plain blocks, brickwork, small blocks, and interlocking slabs,
+columns and L-shapes. Most loose pieces crumble to dust and a little rubble at their first hard knock; the
+sturdy rest stay as lumps. A foot landing on rubble crushes the weak bits and stands on the sturdy ones.
+The townsfolk run from a stomping kaiju (less from one on tiptoe), cheer a repair, and leave a colourful
+splat if stepped on or sent flying into a wall.
 
 ## Tuning the feel
 
@@ -81,9 +97,9 @@ and whether a set of turns at different speeds ends steady, in a stumble, or in 
 
 ## Status
 
-M0 (scaffold), M1 (destructible city), M2 (kaiju movement), M3 (kaiju in the city) and M4 (tiptoe, plus crouch)
-are built, and have had two rounds of playtest changes. The first repair jobs (carry a piece back, balancing
-it on the way) are in; standing a toppled building back up by pushing is not built yet. Each has measurable checks in `test/`; whether the movement is *fun* is a playtest call.
+M0 (scaffold), M1 (destructible city), M2 (kaiju movement), M3 (kaiju in the city) and M4 (movement modes)
+are built, with three rounds of playtest changes, the first repair jobs and the first hazards. Each has
+measurable checks in `test/`; whether it is *fun* is a playtest call.
 
 ## How the code is laid out
 

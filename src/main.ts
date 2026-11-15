@@ -14,6 +14,7 @@ import { BUILD, SessionRecorder } from './core/session';
 import { makeTuning, takeRestartStash } from './core/tuning';
 import { FollowCamera } from './kaiju/camera';
 import type { Kaiju } from './kaiju/kaiju';
+import type { Nose } from './kaiju/nose';
 import { createGame, SCENES, type SceneName } from './scenes';
 
 async function boot(): Promise<void> {
@@ -48,6 +49,7 @@ async function boot(): Promise<void> {
   const kaiju = sim.parts.kaiju as Kaiju | undefined;
   const citizens = sim.parts.citizens as Citizens | undefined;
   const pieces = sim.parts.pieces as Pieces | undefined;
+  const nose = sim.parts.nose as Nose | undefined;
   const balance = document.getElementById('balance') as HTMLCanvasElement;
   const balanceCtx = balance.getContext('2d')!;
   /**
@@ -100,6 +102,21 @@ async function boot(): Promise<void> {
   const modeFill = modeBar.querySelector('i')!;
   const drawMode = () => {
     if (!kaiju) return;
+    // The nose takes over the bar when a sneeze is brewing or the breath is being held.
+    if (nose && (nose.tickle > 0.25 || nose.holding || nose.windup > 0 || nose.breath < 0.999)) {
+      modeBar.style.display = 'flex';
+      (modeFill.parentElement as HTMLElement).style.visibility = 'visible';
+      if (nose.holding || (nose.breath < 0.999 && nose.tickle <= 0.25)) {
+        modeLabel.textContent = nose.holding ? 'HOLDING BREATH' : 'catching breath';
+        modeFill.style.width = `${Math.round(nose.breath * 100)}%`;
+        modeFill.style.background = nose.breath < 0.3 ? '#ff5544' : '#8fd3ff';
+      } else {
+        modeLabel.textContent = nose.windup > 0 ? 'AH… AH…' : 'dust in the nose  (hold F to hold your breath)';
+        modeFill.style.width = `${Math.round(nose.tickle * 100)}%`;
+        modeFill.style.background = nose.tickle > 0.75 ? '#ff5544' : '#ffd23f';
+      }
+      return;
+    }
     const tiring = kaiju.mode === 'tiptoe' || kaiju.toeMeter < 0.999;
     const show = kaiju.mode !== 'normal' || tiring;
     modeBar.style.display = show ? 'flex' : 'none';
@@ -182,7 +199,7 @@ async function boot(): Promise<void> {
   });
 
   document.getElementById('help')!.textContent = [
-    'W/S run   A/D turn   Shift: tiptoe   Space: crawl      going over? steer into the fall to save it',
+    'W/S run   A/D turn   Shift: tiptoe   Space: crawl   F: hold breath      going over? steer into the fall to save it',
     'hold LEFT MOUSE (or E) by a piece: carry it. Keep your ring on the white dot with the mouse. Let go over its marker.',
     'mouse drag: look around (right-drag while carrying)   wheel: zoom   double-click: reset view   Q/Z: swing',
     'N: note for Claude   M: sound   C: free camera   B: throw ball',

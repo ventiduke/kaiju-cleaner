@@ -36,6 +36,8 @@ export class FollowCamera {
     sim.on('chunkBreak', (e) => this.shake(0.05, e));
     sim.on('kaijuFall', (e) => this.shake(0.6, e));
     sim.on('kaijuSave', (e) => this.shake(0.2, e));
+    sim.on('sneeze', (e) => this.shake(0.8, e));
+    sim.on('groundCollapse', (e) => this.shake(0.7, e));
   }
 
   /** Mouse drag: swing round the kaiju and raise or lower the view. */

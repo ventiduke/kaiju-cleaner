@@ -68,6 +68,7 @@ export class InputManager {
       let tiptoe = false;
       let crouch = false;
       let grab = false;
+      let breath = false;
       let balanceX = 0;
       let balanceZ = 0;
       if (i === 0) {
@@ -76,6 +77,7 @@ export class InputManager {
         camYaw += this.key('KeyZ') - this.key('KeyQ');
         tiptoe = this.key('ShiftLeft', 'ShiftRight') > 0;
         crouch = this.key('Space') > 0;
+        breath = this.key('KeyF') > 0;
         grab = this.key('KeyE') > 0 || this.mouseHeld;
         // The balance dot starts in the middle when a grab begins, wherever the mouse is.
         if (grab && !this.wasGrabbing) {
@@ -108,6 +110,7 @@ export class InputManager {
         camYaw += axis(pad.axes[2] ?? 0);
         tiptoe ||= !!pad.buttons[0]?.pressed || (pad.buttons[7]?.value ?? 0) > 0.4;
         crouch ||= !!pad.buttons[1]?.pressed || (pad.buttons[6]?.value ?? 0) > 0.4;
+        breath ||= !!pad.buttons[3]?.pressed;
         if (pad.buttons[2]?.pressed || pad.buttons[5]?.pressed) {
           // While grabbing, the right stick balances instead of swinging the camera.
           grab = true;
@@ -122,6 +125,7 @@ export class InputManager {
       p.tiptoe = tiptoe;
       p.crouch = crouch;
       p.grab = grab;
+      p.breath = breath;
       p.balanceX = balanceX;
       p.balanceZ = balanceZ;
     }

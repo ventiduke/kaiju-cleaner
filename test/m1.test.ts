@@ -178,7 +178,7 @@ describe('M1 destruction', () => {
     for (const b of g.layout.blocks) expect(b.z + b.d / 2 <= river.z0 || b.z - b.d / 2 >= river.z1).toBe(true);
     expect(g.sim.ground(0, (river.z0 + river.z1) / 2)).toBe(-cfg.riverDepth);
     expect(g.sim.ground(0, river.z1 + 5)).toBe(0);
-    expect(g.layout.hazards.length).toBe(cfg.oilSlicks);
+    expect(g.layout.hazards.filter((h) => h.kind === 'oil').length).toBe(cfg.oilSlicks);
     console.log(
       `city: ${g.layout.sizeX} x ${g.layout.sizeZ} m, ${g.layout.buildings.length} buildings, ` +
         `${g.chunks.fixedCount} chunks, ${g.props.total} props, ${g.layout.bridges.length} skybridges`,

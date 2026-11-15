@@ -56,6 +56,8 @@ export const codeDefaults = {
     skybridges: 8,
     /** Oil spills on the roads: no grip at all. */
     oilSlicks: 6,
+    /** Cracked patches of road over a tunnel: a heavy step brings them down. */
+    weakSpots: 6,
     /** Things to put back: tower tops lying in the road, and a bridge span. */
     repairJobs: 4,
     /** Leave the centre block open as a plaza. */
@@ -200,6 +202,21 @@ export const codeDefaults = {
     /** Within this distance (m), square on and steady, it goes in straight. */
     straightRadius: 2,
   },
+  sneeze: {
+    /** How much each chunk breaking right beside it tickles (1 = a sneeze). Crumbling counts double. */
+    dust: 0.012,
+    /** How fast the tickle clears in clean air (per second). */
+    clear: 0.06,
+    /** Seconds between "ah... ah..." and the sneeze. */
+    windup: 0.9,
+    /** How hard it is thrown backwards (m/s). */
+    kick: 13,
+    /** How far the blast reaches (m) and how hard it throws things (m/s close up). */
+    range: 80,
+    power: 32,
+    /** Seconds it can hold its breath. */
+    breathSeconds: 5,
+  },
   citizens: {
     /** How many people stroll each block's sidewalks (x5). */
     density: 1,
@@ -324,6 +341,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     riverCurrent: [0, 30, 0.5],
     skybridges: [0, 16, 1],
     oilSlicks: [0, 20, 1],
+    weakSpots: [0, 20, 1],
     repairJobs: [0, 10, 1],
     propDensity: [0, 3, 0.1],
   },
@@ -410,6 +428,15 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     turnAccel: [0.02, 1, 0.01],
     snapRadius: [1, 15, 0.5],
     straightRadius: [0.5, 8, 0.1],
+  },
+  sneeze: {
+    dust: [0, 0.2, 0.002],
+    clear: [0, 1, 0.01],
+    windup: [0.1, 3, 0.05],
+    kick: [0, 40, 0.5],
+    range: [10, 200, 5],
+    power: [0, 80, 1],
+    breathSeconds: [1, 20, 0.5],
   },
   citizens: { density: [0, 4, 0.1] },
   audio: { volume: [0, 1, 0.01] },

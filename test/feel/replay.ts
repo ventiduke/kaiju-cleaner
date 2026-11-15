@@ -43,6 +43,7 @@ export async function replaySession(file: SessionFile, onStep?: (sim: Sim, kaiju
       sim.players[0].grab = !!file.inputs[ii][5];
       sim.players[0].balanceX = file.inputs[ii][6] ?? 0;
       sim.players[0].balanceZ = file.inputs[ii][7] ?? 0;
+      sim.players[0].breath = !!file.inputs[ii][8];
       ii++;
     }
     while (bi < file.balls.length && file.balls[bi][0] <= tick) {

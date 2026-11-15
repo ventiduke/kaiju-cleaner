@@ -34,8 +34,11 @@ export function yardLayout(): CityLayout {
       },
     ],
     props,
-    // An oil slick off to one side, for practising slides.
-    hazards: [{ kind: 'oil', x: -60, z: 30, radius: 12 }],
+    // An oil slick off to one side for practising slides, and a patch of weak ground on the other.
+    hazards: [
+      { kind: 'oil', x: -60, z: 30, radius: 12 },
+      { kind: 'weak', x: 70, z: 45, radius: 8 },
+    ],
     // A repair job to practise on: the stepped tower's top, sitting in the open.
     jobs: [
       {

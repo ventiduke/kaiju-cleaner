@@ -321,6 +321,21 @@ export class Pieces implements System {
     this.sim.emit('pieceDrop', { x: p.x, y: p.y, z: p.z });
   }
 
+  /** A blast of air: loose pieces in the cone are shoved along, and a held one takes a jolt to the grip. */
+  blast(origin: THREE.Vector3, dir: THREE.Vector3, range: number, spread: number, power: number): void {
+    for (const piece of this.pieces) {
+      if (piece.state !== 'loose') continue;
+      const p = piece.body.translation();
+      const dx = p.x - origin.x;
+      const dz = p.z - origin.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > range || dist < 0.01 || (dx * dir.x + dz * dir.z) / dist < spread) continue;
+      const fall = power * 0.5 * (1 - dist / range);
+      piece.body.setLinvel({ x: dir.x * fall, y: fall * 0.3, z: dir.z * fall }, true);
+    }
+    if (this.held) this.grip -= 0.5;
+  }
+
   preStep(dt: number): void {
     const t = this.sim.tuning.carry;
     const k = this.kaiju;

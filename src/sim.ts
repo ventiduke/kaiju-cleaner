@@ -17,12 +17,14 @@ export interface PlayerInput {
   /** Where to shift the hands under a held piece: -1..1, x to the right, z forward. */
   balanceX: number;
   balanceZ: number;
+  /** Held to hold its breath, keeping dust out of its nose. */
+  breath: boolean;
   /** Camera orbit input (-1..1). */
   camYaw: number;
 }
 
 export function emptyInput(): PlayerInput {
-  return { thrust: 0, turn: 0, tiptoe: false, crouch: false, grab: false, balanceX: 0, balanceZ: 0, camYaw: 0 };
+  return { thrust: 0, turn: 0, tiptoe: false, crouch: false, grab: false, balanceX: 0, balanceZ: 0, breath: false, camYaw: 0 };
 }
 
 export interface System {

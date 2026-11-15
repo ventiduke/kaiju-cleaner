@@ -45,6 +45,31 @@ export class GameAudio {
       this.tone({ gain: 0.3, time: 0.14, from: 330, to: 440, type: 'triangle' });
       this.tone({ gain: 0.3, time: 0.22, from: 495, to: 660, type: 'triangle', delay: 0.13 });
     });
+    sim.on('citizenSplat', (e) => this.burst({ gain: 0.45 * this.near(e), time: 0.18, from: 2600, to: 300, q: 0.5 }));
+    sim.on('citizenCheer', () => {
+      for (let i = 0; i < 5; i++) this.tone({ gain: 0.12, time: 0.25, from: 500 + i * 90, to: 700 + i * 120, type: 'triangle', delay: i * 0.09 });
+    });
+    sim.on('oilSlip', () => this.tone({ gain: 0.35, time: 0.6, from: 900, to: 180, type: 'sine' }));
+    sim.on('chunkCrumble', (e) => {
+      const now = performance.now();
+      if (now - this.lastCrunch < 70) return;
+      this.lastCrunch = now;
+      this.burst({ gain: 0.3 * this.near(e), time: 0.3, from: 2200, to: 500, q: 0.4 });
+    });
+    sim.on('groundCollapse', () => {
+      this.tone({ gain: 1, time: 1.2, from: 55, to: 22, type: 'sine' });
+      this.burst({ gain: 0.7, time: 1, from: 400, to: 60, q: 0.5 });
+    });
+    sim.on('sneezeWindup', () => {
+      // "Ah... ah..."
+      this.tone({ gain: 0.3, time: 0.3, from: 240, to: 330, type: 'sawtooth' });
+      this.tone({ gain: 0.35, time: 0.35, from: 280, to: 420, type: 'sawtooth', delay: 0.4 });
+    });
+    sim.on('sneeze', () => {
+      // "...CHOO."
+      this.burst({ gain: 1, time: 0.7, from: 3200, to: 300, q: 0.4 });
+      this.tone({ gain: 0.6, time: 0.5, from: 520, to: 90, type: 'sawtooth' });
+    });
     sim.on('pieceGrab', () => this.tone({ gain: 0.3, time: 0.25, from: 180, to: 320, type: 'triangle' }));
     sim.on('pieceDrop', (e) => {
       this.tone({ gain: 0.7 * this.near(e), time: 0.5, from: 110, to: 40, type: 'sine' });

@@ -575,6 +575,21 @@ export class ChunkField implements System {
     return top;
   }
 
+  /** The ground has given way at a point: ground-floor chunks within reach come loose. */
+  shake(x: number, z: number, radius: number): number {
+    let broke = 0;
+    for (let i = 0; i < this.chunks.length; i++) {
+      const c = this.chunks[i];
+      if (c.state !== ChunkState.Fixed || c.floor !== 0) continue;
+      const d = Math.hypot(c.x - x, c.z - z);
+      if (d > radius + Math.max(c.hx, c.hz)) continue;
+      v1.set((c.x - x) / Math.max(d, 0.1), 0.6, (c.z - z) / Math.max(d, 0.1)).multiplyScalar(4);
+      this.loosen(i, v1);
+      broke++;
+    }
+    return broke;
+  }
+
   /**
    * A blast of air from a point (a sneeze): fixed chunks close in front break, and anything
    * loose within range is thrown along with it.

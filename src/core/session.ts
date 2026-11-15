@@ -66,6 +66,8 @@ export interface SessionStats {
   repairsCrooked?: number;
   piecesDropped?: number;
   secondsCarrying?: number;
+  sneezes?: number;
+  groundCollapses?: number;
   secondsStumbling: number;
   secondsDown: number;
   secondsStalled: number;
@@ -140,9 +142,9 @@ export class SessionRecorder implements System {
     // The balance input only matters (and is only logged) while something is being held.
     const bx = p.grab ? r(p.balanceX, 1) : 0;
     const bz = p.grab ? r(p.balanceZ, 1) : 0;
-    const held = (p.tiptoe ? 1 : 0) + (p.crouch ? 2 : 0) + (p.grab ? 4 : 0) + (bx + 1) * 100 + (bz + 1) * 10000;
+    const held = (p.tiptoe ? 1 : 0) + (p.crouch ? 2 : 0) + (p.grab ? 4 : 0) + (p.breath ? 8 : 0) + (bx + 1) * 100 + (bz + 1) * 10000;
     if (thrust !== this.lastThrust || turn !== this.lastTurn || held !== this.lastHeld) {
-      this.inputs.push([this.sim.tick, thrust, turn, p.tiptoe ? 1 : 0, p.crouch ? 1 : 0, p.grab ? 1 : 0, bx, bz]);
+      this.inputs.push([this.sim.tick, thrust, turn, p.tiptoe ? 1 : 0, p.crouch ? 1 : 0, p.grab ? 1 : 0, bx, bz, p.breath ? 1 : 0]);
       this.lastThrust = thrust;
       this.lastTurn = turn;
       this.lastHeld = held;
@@ -258,6 +260,8 @@ export class SessionRecorder implements System {
       repairsCrooked: pieces?.crooked ?? 0,
       piecesDropped: pieces?.drops ?? 0,
       secondsCarrying: r(a.carrying),
+      sneezes: (this.sim.parts.nose as { sneezes: number } | undefined)?.sneezes ?? 0,
+      groundCollapses: ((this.sim.parts.weakSpots as { collapsed: boolean }[] | undefined) ?? []).filter((w) => w.collapsed).length,
       secondsStumbling: r(a.stumbling),
       secondsDown: r(a.down),
       secondsStalled: r(a.stalled),
@@ -325,6 +329,7 @@ export function formatSession(f: SessionFile): string {
     `  ${s.stumbles} stumbles (${s.secondsStumbling}s), ${s.saves ?? 0} saves, ${s.falls} falls (${s.secondsDown}s down), stalled ${s.secondsStalled}s`,
     `  tiptoe ${s.secondsOnTiptoe ?? 0}s, crawling ${s.secondsCrouched ?? 0}s, carrying ${s.secondsCarrying ?? 0}s`,
     `  repairs: ${s.repairs ?? 0} placed (${s.repairsCrooked ?? 0} crooked), ${s.piecesDropped ?? 0} pieces dropped`,
+    `  hazards: ${s.sneezes ?? 0} sneezes, ${s.groundCollapses ?? 0} ground collapses`,
     `  damage: ${s.chunksBroken} chunks, ${s.propsDisturbed} props, ${s.buildingsDamaged} buildings, ${s.citizensSquished ?? 0} people squished`,
   ];
   return lines.join('\n');

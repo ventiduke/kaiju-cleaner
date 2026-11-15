@@ -537,6 +537,24 @@ export class Kaiju implements System {
     this.body.setAngvel({ x: av.x + tmp2.x, y: av.y, z: av.z + tmp2.z }, true);
   }
 
+  /**
+   * Trips it: its top is thrown toward (dx, dz) and it staggers. Weak ground and sneezes do this.
+   * `strength` is the kick in rad/s.
+   */
+  trip(dx: number, dz: number, strength: number): void {
+    if (this.state !== 'walk' && this.state !== 'stumble') return;
+    const len = Math.hypot(dx, dz) || 1;
+    // Leaning toward a direction v is a turn about UP x v.
+    const av = this.body.angvel();
+    this.body.setAngvel({ x: av.x + (dz / len) * strength, y: av.y, z: av.z - (dx / len) * strength }, true);
+    if (this.state === 'walk') {
+      this.setState('stumble');
+      this.stumbles++;
+      const t = this.body.translation();
+      this.sim.emit('kaijuStumble', { x: t.x, y: t.y, z: t.z });
+    }
+  }
+
   /** Knocks the kaiju flat, toppling toward `direction` (defaults to its left). For hazards and tests. */
   knockDown(direction: THREE.Vector3 = this.left): void {
     if (this.state === 'fallen') return;
@@ -556,8 +574,9 @@ export class Kaiju implements System {
     // Down on all fours the arms become front legs: swung to point at the ground and stretched to reach it.
     const c = smooth(this.crawl);
     for (const arm of this.arms) {
-      arm.rotation.x = -1.0 + c * 2.45;
-      arm.scale.set(1 + c * 0.6, 1 + c * 1.9, 1 + c * 0.6);
+      // Standing they reach forward and down; crawling, the body's "forward" is the ground.
+      arm.rotation.x = -1.0 - c * 0.57;
+      arm.scale.set(1 + c * 0.7, 1 + c * 0.12, 1 + c * 0.7);
     }
   }
 

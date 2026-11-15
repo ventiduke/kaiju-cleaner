@@ -143,6 +143,30 @@ export class PropField implements System {
     }
   }
 
+  /**
+   * Throws props about. With a direction it is a blast (a sneeze): everything in a cone goes
+   * with it. Without one it is a jolt from a point (the ground giving way): everything near
+   * is tossed up and outward.
+   */
+  blast(origin: { x: number; z: number }, dir: { x: number; z: number } | null, range: number, spread: number, power: number): void {
+    for (const { field } of this.fields.values()) {
+      for (const body of field.bodies) {
+        if (!body) continue;
+        const p = body.translation();
+        const dx = p.x - origin.x;
+        const dz = p.z - origin.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > range) continue;
+        if (dir && (dist < 0.01 || (dx * dir.x + dz * dir.z) / dist < spread)) continue;
+        const fall = power * (1 - dist / range);
+        const ux = dir ? dir.x : dx / Math.max(dist, 0.01);
+        const uz = dir ? dir.z : dz / Math.max(dist, 0.01);
+        body.setLinvel({ x: ux * fall, y: fall * 0.45, z: uz * fall }, true);
+        body.setAngvel({ x: uz * 2, y: 1, z: -ux * 2 }, true);
+      }
+    }
+  }
+
   render(alpha: number): void {
     for (const { field } of this.fields.values()) field.apply(alpha);
   }

@@ -100,7 +100,8 @@ export interface JobSpec {
 }
 
 export interface Hazard {
-  kind: 'oil';
+  /** Oil has no grip. Weak ground gives way under a heavy step. */
+  kind: 'oil' | 'weak';
   x: number;
   z: number;
   radius: number;
@@ -497,6 +498,20 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     const x = sx.center + rng.range(-1, 1) * (sx.width / 2 - radius);
     if (hazards.some((h) => Math.hypot(h.x - x, h.z - z) < 40)) continue;
     hazards.push({ kind: 'oil', x, z, radius });
+  }
+  // Weak ground, likewise: on the roads, clear of the start, the river and the oil.
+  for (let attempt = 0; attempt < cfg.weakSpots * 14 && hazards.filter((h) => h.kind === 'weak').length < cfg.weakSpots; attempt++) {
+    const alongX = rng.chance(0.5);
+    const street = rng.pick(alongX ? az.streets.filter((_, i) => i !== riverRow) : ax.streets);
+    if (!street) continue;
+    const t = rng.range(-0.42, 0.42) * (alongX ? ax.span : az.span);
+    const radius = Math.min(rng.range(6.5, 8.5), street.width / 2 - 0.5);
+    const x = alongX ? t : street.center;
+    const z = alongX ? street.center : t;
+    if (theRiver && z > theRiver.z0 - 18 && z < theRiver.z1 + 18) continue;
+    if (z > az.span / 2 - 45) continue;
+    if (hazards.some((h) => Math.hypot(h.x - x, h.z - z) < 34)) continue;
+    hazards.push({ kind: 'weak', x, z, radius });
   }
 
   const main = boulevard ?? ax.streets.find((s) => s.width === cfg.avenueWidth) ?? { center: 0, width: cfg.avenueWidth };

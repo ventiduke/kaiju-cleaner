@@ -36,6 +36,16 @@ export class Dust implements System {
       // A piece going to dust: a bigger, thicker cloud than a plain break.
       for (let i = 0; i < 3; i++) this.puff(e.x, e.y, e.z, e.size * 0.6, 4);
     });
+    sim.on('sneeze', (e) => {
+      // A cone of spray out the front.
+      for (let i = 0; i < 26; i++) {
+        const far = 4 + i * 2.4;
+        this.puff(e.x + e.dx * far + this.random() * far * 0.5, e.y - 2 + this.random() * 4, e.z + e.dz * far + this.random() * far * 0.5, 2.5 + i * 0.18, 6);
+      }
+    });
+    sim.on('groundCollapse', (e) => {
+      for (let i = 0; i < 14; i++) this.puff(e.x + this.random() * e.radius * 2, 1, e.z + this.random() * e.radius * 2, 4, 6);
+    });
     sim.on('footfall', (e) => {
       // In the river a step throws up spray instead.
       if (e.wet) for (let i = 0; i < 5; i++) this.puff(e.x, -0.6, e.z, 2.2 * e.strength, 7, 5);
