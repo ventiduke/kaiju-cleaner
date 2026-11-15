@@ -50,38 +50,73 @@ async function boot(): Promise<void> {
   const pieces = sim.parts.pieces as Pieces | undefined;
   const balance = document.getElementById('balance') as HTMLCanvasElement;
   const balanceCtx = balance.getContext('2d')!;
-  /** The balance dial, shown while carrying. */
+  /**
+   * The balance dial, shown while carrying. The white dot is the load, wandering and being
+   * shoved about; the ring is yours and follows the mouse. Keep the ring on the dot.
+   * The arc round the rim is how much grip is left.
+   */
   const drawBalance = () => {
     const held = pieces?.held;
     balance.style.display = held ? 'block' : 'none';
     if (!held || !pieces) return;
     const c = balanceCtx;
-    const R = 56;
-    c.clearRect(0, 0, 140, 140);
-    c.translate(70, 70);
-    c.fillStyle = 'rgba(20,24,32,0.55)';
+    const R = 62;
+    const tol = tuning.carry.tolerance;
+    c.clearRect(0, 0, 180, 180);
+    c.translate(90, 90);
+    c.fillStyle = 'rgba(20,24,32,0.6)';
     c.beginPath();
-    c.arc(0, 0, R + 8, 0, Math.PI * 2);
+    c.arc(0, 0, R + 16, 0, Math.PI * 2);
     c.fill();
-    c.strokeStyle = 'rgba(255,255,255,0.5)';
+    c.strokeStyle = 'rgba(255,255,255,0.35)';
     c.lineWidth = 1.5;
     c.beginPath();
     c.arc(0, 0, R, 0, Math.PI * 2);
     c.stroke();
-    // The ring is the hands; the dot is where they need to be. Ring on the dot holds the load
-    // steady, ring past the dot rights it.
-    const share = held.tilt / tuning.carry.dropAngle;
-    c.fillStyle = share > 0.7 ? '#ff5544' : share > 0.4 ? '#ffd23f' : '#7dff9a';
+    // Grip: a full ring when firm, burning down to nothing.
+    const aligned = pieces.error <= tol;
+    c.strokeStyle = pieces.grip > 0.6 ? '#7dff9a' : pieces.grip > 0.3 ? '#ffd23f' : '#ff5544';
+    c.lineWidth = 6;
     c.beginPath();
-    c.arc(pieces.needed.x * R, -pieces.needed.z * R, 8, 0, Math.PI * 2);
-    c.fill();
-    c.strokeStyle = '#ffffff';
+    c.arc(0, 0, R + 9, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, pieces.grip));
+    c.stroke();
+    // Yours: a ring as wide as the tolerance, so "the dot is inside the ring" means aligned.
+    c.strokeStyle = aligned ? '#7dff9a' : '#ffb347';
     c.lineWidth = 3;
     c.beginPath();
-    c.arc(pieces.hand.x * R, -pieces.hand.z * R, 13, 0, Math.PI * 2);
+    c.arc(pieces.target.x * R, -pieces.target.z * R, Math.max(9, tol * R), 0, Math.PI * 2);
     c.stroke();
+    // The load.
+    c.fillStyle = '#ffffff';
+    c.beginPath();
+    c.arc(pieces.sway.x * R, -pieces.sway.z * R, 7, 0, Math.PI * 2);
+    c.fill();
     c.setTransform(1, 0, 0, 1, 0, 0);
   };
+
+  /** Mode badge and stamina bar: what the kaiju is doing, and how long it can keep it up. */
+  const modeBar = document.getElementById('modebar')!;
+  const modeLabel = modeBar.querySelector('span')!;
+  const modeFill = modeBar.querySelector('i')!;
+  const drawMode = () => {
+    if (!kaiju) return;
+    const tiring = kaiju.mode === 'tiptoe' || kaiju.toeMeter < 0.999;
+    const show = kaiju.mode !== 'normal' || tiring;
+    modeBar.style.display = show ? 'flex' : 'none';
+    if (!show) return;
+    modeLabel.textContent =
+      kaiju.mode === 'tiptoe'
+        ? 'TIPTOE'
+        : kaiju.mode === 'crawl'
+          ? 'CRAWLING (no limit)'
+          : kaiju.toeLocked
+            ? 'calves resting…'
+            : 'tiptoe recovering';
+    (modeFill.parentElement as HTMLElement).style.visibility = tiring ? 'visible' : 'hidden';
+    modeFill.style.width = `${Math.round(kaiju.toeMeter * 100)}%`;
+    modeFill.style.background = kaiju.toeLocked ? '#ff5544' : kaiju.toeMeter < 0.3 ? '#ffd23f' : '#7dff9a';
+  };
+
   const recorder = sim.add(new SessionRecorder(sim, sceneName, kaiju, damage));
   const audio = new GameAudio(sim, kaiju);
   if (sceneName === 'city') {
@@ -93,7 +128,11 @@ async function boot(): Promise<void> {
   const followCam = kaiju ? new FollowCamera(sim, camera, kaiju) : null;
   let follow = !!followCam && params.get('cam') !== 'free';
   freeCam.enabled = !follow;
-  freeCam.onDrag = (dx, dy) => followCam?.drag(dx, dy);
+  // Left-drag looks around, unless the left button is busy holding a load; right-drag always does.
+  freeCam.onDrag = (dx, dy, button) => {
+    if (button === 0 && pieces?.held) return;
+    followCam?.drag(dx, dy);
+  };
   freeCam.onWheel = (dy) => followCam?.wheel(dy);
   freeCam.onDoubleClick = () => followCam?.reset();
 
@@ -110,7 +149,7 @@ async function boot(): Promise<void> {
   };
   freeCam.onClick = throwBall;
 
-  const input = new InputManager(sim.players);
+  const input = new InputManager(sim.players, renderer.domElement);
   const hud = new Hud();
   const toast = makeToast();
   let loop: Loop;
@@ -143,9 +182,9 @@ async function boot(): Promise<void> {
   });
 
   document.getElementById('help')!.textContent = [
-    'W/S run   A/D turn   Shift: tiptoe   Space: crouch      going over? steer into the fall to save it',
-    'hold E: pick up / carry, keep the hands under it with the mouse (or IJKL); let go over its marker to place',
-    'mouse drag: look around   wheel: zoom   double-click: reset view   Q/Z: swing',
+    'W/S run   A/D turn   Shift: tiptoe   Space: crawl      going over? steer into the fall to save it',
+    'hold LEFT MOUSE (or E) by a piece: carry it. Keep your ring on the white dot with the mouse. Let go over its marker.',
+    'mouse drag: look around (right-drag while carrying)   wheel: zoom   double-click: reset view   Q/Z: swing',
     'N: note for Claude   M: sound   C: free camera   B: throw ball',
   ].join('\n');
   document.getElementById('boot')?.remove();
@@ -167,6 +206,7 @@ async function boot(): Promise<void> {
       sun.target.position.copy(sun.position).sub(sunOffset);
       audio.update();
       drawBalance();
+      drawMode();
       renderer.render(sim.scene, camera);
       hud.frame(sim.lastStepMs);
       hud.update(() => {
@@ -189,7 +229,7 @@ async function boot(): Promise<void> {
             ? [
                 `repairs: ${pieces.placed}/${pieces.pieces.length}` +
                   (pieces.crooked ? ` (${pieces.crooked} crooked)` : '') +
-                  (pieces.held ? '   CARRYING: keep the hands under it' : pieces.nearest() ? '   hold E to pick up' : ''),
+                  (pieces.held ? '   CARRYING: keep your ring on the dot' : pieces.nearest() ? '   hold left mouse (or E) to pick up' : ''),
               ]
             : []),
           `bodies ${c.bodies}   awake ${c.awake}   debris ${chunks.looseCount}   build ${BUILD}`,

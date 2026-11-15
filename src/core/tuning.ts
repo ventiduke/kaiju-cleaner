@@ -48,9 +48,11 @@ export const codeDefaults = {
     maxFloors: 13,
     chunkSize: 8.5,
     /** A river through the middle, splitting the city in two. 0 for none. */
-    riverWidth: 56,
-    riverDepth: 6,
-    /** Covered walkways strung between buildings across a street. */
+    riverWidth: 60,
+    riverDepth: 13,
+    /** How fast the river runs, west to east (m/s). */
+    riverCurrent: 9,
+    /** Covered walkways strung between buildings across a street, high enough to crawl under. */
     skybridges: 8,
     /** Oil spills on the roads: no grip at all. */
     oilSlicks: 6,
@@ -127,6 +129,8 @@ export const codeDefaults = {
     stumbleDuration: 1,
     /** The stagger step of a stumble (m/s). */
     stumbleLurch: 3,
+    /** How violently its feet go out from under it on oil (rad/s^2 at a run). Tiptoe barely slips. */
+    oilSlip: 5,
     /** Share of steering and thrust it keeps while stumbling. Keep pushing and it goes over. */
     stumbleControl: 0.8,
     /** Seconds it has, once it is going over, to be caught by steering into the fall. */
@@ -148,15 +152,15 @@ export const codeDefaults = {
     /** Seconds of tiptoe before it has to come down, and seconds to recover fully. */
     tiptoeSeconds: 7,
     tiptoeRecover: 4,
-    // Crouch (hold Space): slow and hard to topple, tail tucked in, but the view drops too.
-    crouchSpeed: 0.45,
-    /** Share of leg length it squats by. */
-    crouchDrop: 0.4,
-    crouchLean: 0.4,
-    /** Stumble angle multiplier while crouched. */
-    crouchBalance: 1.7,
-    /** How far the camera drops while crouched (share of its height). */
-    crouchView: 0.45,
+    // Crawl (hold Space): down on all fours. Slow, nearly impossible to topple, low enough to
+    // pass under a skybridge, and it flattens whatever is under its belly. The view drops too.
+    crawlSpeed: 0.32,
+    /** How far forward it pitches (rad), and how high its belly rides off the ground (m). */
+    crawlPitch: 1.38,
+    crawlClearance: 2.5,
+    crawlTurn: 0.6,
+    /** How far the camera drops while crawling (share of its height). */
+    crawlView: 0.5,
   },
   carry: {
     /** How close (m) a piece has to be to the hands to be grabbed. */
@@ -164,25 +168,26 @@ export const codeDefaults = {
     /** How far in front of the belly, and how high above the body's centre, it is held (m). */
     holdForward: 11,
     handHeight: 1,
-    /** How far the balance control can shift the hands in any direction (m). */
-    handRange: 6,
-    /** Share of a held piece's urge to topple that the kaiju cancels by itself. 1 = no skill needed. */
-    assist: 0.7,
-    /** Past this lean (rad) the piece slips out of its hands. */
-    dropAngle: 0.75,
     liftTime: 0.5,
-    /** Share of normal speed, and of normal acceleration and braking, while carrying. */
-    speed: 0.6,
-    accel: 0.25,
     /**
-     * Shares of normal turn rate and turn acceleration while carrying. The load is held well
-     * out in front, so any quick swing of the body whips it sideways.
+     * The balance game. The load's dot is pushed about by the kaiju's own motion (`sway`, in
+     * dial-widths per m/s^2) and drifts on its own (`wander`). Keep your dot within `tolerance`
+     * (dial-widths) of it. Fully out of line, the grip lasts `slipTime` seconds; back in line,
+     * it recovers in `gripRecover` seconds.
      */
-    turn: 0.25,
-    turnAccel: 0.08,
+    sway: 0.42,
+    wander: 1.6,
+    tolerance: 0.2,
+    slipTime: 1,
+    gripRecover: 1.6,
+    /** Shares of normal speed, acceleration, turn rate and turn acceleration while carrying. */
+    speed: 0.6,
+    accel: 0.5,
+    turn: 0.5,
+    turnAccel: 0.4,
     /** Released within this distance (m) of where it belongs, a piece goes in. */
     snapRadius: 6,
-    /** Within this distance (m), and nearly square and upright, it goes in straight. */
+    /** Within this distance (m), square on and steady, it goes in straight. */
     straightRadius: 2,
   },
   citizens: {
@@ -305,7 +310,8 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     maxFloors: [2, 24, 1],
     chunkSize: [4, 16, 0.5],
     riverWidth: [0, 120, 2],
-    riverDepth: [1, 12, 0.5],
+    riverDepth: [1, 24, 0.5],
+    riverCurrent: [0, 30, 0.5],
     skybridges: [0, 16, 1],
     oilSlicks: [0, 20, 1],
     repairJobs: [0, 10, 1],
@@ -352,6 +358,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     fallAngle: [0.2, 1.5, 0.01],
     stumbleDuration: [0.1, 3, 0.05],
     stumbleLurch: [0, 12, 0.1],
+    oilSlip: [0, 15, 0.1],
     stumbleControl: [0, 1, 0.05],
     saveWindow: [0, 3, 0.05],
     saveStrength: [0, 10, 0.1],
@@ -367,20 +374,22 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     tiptoeRise: [0, 6, 0.1],
     tiptoeSeconds: [1, 30, 0.5],
     tiptoeRecover: [0.5, 20, 0.5],
-    crouchSpeed: [0.1, 1, 0.05],
-    crouchDrop: [0, 0.8, 0.05],
-    crouchLean: [0, 1, 0.05],
-    crouchBalance: [1, 4, 0.1],
-    crouchView: [0, 0.8, 0.05],
+    crawlSpeed: [0.1, 1, 0.05],
+    crawlPitch: [0.5, 1.55, 0.01],
+    crawlClearance: [0, 8, 0.25],
+    crawlTurn: [0.2, 1, 0.05],
+    crawlView: [0, 0.8, 0.05],
   },
   carry: {
     reach: [4, 40, 0.5],
     holdForward: [4, 20, 0.5],
     handHeight: [-6, 8, 0.5],
-    handRange: [1, 10, 0.5],
-    assist: [0, 1.2, 0.01],
-    dropAngle: [0.2, 1.4, 0.01],
     liftTime: [0.1, 2, 0.05],
+    sway: [0, 1.5, 0.01],
+    wander: [0, 4, 0.05],
+    tolerance: [0.05, 0.8, 0.01],
+    slipTime: [0.2, 5, 0.05],
+    gripRecover: [0.2, 6, 0.05],
     speed: [0.2, 1, 0.05],
     accel: [0.1, 1, 0.05],
     turn: [0.1, 1, 0.05],

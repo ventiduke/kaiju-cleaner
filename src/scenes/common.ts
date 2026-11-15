@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { River } from '../city/cityGen';
+import { WATER_SURFACE } from '../city/river';
 import { ALL_GROUPS, Group, groups } from '../core/physics';
 import type { Sim } from '../sim';
 
@@ -60,7 +61,7 @@ export function addEnvironment(sim: Sim, extent = 400, river: River | null = nul
 
   slab(-far, river.z0, 0, grass);
   slab(river.z1, far, 0, grass);
-  slab(river.z0, river.z1, -river.depth, new THREE.MeshLambertMaterial({ color: 0x4a5a52 }));
+  slab(river.z0, river.z1, -river.depth, new THREE.MeshLambertMaterial({ color: 0x33443f }));
   sim.ground = (_x, z) => (z > river.z0 && z < river.z1 ? -river.depth : 0);
 
   // Bank walls, then the water itself: see-through, so wreckage on the bed still shows.
@@ -72,10 +73,10 @@ export function addEnvironment(sim: Sim, extent = 400, river: River | null = nul
   }
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(far * 2, river.z1 - river.z0),
-    new THREE.MeshLambertMaterial({ color: 0x3f8fb8, transparent: true, opacity: 0.72, depthWrite: false }),
+    new THREE.MeshLambertMaterial({ color: 0x2f7fb0, transparent: true, opacity: 0.8, depthWrite: false }),
   );
   water.rotation.x = -Math.PI / 2;
-  water.position.set(0, -1.1, (river.z0 + river.z1) / 2);
+  water.position.set(0, WATER_SURFACE, (river.z0 + river.z1) / 2);
   water.renderOrder = 5;
   scene.add(water);
   return sun;

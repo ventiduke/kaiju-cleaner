@@ -172,7 +172,7 @@ export class SessionRecorder implements System {
     if (k.state === 'fallen' || k.state === 'getup') a.down += dt;
     if (k.stall > 0.5) a.stalled += dt;
     if (k.mode === 'tiptoe') a.tiptoe += dt;
-    if (k.mode === 'crouch') a.crouch += dt;
+    if (k.mode === 'crawl') a.crouch += dt;
     if (k.carrying) a.carrying += dt;
 
     if (this.sim.tick % SAMPLE_EVERY === 0) {
@@ -323,7 +323,7 @@ export function formatSession(f: SessionFile): string {
     `  moving ${s.secondsMoving}s of ${s.seconds}s, ${s.distance} m, top ${s.topSpeed} m/s, average ${s.averageSpeedMoving} m/s`,
     `  lean: max ${s.maxTiltDeg} deg, average ${s.averageTiltDegMoving} deg while moving; hard turns ${Math.round(s.hardTurnShare * 100)}% of the time`,
     `  ${s.stumbles} stumbles (${s.secondsStumbling}s), ${s.saves ?? 0} saves, ${s.falls} falls (${s.secondsDown}s down), stalled ${s.secondsStalled}s`,
-    `  tiptoe ${s.secondsOnTiptoe ?? 0}s, crouched ${s.secondsCrouched ?? 0}s, carrying ${s.secondsCarrying ?? 0}s`,
+    `  tiptoe ${s.secondsOnTiptoe ?? 0}s, crawling ${s.secondsCrouched ?? 0}s, carrying ${s.secondsCarrying ?? 0}s`,
     `  repairs: ${s.repairs ?? 0} placed (${s.repairsCrooked ?? 0} crooked), ${s.piecesDropped ?? 0} pieces dropped`,
     `  damage: ${s.chunksBroken} chunks, ${s.propsDisturbed} props, ${s.buildingsDamaged} buildings, ${s.citizensSquished ?? 0} people squished`,
   ];

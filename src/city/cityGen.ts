@@ -421,8 +421,9 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
       const hi = Math.min(aCross + aSide, bCross + bSide) - 3;
       if (hi < lo) continue;
       const top = Math.min(ta.floors, tb.floors) - 1;
-      if (top < 3) continue;
-      candidates.push({ kind: 'sky', a, b, along, from, to, center: (lo + hi) / 2, floor: Math.min(top, rng.int(3, 4)), width: 5, color: BRIDGE_COLOR });
+      // Sixth floor: over a crawling kaiju's back, square in a standing one's chest.
+      if (top < 5) continue;
+      candidates.push({ kind: 'sky', a, b, along, from, to, center: (lo + hi) / 2, floor: 5, width: 5, color: BRIDGE_COLOR });
     }
   }
   const used = new Set<number>();

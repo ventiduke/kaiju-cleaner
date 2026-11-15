@@ -11,7 +11,7 @@ export class FreeCamera {
   distance = 150;
   onClick: ((ndc: THREE.Vector2) => void) | null = null;
   /** While disabled, drags, wheel and double-clicks are handed to these instead (the follow camera). */
-  onDrag: ((dx: number, dy: number) => void) | null = null;
+  onDrag: ((dx: number, dy: number, button: number) => void) | null = null;
   onWheel: ((deltaY: number) => void) | null = null;
   onDoubleClick: (() => void) | null = null;
   enabled = true;
@@ -34,7 +34,7 @@ export class FreeCamera {
       down.y = e.clientY;
       down.moved += Math.abs(dx) + Math.abs(dy);
       if (!this.enabled) {
-        this.onDrag?.(dx, dy);
+        this.onDrag?.(dx, dy, down.button);
         return;
       }
       if (down.button === 0) {

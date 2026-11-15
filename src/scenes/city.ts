@@ -5,6 +5,7 @@ import { Citizens } from '../city/citizens';
 import { ChunkField } from '../city/destruction';
 import { Pieces } from '../city/pieces';
 import { PropField } from '../city/props';
+import { RiverFlow } from '../city/river';
 import type { BallTool } from '../core/ball';
 import { Dust } from '../core/dust';
 import { Kaiju } from '../kaiju/kaiju';
@@ -106,7 +107,12 @@ export function populate(sim: Sim, layout: CityLayout): void {
   const kaiju = sim.add(new Kaiju(sim, 0, layout.spawn, chunks));
   sim.parts.kaiju = kaiju;
   sim.parts.citizens = sim.add(new Citizens(sim, layout, kaiju, damage));
-  sim.parts.pieces = sim.add(new Pieces(sim, layout.jobs, kaiju));
+  sim.parts.pieces = sim.add(new Pieces(sim, layout.jobs, kaiju, chunks));
+  if (layout.river) {
+    const flow = sim.add(new RiverFlow(sim, layout.river, chunks, layout.sizeX));
+    flow.exclude(kaiju.body);
+    sim.parts.river = flow;
+  }
   sim.add(new Dust(sim));
 }
 

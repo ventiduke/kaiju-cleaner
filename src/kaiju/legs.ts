@@ -37,6 +37,8 @@ export interface LegContext {
   /** Stance width and footprint multipliers (tiptoe narrows both). */
   stanceScale: number;
   footScale: number;
+  /** 0 standing .. 1 on all fours: the back feet then belong under the hips, well behind the middle. */
+  crawl: number;
 }
 
 const Y = new THREE.Vector3(0, 1, 0);
@@ -158,7 +160,12 @@ export class Legs {
   /** Where a foot would stand if the kaiju were still: under the hip, out to the side. */
   private home(ctx: LegContext, side: number, target: THREE.Vector3): THREE.Vector3 {
     const w = this.sim.tuning.legs.stanceWidth * this.stanceScale;
-    return target.set(ctx.pos.x + ctx.left.x * side * w, 0, ctx.pos.z + ctx.left.z * side * w);
+    const back = this.sim.tuning.kaiju.bodyHalfHeight * 0.85 * ctx.crawl;
+    return target.set(
+      ctx.pos.x + ctx.left.x * side * w - ctx.forward.x * back,
+      0,
+      ctx.pos.z + ctx.left.z * side * w - ctx.forward.z * back,
+    );
   }
 
   update(dt: number, ctx: LegContext): void {

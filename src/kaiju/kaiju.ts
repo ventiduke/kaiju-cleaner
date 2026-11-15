@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import type { ChunkField } from '../city/destruction';
-import { ALL_GROUPS, Group, groups, type RigidBody } from '../core/physics';
+import { Group, groups, type RigidBody } from '../core/physics';
 import type { PlayerInput, Sim, System } from '../sim';
 import { Legs, type LegContext } from './legs';
 import { Tail } from './tail';
 
 export type KaijuState = 'walk' | 'stumble' | 'falling' | 'fallen' | 'getup';
-export type KaijuMode = 'normal' | 'tiptoe' | 'crouch';
+export type KaijuMode = 'normal' | 'tiptoe' | 'crawl';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const pos = new THREE.Vector3();
@@ -16,6 +16,9 @@ const up = new THREE.Vector3();
 const fwd = new THREE.Vector3();
 const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
+/** The way its spine should point (straight up, or pitched forward when crawling), and how far off that it is. */
+const goal = new THREE.Vector3();
+const dev = new THREE.Vector3();
 
 function smooth(t: number): number {
   const x = THREE.MathUtils.clamp(t, 0, 1);
@@ -49,6 +52,10 @@ export class Kaiju implements System {
   /** Falls caught before they landed. */
   saves = 0;
   mode: KaijuMode = 'normal';
+  /** How far down on all fours it is: 0 standing, 1 crawling. */
+  crawl = 0;
+  private shifting = 0;
+  private wasOily = false;
   /** How long it can stay on tiptoe: 1 fresh, 0 spent. */
   toeMeter = 1;
   /** How deep it is wading, 0 on dry land to 1 at leg depth. */
@@ -58,6 +65,10 @@ export class Kaiju implements System {
   /** 1 while it has its hands full (set by the repair pieces system). */
   carrying = 0;
   private toeLock = false;
+  /** True while it has to rest before it can tiptoe again. */
+  get toeLocked(): boolean {
+    return this.toeLock;
+  }
   private stanceOffset = 0;
   /** Seconds spent pushing without getting anywhere. */
   stall = 0;
@@ -68,8 +79,8 @@ export class Kaiju implements System {
   /** Horizontal facing and left vectors, refreshed every step. */
   readonly forward = new THREE.Vector3(0, 0, 1);
   readonly left = new THREE.Vector3(1, 0, 0);
-  private readonly ray;
   private ghost: THREE.MeshBasicMaterial | null = null;
+  private arms: THREE.Mesh[] = [];
   private readonly legContext: LegContext;
 
   constructor(
@@ -102,7 +113,6 @@ export class Kaiju implements System {
       this.body,
     );
     chunks?.addHitter(this.body, k.bodyHalfHeight + k.bodyRadius);
-    this.ray = new R.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
 
     const skin = new THREE.MeshLambertMaterial({ color: 0x4fa37a });
     const dark = new THREE.MeshLambertMaterial({ color: 0x3c8463 });
@@ -125,6 +135,7 @@ export class Kaiju implements System {
       standing: true,
       stanceScale: 1,
       footScale: 1,
+      crawl: 0,
     };
     this.legs = new Legs(sim, chunks, this.visual, dark, this.legContext);
     this.legs.onFootfall = (side, p, strength) => this.footfall(side, p, strength);
@@ -161,8 +172,12 @@ export class Kaiju implements System {
       add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.13, 8, 6), black), s * r * 0.5, headY + r * 0.44, r * 1.19);
       add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.09, r * 0.09, r * 0.09), black), s * r * 0.25, headY - r * 0.05, r * 1.76);
       // Stubby arms.
-      const arm = add(new THREE.Mesh(new THREE.CapsuleGeometry(r * 0.22, r * 0.7, 4, 8), dark), s * r * 0.98, h * 0.25, r * 0.5);
+      const armGeometry = new THREE.CapsuleGeometry(r * 0.22, r * 0.7, 4, 8);
+      // Hang the arm from its shoulder end, so stretching it (to crawl on) reaches away from the body.
+      armGeometry.translate(0, -r * 0.45, 0);
+      const arm = add(new THREE.Mesh(armGeometry, dark), s * r * 0.98, h * 0.45, r * 0.45);
       arm.rotation.set(-1.0, 0, s * 0.35);
+      this.arms.push(arm);
     }
     // Back plates.
     for (let i = 0; i < 5; i++) {
@@ -248,47 +263,62 @@ export class Kaiju implements System {
     vel.set(lv.x, lv.y, lv.z);
 
     up.set(0, 1, 0).applyQuaternion(quat);
-    this.tilt = Math.acos(THREE.MathUtils.clamp(up.y, -1, 1));
-    fwd.set(0, 0, 1).applyQuaternion(quat);
+    // Crawling pitches the whole body forward. Its heading is then read off the pitched frame,
+    // and "upright" means lined up with that pitched spine, not with the sky.
+    const pitch = smooth(this.crawl) * this.sim.tuning.modes.crawlPitch;
+    fwd.set(0, Math.sin(pitch), Math.cos(pitch)).applyQuaternion(quat);
     fwd.y = 0;
     if (fwd.lengthSq() > 0.05) {
       this.forward.copy(fwd.normalize());
       this.yaw = Math.atan2(this.forward.x, this.forward.z);
     }
     this.left.set(this.forward.z, 0, -this.forward.x);
+    goal.copy(UP).multiplyScalar(Math.cos(pitch)).addScaledVector(this.forward, Math.sin(pitch));
+    this.tilt = Math.acos(THREE.MathUtils.clamp(up.dot(goal), -1, 1));
+    dev.set(up.x - goal.x, 0, up.z - goal.z);
     this.forwardSpeed = vel.x * this.forward.x + vel.z * this.forward.z;
     const sideSpeed = vel.x * this.left.x + vel.z * this.left.z;
     this.speed = Math.hypot(vel.x, vel.z);
 
-    // --- Movement mode: tiptoe and crouch trade speed for control ---
+    // --- Movement mode: tiptoe and crawling trade speed for control ---
     const input = this.input;
     const m = this.sim.tuning.modes;
     const upright = this.state === 'walk' || this.state === 'stumble' || this.state === 'falling';
     if (this.toeLock && this.toeMeter > 0.5) this.toeLock = false;
-    this.mode = !upright ? 'normal' : input.crouch ? 'crouch' : input.tiptoe && !this.toeLock ? 'tiptoe' : 'normal';
+    this.mode =
+      !upright || this.carrying ? 'normal' : input.crouch ? 'crawl' : input.tiptoe && !this.toeLock ? 'tiptoe' : 'normal';
     const tiptoe = this.mode === 'tiptoe';
-    const crouch = this.mode === 'crouch';
+    // Getting down and back up takes a moment.
+    this.crawl = THREE.MathUtils.clamp(this.crawl + (this.mode === 'crawl' ? dt : -dt) * 1.3, 0, 1);
+    const crawl = smooth(this.crawl);
+    // While it is on its way down or up, its spine is nowhere near where it is headed. That is
+    // a change of posture, not a loss of balance: hold it firmly and don't call it a stumble.
+    if (this.crawl > 0 && this.crawl < 1) this.shifting = 0.5;
+    else this.shifting = Math.max(0, this.shifting - dt);
+    const shifting = this.shifting > 0;
     this.toeMeter = THREE.MathUtils.clamp(
       this.toeMeter + (tiptoe ? -dt / m.tiptoeSeconds : dt / m.tiptoeRecover),
       0,
       1,
     );
     const speedShare =
-      (tiptoe ? m.tiptoeSpeed : crouch ? m.crouchSpeed : 1) *
+      (tiptoe ? m.tiptoeSpeed : 1) *
+      (1 - (1 - m.crawlSpeed) * crawl) *
       (1 - 0.45 * this.wading) *
       (1 - (1 - this.sim.tuning.carry.speed) * this.carrying);
-    const leanScale = tiptoe ? m.tiptoeLean : crouch ? m.crouchLean : 1;
-    const stumbleAngle = k.stumbleAngle * (crouch ? m.crouchBalance : 1);
-    const fallAngle = Math.max(k.fallAngle, stumbleAngle * 1.6);
+    const leanScale = (tiptoe ? m.tiptoeLean : 1) * (1 - 0.9 * crawl);
+    // On all fours there is hardly anything left to tip over.
+    const stumbleAngle = shifting ? 3 : k.stumbleAngle * (1 + 2.5 * crawl);
+    const fallAngle = shifting ? 3.1 : Math.max(k.fallAngle, stumbleAngle * 1.6);
     // How far each mode shifts the body: up on its toes, or down in a squat.
-    const stance = tiptoe ? m.tiptoeRise : crouch ? -m.crouchDrop * k.legLength : 0;
+    const stance = tiptoe ? m.tiptoeRise : 0;
     this.stanceOffset += (stance - this.stanceOffset) * Math.min(1, dt * 6);
 
     // --- State machine ---
     this.stateTime += dt;
     // Which way it is toppling, and how well the player is steering into it:
     // turning toward the side it leans to, or running the way it pitches.
-    tmp.set(up.x, 0, up.z);
+    tmp.copy(dev);
     const leaning = tmp.lengthSq() > 1e-6;
     if (leaning) tmp.normalize();
     const counter = leaning
@@ -320,10 +350,11 @@ export class Kaiju implements System {
         this.setState('stumble');
         this.saves++;
         this.sim.emit('kaijuSave', { x: pos.x, y: pos.y, z: pos.z });
-      } else if (this.stateTime > k.saveWindow || this.tilt > 1.45) {
+      } else if (this.stateTime > k.saveWindow || (this.tilt > 1.45 && !shifting)) {
         this.setState('fallen');
         this.falls++;
-        body.setLinearDamping(1.1);
+        // On oil it keeps sliding.
+        body.setLinearDamping(this.traction < 0.5 ? 0.15 : 1.1);
         this.sim.emit('kaijuFall', { x: pos.x, y: pos.y, z: pos.z });
       }
     } else if (this.state === 'fallen') {
@@ -349,23 +380,32 @@ export class Kaiju implements System {
     // --- Hover spring: holds the body at ride height above the ground ---
     this.wading = 0;
     if (engaged > 0) {
-      this.ray.origin = pos;
-      const hit = this.sim.world.castRay(
-        this.ray,
-        this.rideHeight * 2,
-        true,
-        undefined,
-        groups(ALL_GROUPS, Group.GROUND),
+      // The ground it stands on is the highest point under its footprint, so it starts to
+      // climb a bank before its belly reaches it, and only steps down once it is clear.
+      const reach = k.bodyRadius;
+      const ground = this.sim.ground;
+      // Looking further ahead the faster it is going: a bank is a long climb.
+      const ahead = Math.min(28, this.speed * 1.1);
+      const groundY = Math.max(
+        ground(pos.x, pos.z),
+        ground(pos.x + this.forward.x * reach, pos.z + this.forward.z * reach),
+        ground(pos.x - this.forward.x * reach, pos.z - this.forward.z * reach),
+        ground(pos.x + this.left.x * reach, pos.z + this.left.z * reach),
+        ground(pos.x - this.left.x * reach, pos.z - this.left.z * reach),
+        this.speed > 1 ? ground(pos.x + (vel.x / this.speed) * (reach + ahead), pos.z + (vel.z / this.speed) * (reach + ahead)) : -Infinity,
+        this.speed > 1 ? ground(pos.x + (vel.x / this.speed) * (reach + ahead * 0.5), pos.z + (vel.z / this.speed) * (reach + ahead * 0.5)) : -Infinity,
       );
-      if (hit) {
+      const hit = { timeOfImpact: pos.y - groundY };
+      {
         // Below street level means standing in the river.
-        const groundY = pos.y - hit.timeOfImpact;
-        this.wading = THREE.MathUtils.clamp(-groundY / (k.legLength * 0.8), 0, 1);
+        this.wading = THREE.MathUtils.clamp(-ground(pos.x, pos.z) / (k.legLength * 0.8), 0, 1);
         const w = Math.PI * 2 * k.hoverFrequency;
         const zeta = this.state === 'getup' ? Math.max(k.hoverDamping, 1) : k.hoverDamping;
         // The more it tips, the lower it sinks: a toppling kaiju goes down, not just over.
         const dip = (1 - Math.cos(Math.min(this.tilt, 1.4))) * k.legLength * 0.9;
-        const error = this.rideHeight + this.stanceOffset - dip - hit.timeOfImpact;
+        const standingHeight = this.rideHeight + this.stanceOffset - dip;
+        const crawlHeight = k.bodyRadius + m.crawlClearance;
+        const error = standingHeight + (crawlHeight - standingHeight) * crawl - hit.timeOfImpact;
         // A spring-damper near ride height. Far from it, approach no faster than the legs
         // (pushing up) or gravity (coming down) can stop it, so it arrives without bouncing.
         const brake = 1.6 * g * (error > 0 ? 0.6 : 1);
@@ -403,11 +443,15 @@ export class Kaiju implements System {
       const boost = 1 + (k.pushBoost - 1) * smooth((this.stall - 0.3) / 0.8);
       const rate = (speedingUp ? k.acceleration * boost : k.braking) * (speedingUp ? control : 1) * gentle;
       const along = THREE.MathUtils.clamp(diff / dt, -rate * traction, rate * traction);
-      const across = THREE.MathUtils.clamp(-sideSpeed / dt, -k.grip * traction, k.grip * traction);
+      // The river bed is slimy: in deep water it has little sideways hold against the current.
+      const hold = k.grip * traction * (1 - 0.8 * this.wading);
+      const across = THREE.MathUtils.clamp(-sideSpeed / dt, -hold, hold);
       tmp.copy(this.forward).multiplyScalar(along).addScaledVector(this.left, across);
       // A leaning kaiju staggers the way it leans, which is also what catches it.
-      tmp.x += up.x * k.stagger;
-      tmp.z += up.z * k.stagger;
+      tmp.x += dev.x * k.stagger * (1 - crawl);
+      tmp.z += dev.z * k.stagger * (1 - crawl);
+      // Standing in the river, the current leans on its legs.
+      if (this.wading > 0) tmp.x += (this.sim.current(pos.x, pos.z) - vel.x) * 1.1 * this.wading;
       body.applyImpulse({ x: tmp.x * mass * dt, y: 0, z: tmp.z * mass * dt }, true);
       this.load = Math.hypot(tmp.x, tmp.z);
     } else this.load = 0;
@@ -416,9 +460,21 @@ export class Kaiju implements System {
     const av = body.angvel();
     tmp2.crossVectors(tmp, UP).multiplyScalar(k.lean * leanScale * dt);
     tmp.set(av.x + tmp2.x, av.y, av.z + tmp2.z);
+    // Oil: the feet shoot out from under it. The faster it is going, the harder it goes over,
+    // backwards and a bit to one side. On tiptoe it only wobbles; on all fours it just slides.
+    const oily = standing && this.traction < 0.5;
+    if (oily && !this.wasOily) this.sim.emit('oilSlip', { x: pos.x, y: pos.y, z: pos.z });
+    this.wasOily = oily;
+    if (oily && crawl < 0.5) {
+      const violence = k.oilSlip * THREE.MathUtils.clamp(this.speed / 10, 0.25, 1.6) * (tiptoe ? 0.12 : 1);
+      const side = Math.sin(this.sim.time * 5.3) * 0.5;
+      // Feet go forward, top goes back (and a little sideways): a turn about the left axis, reversed.
+      tmp.x += (-this.left.x - this.forward.x * side) * violence * dt;
+      tmp.z += (-this.left.z - this.forward.z * side) * violence * dt;
+    }
     if (engaged > 0) {
       // Getting up uses a firmer, well-damped pull than everyday balance does.
-      const rising = this.state === 'getup';
+      const rising = this.state === 'getup' || shifting;
       const w = Math.PI * 2 * (rising ? Math.max(k.uprightFrequency, 0.85) : k.uprightFrequency);
       const zeta = rising ? Math.max(k.uprightDamping, 0.9) : k.uprightDamping;
       // The righting pull grows with tilt up to the stumble angle, then gives way: by the
@@ -428,20 +484,26 @@ export class Kaiju implements System {
         const span = Math.max(0.01, fallAngle - stumbleAngle);
         pull = stumbleAngle * Math.max(0, 1 - (this.tilt - stumbleAngle) / span);
       }
+      // No footing, no righting pull to speak of.
+      if (oily && crawl < 0.5 && !tiptoe) pull *= 0.25;
       // The save: while it is going over, steering into the fall hauls it back.
       if (this.state === 'falling' || this.state === 'stumble') pull += counter * k.saveStrength * Math.min(this.tilt, 1);
       // Axis that rotates the body's up back onto world up; its length is sin(tilt).
-      tmp2.crossVectors(up, UP);
+      tmp2.crossVectors(up, goal);
       const s = tmp2.length();
       if (s > 1e-5) tmp2.multiplyScalar((w * w * pull) / s);
+      // Turning is steered separately, so the balance torque keeps out of it.
+      tmp2.y = 0;
       tmp2.x -= 2 * zeta * w * av.x;
       tmp2.z -= 2 * zeta * w * av.z;
-      tmp2.y = 0;
       tmp.addScaledVector(tmp2, engaged * dt);
     }
     if (standing) {
       const authority = 1 - k.turnSpeedPenalty * Math.min(1, Math.abs(this.forwardSpeed) / k.maxSpeed);
-      const careful = (tiptoe ? m.tiptoeTurn : 1) * (1 - (1 - this.sim.tuning.carry.turn) * this.carrying);
+      const careful =
+        (tiptoe ? m.tiptoeTurn : 1) *
+        (1 - (1 - m.crawlTurn) * crawl) *
+        (1 - (1 - this.sim.tuning.carry.turn) * this.carrying);
       const targetRate = input.turn * k.maxTurnRate * authority * control * careful;
       const swing = k.turnAcceleration * (1 - (1 - this.sim.tuning.carry.turnAccel) * this.carrying);
       const accel = THREE.MathUtils.clamp((targetRate - av.y) / dt, -swing, swing);
@@ -458,14 +520,15 @@ export class Kaiju implements System {
     ctx.stanceScale = tiptoe ? m.tiptoeStance : 1;
     ctx.footScale = tiptoe ? m.tiptoeFoot : 1;
     this.legs.update(dt, ctx);
-    this.tail.setTuck(crouch ? 1 : 0);
+    ctx.crawl = crawl;
+    this.tail.setPose(crawl, pitch);
     if (this.sim.tick % 30 === 0) this.tail.syncMotors();
   }
 
   /** The catch-step of a stumble: a stagger toward the side it is toppling to, which rights it a little. */
   private lurch(mass: number): void {
     const k = this.sim.tuning.kaiju;
-    tmp.set(up.x, 0, up.z);
+    tmp.copy(dev);
     if (tmp.lengthSq() < 1e-6) return;
     tmp.normalize().multiplyScalar(k.stumbleLurch);
     this.body.applyImpulse({ x: tmp.x * mass, y: 0, z: tmp.z * mass }, true);
@@ -490,6 +553,12 @@ export class Kaiju implements System {
   render(alpha: number): void {
     this.legs.render(alpha, this.forward);
     if (this.ghost) this.ghost.visible = this.sim.tuning.camera.silhouette;
+    // Down on all fours the arms become front legs: swung to point at the ground and stretched to reach it.
+    const c = smooth(this.crawl);
+    for (const arm of this.arms) {
+      arm.rotation.x = -1.0 + c * 2.45;
+      arm.scale.set(1 + c * 0.6, 1 + c * 1.9, 1 + c * 0.6);
+    }
   }
 
   position(target = new THREE.Vector3()): THREE.Vector3 {

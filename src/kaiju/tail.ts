@@ -5,6 +5,9 @@ import type { Sim } from '../sim';
 
 type Joint = InstanceType<Sim['R']['ImpulseJoint']>;
 
+/** Which way a positive root-joint angle folds the tail relative to the body's pitch. */
+const BEND_SIGN = -1;
+
 /** The engine's low-level joint set, which exposes per-axis motors for any joint type. */
 interface RawJointSet {
   jointConfigureMotorModel(handle: number, axis: number, model: number): void;
@@ -19,8 +22,9 @@ export class Tail {
   readonly segments: RigidBody[] = [];
   readonly meshes: THREE.Mesh[] = [];
   private joints: Joint[] = [];
-  private applied = { stiffness: NaN, damping: NaN, tuck: NaN };
+  private applied = NaN;
   private tuck = 0;
+  private bend = 0;
 
   /**
    * @param anchor where the tail joins the body, in the body's local frame
@@ -91,33 +95,37 @@ export class Tail {
     this.syncMotors();
   }
 
-  /** 0 lets the tail swing free; 1 curls it in tight against the body (crouching). */
-  setTuck(amount: number): void {
-    if (amount === this.tuck) return;
-    this.tuck = amount;
+  /**
+   * Stiffens the tail (0 free .. 1 rigid) and bends it at the root. Crawling pitches the
+   * body forward, which would stand the tail straight up in the air; `bend` (rad) folds it
+   * back down so it trails behind instead.
+   */
+  setPose(stiff: number, bend: number): void {
+    if (Math.abs(stiff - this.tuck) < 0.01 && Math.abs(bend - this.bend) < 0.01) return;
+    this.tuck = stiff;
+    this.bend = bend;
     this.syncMotors();
   }
 
-  /** Re-applies joint motor settings when the tuning or the tuck changes. */
+  /** Re-applies joint motor settings when the tuning or the pose changes. */
   syncMotors(): void {
     const t = this.sim.tuning.tail;
-    const tuck = this.tuck;
-    // Tucked: much stiffer, and aimed round to one side instead of straight back.
-    const stiffness = t.stiffness * (1 + 9 * tuck);
-    const damping = t.damping * (1 + 3 * tuck);
-    if (stiffness === this.applied.stiffness && damping === this.applied.damping && tuck === this.applied.tuck) return;
-    this.applied = { stiffness, damping, tuck };
-    const curl = (2.4 / this.joints.length) * tuck;
+    const stiffness = t.stiffness * (1 + 9 * this.tuck);
+    const damping = t.damping * (1 + 3 * this.tuck);
+    const key = stiffness * 1000 + damping + this.bend * 7919;
+    if (key === this.applied) return;
+    this.applied = key;
     const { JointAxis, MotorModel } = this.sim.R;
-    for (const j of this.joints) {
+    this.joints.forEach((j, index) => {
       // Rapier 0.21 hands a spherical joint back typed as "generic", which lacks the motor
       // methods, so go through the raw joint set. The motors themselves work fine.
       const raw = (j as unknown as { rawSet: RawJointSet }).rawSet;
       for (const axis of [JointAxis.AngX, JointAxis.AngY, JointAxis.AngZ]) {
+        const target = axis === JointAxis.AngX && index === 0 ? this.bend * BEND_SIGN : 0;
         raw.jointConfigureMotorModel(j.handle, axis, MotorModel.AccelerationBased);
-        raw.jointConfigureMotorPosition(j.handle, axis, axis === JointAxis.AngY ? curl : 0, stiffness, damping);
+        raw.jointConfigureMotorPosition(j.handle, axis, target, stiffness, damping);
       }
-    }
+    });
   }
 
   tip(target = new THREE.Vector3()): THREE.Vector3 {

@@ -540,6 +540,39 @@ export class ChunkField implements System {
     } else if (at < c.releaseAt) c.releaseAt = at;
   }
 
+  /** Takes a loose chunk out of the world at once. */
+  private retire(index: number): void {
+    const c = this.chunks[index];
+    if (c.state !== ChunkState.Loose) return;
+    this.sim.disown(c.body);
+    this.byCollider.delete(c.collider);
+    this.sim.world.removeRigidBody(c.body);
+    this.field.release(index);
+    c.state = ChunkState.Gone;
+    this.looseCount--;
+  }
+
+  /**
+   * Clears rubble the river has taken: anything carried beyond `limit` metres east or west,
+   * and anything that has been bobbing about in the water (below `surface`, between the
+   * banks) for more than `soak` seconds, which would otherwise pile up against the bridges.
+   */
+  sweepRiver(limit: number, z0: number, z1: number, surface: number, soak: number): void {
+    const now = this.sim.time;
+    for (let k = this.looseHead; k < this.looseOrder.length; k++) {
+      const i = this.looseOrder[k];
+      if (i < 0) continue;
+      const c = this.chunks[i];
+      if (c.state !== ChunkState.Loose) continue;
+      const p = c.body.translation();
+      const inWater = p.z > z0 && p.z < z1 && p.y < surface;
+      if (Math.abs(p.x) > limit || (inWater && now - this.looseAt[k] > soak)) {
+        this.looseOrder[k] = -1;
+        this.retire(i);
+      }
+    }
+  }
+
   // --- Debris budget ---
 
   private enforceBudget(dt: number): void {
@@ -577,12 +610,9 @@ export class ChunkField implements System {
         const c = this.chunks[s.chunk];
         const index = s.chunk;
         if (s.t >= SHRINK_TIME) {
-          this.sim.disown(c.body);
-          this.byCollider.delete(c.collider);
-          this.sim.world.removeRigidBody(c.body);
-          this.field.release(index);
-          c.state = ChunkState.Gone;
-          this.looseCount--;
+          this.retire(index);
+        } else if (c.state !== ChunkState.Loose) {
+          // Already gone some other way (washed downstream, crushed).
         } else {
           this.field.setShrink(index, 1 - s.t / SHRINK_TIME);
           this.shrinking[w++] = s;

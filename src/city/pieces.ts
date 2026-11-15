@@ -3,6 +3,7 @@ import { ALL_GROUPS, FIXED_DT, Group, groups, type RigidBody } from '../core/phy
 import type { Kaiju } from '../kaiju/kaiju';
 import type { Sim, System, Tracked } from '../sim';
 import type { JobSpec } from './cityGen';
+import type { ChunkField } from './destruction';
 
 export type PieceState = 'loose' | 'lifting' | 'held' | 'placed';
 export type Fit = 'straight' | 'crooked';
@@ -16,15 +17,12 @@ export interface Piece {
   mass: number;
   /** Lean from upright, in radians, refreshed every step. */
   tilt: number;
-  /** How hard gravity topples it per unit of lean, and how hard a metre of hand shift rights it (rad/s^2). */
-  topple: number;
-  handGain: number;
+  /** Half-size of a box that bounds it, for sweeping it through buildings while carried. */
+  bounds: { hx: number; hy: number; hz: number };
   marker: THREE.Mesh;
   socketMarker: THREE.Mesh;
   socketPad: THREE.Mesh;
 }
-
-type Joint = InstanceType<Sim['R']['ImpulseJoint']>;
 
 const UP = new THREE.Vector3(0, 1, 0);
 const a = new THREE.Vector3();
@@ -33,9 +31,11 @@ const c = new THREE.Vector3();
 const q = new THREE.Quaternion();
 const q2 = new THREE.Quaternion();
 
-/** While loose: everything. While held: everything but the kaiju carrying it. */
+/** While loose: everything except feet. While carried: only things it can shove without pinching anyone. */
 const LOOSE_GROUPS = groups(Group.PIECE, ALL_GROUPS & ~Group.FOOT);
-const HELD_GROUPS = groups(Group.PIECE, Group.GROUND | Group.CHUNK | Group.PROP | Group.BALL | Group.PIECE);
+const HELD_GROUPS = groups(Group.PIECE, Group.PROP | Group.BALL);
+/** How far the load visibly leans at full misalignment (rad). */
+const MAX_LEAN = 0.42;
 
 function angleDiff(from: number, to: number, period: number): number {
   let d = (to - from) % period;
@@ -47,11 +47,12 @@ function angleDiff(from: number, to: number, period: number): number {
 /**
  * Repair pieces: whole chunks of city that can't crumble, only be carried.
  *
- * Hold the grab button near one and the kaiju hoists it onto its hands, where it
- * balances like a broom on a palm: the hands have to stay under it. Kaiju movement
- * shoves the hands about; the balance control (mouse, keys, stick) shifts them back.
- * Let it lean too far and it slips. Let go over the place it belongs and it goes in:
- * straight if it was lined up, crooked (and it shows) if it was not.
+ * Hold grab near one and the kaiju hoists it onto its hands. Carrying is a balance game
+ * played on a dial: the load's dot drifts and gets shoved about by the kaiju's own starts,
+ * stops and turns; the player's dot follows the mouse. Keep them together. The further
+ * apart they are, the faster the grip goes, and when it is gone the load slips.
+ * Let go over the place it belongs and it goes in: straight if it was steady and lined
+ * up, crooked (and it shows) if it was not.
  */
 export class Pieces implements System {
   readonly pieces: Piece[] = [];
@@ -60,29 +61,32 @@ export class Pieces implements System {
   placed = 0;
   crooked = 0;
   drops = 0;
-  /** Where the hands are under the load, relative to centred: -1..1 on each axis (x right, z forward). */
-  readonly hand = { x: 0, z: 0 };
-  /** Where the hands would have to be right now to stop the load leaning any further (same units). */
-  readonly needed = { x: 0, z: 0 };
+  /** The balance dial, all in dial-widths (-1..1, x to the kaiju's right, z forward). */
+  readonly sway = { x: 0, z: 0 };
+  readonly target = { x: 0, z: 0 };
+  /** How far apart the two dots are, and how much grip is left (1 firm, 0 gone). */
+  error = 0;
+  grip = 1;
 
-  private hands: RigidBody;
-  private joint: Joint | null = null;
+  private swayVel = { x: 0, z: 0 };
+  private lastVel = new THREE.Vector3();
+  private lastYawRate = 0;
   private liftTime = 0;
   private liftFrom = new THREE.Vector3();
   private liftQuat = new THREE.Quaternion();
-  private holdYaw = 0;
   private wasGrabbing = false;
   private byCollider = new Map<number, Piece>();
   private arms: THREE.Mesh[] = [];
   private time = 0;
+  private clock = 0;
 
   constructor(
     private sim: Sim,
     jobs: JobSpec[],
     private kaiju: Kaiju,
+    private chunks: ChunkField | null,
   ) {
     const { R, world } = sim;
-    this.hands = world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased());
     const markerGeometry = new THREE.OctahedronGeometry(2.2);
     for (const job of jobs) {
       q.setFromAxisAngle(UP, job.start.yaw);
@@ -97,7 +101,7 @@ export class Pieces implements System {
       const group = new THREE.Group();
       let volume = 0;
       for (const box of job.boxes) {
-        const collider = world.createCollider(
+        world.createCollider(
           R.ColliderDesc.cuboid(box.hx - 0.03, box.hy - 0.03, box.hz - 0.03)
             .setTranslation(box.x, box.y, box.z)
             .setDensity(sim.tuning.destruction.chunkDensity)
@@ -117,7 +121,6 @@ export class Pieces implements System {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         group.add(mesh);
-        this.byCollider.set(collider.handle, null as unknown as Piece);
       }
       // A coloured band round the base, matching the marker over the place it belongs.
       const span = job.boxes.reduce((m, bx) => Math.max(m, Math.abs(bx.x) + bx.hx, Math.abs(bx.z) + bx.hz), 0);
@@ -148,9 +151,7 @@ export class Pieces implements System {
         fit: null,
         mass: volume * sim.tuning.destruction.chunkDensity,
         tilt: 0,
-        // A box balanced on its base: inertia about the base from its height and width.
-        topple: (sim.tuning.world.gravity * job.height * 0.5) / (job.height ** 2 / 3 + (span * 2) ** 2 / 12),
-        handGain: sim.tuning.world.gravity / (job.height ** 2 / 3 + (span * 2) ** 2 / 12),
+        bounds: { hx: span, hy: job.height / 2, hz: span },
         marker,
         socketMarker,
         socketPad,
@@ -173,9 +174,8 @@ export class Pieces implements System {
   }
 
   /**
-   * The point the hands rest at: straight ahead of the kaiju and a little above its middle.
-   * It follows the kaiju's heading but not its lean; the arms soak that up, or every sway
-   * of the body would whip the load up and down.
+   * The point the hands hold a load at: straight ahead of the kaiju and a little above its
+   * middle. It follows the kaiju's heading but not its lean; the arms soak that up.
    */
   private anchor(target: THREE.Vector3): THREE.Vector3 {
     const k = this.sim.tuning.kaiju;
@@ -215,15 +215,18 @@ export class Pieces implements System {
     const r = piece.body.rotation();
     this.liftFrom.set(p.x, p.y, p.z);
     this.liftQuat.set(r.x, r.y, r.z, r.w);
-    // It is squared up to the kaiju as it is hoisted: face the gap square-on and it goes in square.
-    this.holdYaw = 0;
     this.liftTime = 0;
     piece.state = 'lifting';
     piece.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
     this.setGroups(piece, HELD_GROUPS);
     this.held = piece;
-    this.hand.x = 0;
-    this.hand.z = 0;
+    this.sway.x = this.sway.z = 0;
+    this.swayVel.x = this.swayVel.z = 0;
+    this.grip = 1;
+    this.error = 0;
+    const v = this.kaiju.body.linvel();
+    this.lastVel.set(v.x, 0, v.z);
+    this.lastYawRate = this.kaiju.body.angvel().y;
     this.sim.emit('pieceGrab', { x: p.x, y: p.y, z: p.z });
   }
 
@@ -235,27 +238,41 @@ export class Pieces implements System {
   release(reason: 'let go' | 'slipped'): void {
     const piece = this.held;
     if (!piece) return;
-    const { R, world } = this.sim;
-    if (this.joint) {
-      world.removeImpulseJoint(this.joint, true);
-      this.joint = null;
-    }
+    const { R } = this.sim;
     this.held = null;
     this.kaiju.carrying = 0;
-    if (piece.state === 'lifting') piece.body.setBodyType(R.RigidBodyType.Dynamic, true);
+    const wasHeld = piece.state === 'held';
     piece.state = 'loose';
+    piece.body.setBodyType(R.RigidBodyType.Dynamic, true);
     this.setGroups(piece, LOOSE_GROUPS);
+    // It leaves the hands with the kaiju's speed, toppling the way it was leaning.
+    const v = this.kaiju.body.linvel();
+    piece.body.setLinvel({ x: v.x, y: 0, z: v.z }, true);
+    this.leanAxis(a);
+    piece.body.setAngvel({ x: a.x * 1.2, y: 0, z: a.z * 1.2 }, true);
 
     const t = this.sim.tuning.carry;
     const p = piece.body.translation();
     const s = piece.job.socket;
     const offset = Math.hypot(p.x - s.x, p.z - s.z);
-    if (reason === 'let go' && offset < t.snapRadius && p.y > s.y - 2.5 && piece.tilt < 0.6) {
+    if (reason === 'let go' && wasHeld && offset < t.snapRadius && p.y > s.y - 2.5) {
       this.place(piece, offset);
       return;
     }
     if (reason === 'slipped') this.drops++;
     this.sim.emit('pieceDrop', { x: p.x, y: p.y, z: p.z });
+  }
+
+  /** World-space axis (scaled by how far) the load is leaning about: toward the gap between the dots. */
+  private leanAxis(target: THREE.Vector3): THREE.Vector3 {
+    const k = this.kaiju;
+    // The load leans toward where its dot is relative to the player's.
+    const dx = this.sway.x - this.target.x;
+    const dz = this.sway.z - this.target.z;
+    // Dial x is the kaiju's right (minus its left), z its forward.
+    c.copy(k.left).multiplyScalar(-dx).addScaledVector(k.forward, dz);
+    // Leaning toward a direction v is a turn about UP x v.
+    return target.crossVectors(UP, c);
   }
 
   /** Sets a piece into its place. A sloppy drop still counts, but it sits visibly skew. */
@@ -264,10 +281,9 @@ export class Pieces implements System {
     const t = this.sim.tuning.carry;
     const s = piece.job.socket;
     const p = piece.body.translation();
-    const r = piece.body.rotation();
-    const yaw = 2 * Math.atan2(r.y, r.w);
-    const twist = angleDiff(s.yaw, yaw, piece.job.symmetry);
-    const straight = offset < t.straightRadius && Math.abs(twist) < 0.22 && piece.tilt < 0.2;
+    const twist = angleDiff(s.yaw, this.kaiju.yaw, piece.job.symmetry);
+    const steady = this.error < t.tolerance * 1.5 && this.grip > 0.5;
+    const straight = offset < t.straightRadius && Math.abs(twist) < 0.22 && steady;
     if (straight) {
       a.set(s.x, s.y, s.z);
       q.setFromAxisAngle(UP, s.yaw);
@@ -276,7 +292,7 @@ export class Pieces implements System {
       const keep = 0.4;
       a.set(s.x + (p.x - s.x) * keep, s.y, s.z + (p.z - s.z) * keep);
       q.setFromAxisAngle(UP, s.yaw + twist * 0.8);
-      const lean = THREE.MathUtils.clamp(0.05 + offset * 0.018 + piece.tilt * 0.3, 0.06, 0.17);
+      const lean = THREE.MathUtils.clamp(0.06 + offset * 0.018 + this.error * 0.08, 0.06, 0.17);
       b.set(p.z - s.z, 0, -(p.x - s.x));
       if (b.lengthSq() < 0.01) b.set(1, 0, 0);
       q.premultiply(q2.setFromAxisAngle(b.normalize(), lean));
@@ -306,7 +322,6 @@ export class Pieces implements System {
   }
 
   preStep(dt: number): void {
-    const { R, world } = this.sim;
     const t = this.sim.tuning.carry;
     const k = this.kaiju;
     const input = this.sim.players[k.player] ?? this.sim.players[0];
@@ -329,87 +344,95 @@ export class Pieces implements System {
       this.release('slipped');
       return;
     }
-
-    // The hands follow the balance control, quickly but not instantly.
-    const ease = Math.min(1, dt * 9);
-    this.hand.x += (THREE.MathUtils.clamp(input.balanceX, -1, 1) - this.hand.x) * ease;
-    this.hand.z += (THREE.MathUtils.clamp(input.balanceZ, -1, 1) - this.hand.z) * ease;
-    this.anchor(c);
-    this.hands.setNextKinematicTranslation(c);
     k.carrying = 1;
+    this.anchor(c);
+    const anchorX = c.x;
+    const anchorY = c.y;
+    const anchorZ = c.z;
 
     if (piece.state === 'lifting') {
-      // Hoist: swing it up from where it lay to upright on the hands.
+      // Hoist: swing it up from where it lay to upright on the hands, squared to the kaiju.
       this.liftTime += dt;
       const u = Math.min(1, this.liftTime / t.liftTime);
       const s = u * u * (3 - 2 * u);
       a.lerpVectors(this.liftFrom, c, s);
       a.y += Math.sin(Math.PI * s) * 3;
-      q.setFromAxisAngle(UP, k.yaw + this.holdYaw);
+      q.setFromAxisAngle(UP, k.yaw);
       q2.copy(this.liftQuat).slerp(q, s);
       piece.body.setNextKinematicTranslation(a);
       piece.body.setNextKinematicRotation(q2);
-      if (u >= 1) {
-        piece.body.setBodyType(R.RigidBodyType.Dynamic, true);
-        piece.body.setTranslation(c, true);
-        piece.body.setRotation(q, true);
-        piece.body.setLinvel(k.body.linvel(), true);
-        piece.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-        this.hands.setTranslation(c, true);
-        this.joint = world.createImpulseJoint(
-          R.JointData.spherical({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }),
-          this.hands,
-          piece.body,
-          true,
-        );
-        piece.state = 'held';
-      }
+      if (u >= 1) piece.state = 'held';
       return;
     }
 
-    // Held: balanced on its base like a broom on a palm. Gravity topples it the way it leans;
-    // the kaiju cancels part of that by itself (`assist`). The rest is the player's: sliding
-    // the hands under the lean holds it, sliding them past the lean rights it. The kaiju's own
-    // starts, stops and turns reach the load through the joint, as real shoves.
-    const r = piece.body.rotation();
-    q.set(r.x, r.y, r.z, r.w);
-    a.set(0, 1, 0).applyQuaternion(q);
-    piece.tilt = Math.acos(THREE.MathUtils.clamp(a.y, -1, 1));
-    if (piece.tilt > t.dropAngle) {
+    // --- The balance game ---
+    // What the kaiju is doing to the load: its acceleration, felt in its own frame, plus the
+    // sideways whip of the hands when it swings round.
+    const v = k.body.linvel();
+    const ax = (v.x - this.lastVel.x) / dt;
+    const az = (v.z - this.lastVel.z) / dt;
+    this.lastVel.set(v.x, 0, v.z);
+    const yawRate = k.body.angvel().y;
+    const whip = ((yawRate - this.lastYawRate) / dt) * (this.sim.tuning.kaiju.bodyRadius + t.holdForward);
+    this.lastYawRate = yawRate;
+    // In dial terms: x is to the kaiju's right (a left turn swings the hands left, so the load lags right).
+    const right = -(ax * k.left.x + az * k.left.z) + whip;
+    const fwd = ax * k.forward.x + az * k.forward.z;
+    // And it has a mind of its own: a slow drift that never quite settles.
+    this.clock += dt;
+    const wx = Math.sin(this.clock * 1.31) + Math.sin(this.clock * 2.17 + 1.3) * 0.6;
+    const wz = Math.sin(this.clock * 1.07 + 2.1) + Math.sin(this.clock * 2.63 + 0.4) * 0.6;
+    // A sprung, lightly damped dot: shoved the opposite way to the kaiju's acceleration.
+    const spring = 7;
+    const damp = 1.6;
+    this.swayVel.x += (-spring * this.sway.x - damp * this.swayVel.x - t.sway * right + t.wander * wx) * dt;
+    this.swayVel.z += (-spring * this.sway.z - damp * this.swayVel.z - t.sway * fwd + t.wander * wz) * dt;
+    this.sway.x += this.swayVel.x * dt;
+    this.sway.z += this.swayVel.z * dt;
+    const far = Math.hypot(this.sway.x, this.sway.z);
+    if (far > 1) {
+      this.sway.x /= far;
+      this.sway.z /= far;
+      this.swayVel.x *= 0.5;
+      this.swayVel.z *= 0.5;
+    }
+
+    // The player's dot.
+    this.target.x = THREE.MathUtils.clamp(input.balanceX, -1, 1);
+    this.target.z = THREE.MathUtils.clamp(input.balanceZ, -1, 1);
+    const tl = Math.hypot(this.target.x, this.target.z);
+    if (tl > 1) {
+      this.target.x /= tl;
+      this.target.z /= tl;
+    }
+    this.error = Math.hypot(this.sway.x - this.target.x, this.sway.z - this.target.z);
+    if (this.error > t.tolerance) this.grip -= (dt / t.slipTime) * Math.min(1, (this.error - t.tolerance) / (1 - t.tolerance));
+    else this.grip += dt / t.gripRecover;
+    this.grip = Math.min(1, this.grip);
+
+    // Carried through a building, it takes the building with it, and jolts the grip.
+    if (this.chunks) {
+      const bd = piece.bounds;
+      const shape = new this.sim.R.Cuboid(bd.hx, bd.hy, bd.hz);
+      a.set(anchorX, anchorY + bd.hy, anchorZ);
+      q.setFromAxisAngle(UP, k.yaw);
+      b.set(v.x, 0, v.z);
+      const broke = this.chunks.stomp(shape, a, q, b, false);
+      if (broke) this.grip -= 0.06 * broke;
+    }
+    if (this.grip <= 0) {
       this.release('slipped');
       return;
     }
-    const av = piece.body.angvel();
-    // Unit vector of the way it is leaning, on the ground plane.
-    b.set(a.x, 0, a.z);
-    const flat = b.length();
-    if (flat > 1e-5) b.divideScalar(flat);
-    const gravityPull = piece.topple * Math.sin(piece.tilt);
-    // Hand shift in world space (hand.x is to the kaiju's right, which is minus its left).
-    c.copy(k.left).multiplyScalar(-this.hand.x * t.handRange).addScaledVector(k.forward, this.hand.z * t.handRange);
-    // Tipping the top toward a direction v is an angular acceleration about UP x v.
-    // Assist tips it back against the lean; the hands tip it away from where they have moved to.
-    const assistX = -b.x * t.assist * gravityPull - c.x * piece.handGain;
-    const assistZ = -b.z * t.assist * gravityPull - c.z * piece.handGain;
-    const ax = assistZ; // UP x (x, 0, z) = (z, 0, -x)
-    const az = -assistX;
-    // And it turns with the kaiju, so facing is how you square it up.
-    const yaw = 2 * Math.atan2(r.y, r.w);
-    const spin = THREE.MathUtils.clamp(angleDiff(yaw, k.yaw + this.holdYaw, Math.PI * 2) * 5, -3, 3);
-    piece.body.setAngvel({ x: av.x + ax * dt, y: av.y + (spin - av.y) * Math.min(1, dt * 8), z: av.z + az * dt }, true);
 
-    // For the balance dial: where the hands need to be to bring it back upright. That is
-    // enough to hold its lean, plus a lead for how fast it is going over, plus a push home.
-    // While the dot is inside the dial the load can be saved; pinned to the rim, it is going.
-    // The top moves at w x up, which near upright is (-w.z, 0, w.x).
-    const tipRateX = -av.z;
-    const tipRateZ = av.x;
-    const hold = (1 - t.assist) * gravityPull + 3 * piece.tilt;
-    const needX = (b.x * hold + tipRateX * 2) / piece.handGain;
-    const needZ = (b.z * hold + tipRateZ * 2) / piece.handGain;
-    // Into the kaiju's frame: x to its right, z forward.
-    this.needed.x = THREE.MathUtils.clamp(-(needX * k.left.x + needZ * k.left.z) / t.handRange, -1, 1);
-    this.needed.z = THREE.MathUtils.clamp((needX * k.forward.x + needZ * k.forward.z) / t.handRange, -1, 1);
+    // Show it: the load leans toward the gap between the dots, more as the grip goes.
+    this.leanAxis(a);
+    const lean = Math.min(1, a.length());
+    piece.tilt = lean * MAX_LEAN * (0.6 + 0.4 * (1 - this.grip));
+    q.setFromAxisAngle(UP, k.yaw);
+    if (lean > 1e-4) q.premultiply(q2.setFromAxisAngle(a.normalize(), piece.tilt));
+    piece.body.setNextKinematicTranslation({ x: anchorX, y: anchorY, z: anchorZ });
+    piece.body.setNextKinematicRotation(q);
   }
 
   postStep(): void {

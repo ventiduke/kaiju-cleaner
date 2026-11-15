@@ -41,6 +41,13 @@ export interface SimEvents {
   footfall: { x: number; y: number; z: number; side: number; strength: number; wet: boolean };
   kaijuSave: { x: number; y: number; z: number };
   kaijuStumble: { x: number; y: number; z: number };
+  oilSlip: { x: number; y: number; z: number };
+  chunkCrumble: { x: number; y: number; z: number; size: number };
+  groundCollapse: { x: number; y: number; z: number; radius: number };
+  sneezeWindup: { x: number; y: number; z: number };
+  sneeze: { x: number; y: number; z: number; dx: number; dz: number };
+  citizenSplat: { x: number; y: number; z: number };
+  citizenCheer: { x: number; y: number; z: number };
   citizenSquish: { x: number; y: number; z: number };
   citizenScare: { x: number; y: number; z: number };
   propHit: { x: number; y: number; z: number };
@@ -115,6 +122,8 @@ export class Sim {
   ground: (x: number, z: number) => number = () => 0;
   /** Traction at a point: 1 normally, near 0 on an oil slick. Scenes with hazards replace this. */
   traction: (x: number, z: number) => number = () => 1;
+  /** Speed of the water at a point, along +x (m/s). Zero on dry land. */
+  current: (x: number, z: number) => number = () => 0;
 
   private readonly events;
   private readonly tracked = new Set<Tracked>();

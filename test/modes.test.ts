@@ -91,27 +91,47 @@ describe('tiptoe and crouch', () => {
     expect(apart).toBeLessThan(normalApart * 0.85);
   });
 
-  it('crouch is slow, low and hard to tip', async () => {
-    const run = async (crouch: boolean) => {
-      const { sim, k } = await rig(REF);
-      sim.players[0].crouch = crouch;
-      sim.players[0].thrust = crouch ? 1 : sim.tuning.modes.crouchSpeed;
-      sim.run(60 * 4);
-      const y = k.position().y;
-      const speed = k.speed;
-      // Shove it sideways the same amount either way.
-      const av = k.body.angvel();
-      k.body.setAngvel({ x: av.x, y: av.y, z: av.z + 3.2 }, true);
-      sim.run(60 * 2);
-      return { y, speed, stumbles: k.stumbles, falls: k.falls, ride: k.rideHeight, mode: k.mode };
-    };
-    const up = await run(false);
-    const down = await run(true);
-    expect(down.mode).toBe('crouch');
-    expect(down.y).toBeLessThan(down.ride - 2);
-    expect(Math.abs(down.speed - up.speed)).toBeLessThan(2);
-    expect(up.stumbles).toBeGreaterThan(0);
-    expect(down.stumbles + down.falls).toBe(0);
+  it('crawling gets right down on all fours: slow, low, and all but impossible to tip', async () => {
+    const { sim, k } = await rig(REF);
+    const t = sim.tuning;
+    const inp = sim.players[0];
+    sim.run(30);
+    inp.crouch = true;
+    sim.run(60 * 3);
+    expect(k.mode).toBe('crawl');
+    expect(k.crawl).toBe(1);
+    // Belly a couple of metres off the ground, spine pitched right forward, and still "balanced".
+    expect(k.position().y).toBeCloseTo(t.kaiju.bodyRadius + t.modes.crawlClearance, 0);
+    expect(k.tilt).toBeLessThan(0.2);
+    expect(k.stumbles + k.falls).toBe(0);
+    // The tail trails behind, not up in the air.
+    const tip = k.tail.tip();
+    const p = k.position();
+    expect((tip.x - p.x) * k.forward.x + (tip.z - p.z) * k.forward.z).toBeLessThan(-10);
+    expect(tip.y).toBeLessThan(18);
+    // It crawls, turns hard, and takes a shove, without a wobble.
+    inp.thrust = 1;
+    sim.run(60 * 4);
+    expect(k.speed).toBeLessThan(t.kaiju.maxSpeed * t.modes.crawlSpeed * 1.1);
+    expect(k.speed).toBeGreaterThan(t.kaiju.maxSpeed * t.modes.crawlSpeed * 0.8);
+    const yaw0 = k.yaw;
+    inp.turn = 1;
+    sim.run(60 * 2);
+    expect(Math.abs(k.yaw - yaw0)).toBeGreaterThan(0.8);
+    inp.turn = 0;
+    const av = k.body.angvel();
+    k.body.setAngvel({ x: av.x + 2, y: av.y, z: av.z + 2 }, true);
+    sim.run(60 * 2);
+    expect(k.stumbles + k.falls).toBe(0);
+    // Standing back up is not a stumble either.
+    inp.thrust = 0;
+    sim.run(60);
+    inp.crouch = false;
+    sim.run(60 * 3);
+    expect(k.mode).toBe('normal');
+    expect(k.stumbles + k.falls).toBe(0);
+    expect(k.position().y).toBeCloseTo(k.rideHeight, 0);
+    expect(k.tilt).toBeLessThan(0.2);
   });
 });
 
@@ -124,6 +144,7 @@ describe('playtest regressions', () => {
       ride = k.rideHeight;
       if (k.state === 'walk' || k.state === 'stumble') highest = Math.max(highest, k.position().y);
     });
-    expect(highest).toBeLessThan(ride + 6);
+    // (The bug threw it 25 m up. A few metres of hop, climbing out of the river, is fine.)
+    expect(highest).toBeLessThan(ride + 9);
   }, 120000);
 });

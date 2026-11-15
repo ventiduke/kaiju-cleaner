@@ -40,20 +40,21 @@ function faceOpenGround(g: Game): void {
   g.sim.run(30);
 }
 
-/** A player who keeps the ring on the dot. */
+/** A player who keeps their ring on the load's dot. */
 function followDial(g: Yard): void {
   const inp = g.sim.players[0];
-  inp.balanceX = g.pieces.needed.x;
-  inp.balanceZ = g.pieces.needed.z;
+  inp.balanceX = g.pieces.sway.x;
+  inp.balanceZ = g.pieces.sway.z;
 }
 
 /** Steps while carrying, with or without someone minding the balance. */
+/** Steps while carrying, with or without someone minding the balance. Returns the lowest the grip got. */
 function carry(g: Yard, seconds: number, balancing: boolean): number {
-  let worst = 0;
+  let worst = 1;
   for (let i = 0; i < seconds * 60; i++) {
     if (balancing && g.pieces.held?.state === 'held') followDial(g);
     g.sim.step();
-    if (g.pieces.held) worst = Math.max(worst, g.pieces.held.tilt);
+    if (g.pieces.held) worst = Math.min(worst, g.pieces.grip);
   }
   return worst;
 }
@@ -85,7 +86,6 @@ describe('repair pieces', () => {
     expect(g.kaiju.carrying).toBe(1);
     const p = piece.body.translation();
     expect(p.y).toBeCloseTo(g.kaiju.position().y + g.sim.tuning.carry.handHeight, 0);
-    expect(piece.tilt).toBeLessThan(0.05);
     // Out of reach, nothing happens.
     inp.grab = false;
     g.sim.run(120);
@@ -99,6 +99,43 @@ describe('repair pieces', () => {
     expect(g.pieces.held).toBe(null);
   });
 
+  it('the load\'s dot is shoved about by the kaiju\'s own motion', async () => {
+    const g = await yard();
+    const piece = g.pieces.pieces[0];
+    const inp = g.sim.players[0];
+    faceOpenGround(g);
+    handsOver(g, piece.job.start.x, piece.job.start.z);
+    inp.grab = true;
+    g.sim.run(60);
+    // Standing still it only drifts a little.
+    let idle = 0;
+    for (let i = 0; i < 180; i++) {
+      followDial(g);
+      g.sim.step();
+      idle = Math.max(idle, Math.hypot(g.pieces.sway.x, g.pieces.sway.z));
+    }
+    expect(idle).toBeGreaterThan(0.03);
+    expect(idle).toBeLessThan(0.5);
+    // Setting off forwards throws it back; a turn throws it to the outside.
+    inp.thrust = 1;
+    let back = 0;
+    for (let i = 0; i < 60; i++) {
+      followDial(g);
+      g.sim.step();
+      back = Math.min(back, g.pieces.sway.z);
+    }
+    expect(back).toBeLessThan(-0.3);
+    carry(g, 4, true);
+    inp.turn = 1; // left
+    let right = 0;
+    for (let i = 0; i < 90; i++) {
+      followDial(g);
+      g.sim.step();
+      right = Math.max(right, g.pieces.sway.x);
+    }
+    expect(right).toBeGreaterThan(0.3);
+  });
+
   it('carrying is a balancing act: mind the dial and it stays up, ignore it and it slips', async () => {
     const run = async (balancing: boolean) => {
       const g = await yard();
@@ -108,17 +145,22 @@ describe('repair pieces', () => {
       handsOver(g, piece.job.start.x, piece.job.start.z);
       inp.grab = true;
       g.sim.run(60);
+      // Set off, swing round, carry on, and pull up.
       inp.thrust = 1;
-      const worst = carry(g, 5, balancing);
+      let worst = carry(g, 4, balancing);
+      inp.turn = 0.6;
+      worst = Math.min(worst, carry(g, 2, balancing));
+      inp.turn = 0;
+      worst = Math.min(worst, carry(g, 3, balancing));
       inp.thrust = 0;
       const worstStop = carry(g, 4, balancing);
-      return { drops: g.pieces.drops, worst: Math.max(worst, worstStop), held: g.pieces.held === piece, speed: g.kaiju.speed, g };
+      return { drops: g.pieces.drops, worst: Math.min(worst, worstStop), held: g.pieces.held === piece, speed: g.kaiju.speed, g };
     };
     const minded = await run(true);
     const ignored = await run(false);
     expect(minded.drops).toBe(0);
     expect(minded.held).toBe(true);
-    expect(minded.worst).toBeLessThan(minded.g.sim.tuning.carry.dropAngle * 0.6);
+    expect(minded.worst).toBeGreaterThan(0.9);
     expect(ignored.drops).toBe(1);
     expect(ignored.held).toBe(false);
   });

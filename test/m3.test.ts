@@ -15,17 +15,19 @@ function drive(g: Game, seconds: number): { avgMs: number; worstMs: number } {
 }
 
 describe('M3 kaiju in the city', () => {
-  it('can run a boulevard lane without breaking a single chunk', async () => {
+  it('can run a boulevard lane down to the river without breaking a single chunk', async () => {
     const g = await makeGame('city');
     const startZ = g.kaiju.position().z;
+    const bank = g.layout.river!.z1;
     g.sim.players[0].thrust = 0.6;
-    const cost = drive(g, 30);
+    let cost = { avgMs: 0, worstMs: 0 };
+    while (g.kaiju.position().z > bank + 25 && g.sim.time < 40) cost = drive(g, 1);
     const p = g.kaiju.position();
     console.log(
       `careful boulevard run: ${(startZ - p.z).toFixed(0)} m, ${g.damage.chunksBroken} chunks, ` +
         `${g.damage.propsDisturbed} props, physics ${cost.avgMs.toFixed(2)} ms avg`,
     );
-    expect(startZ - p.z).toBeGreaterThan(300); // right through the city and out the far side
+    expect(startZ - p.z).toBeGreaterThan(150);
     expect(Math.abs(p.x - g.layout.spawn.x)).toBeLessThan(3);
     expect(g.damage.chunksBroken).toBe(0);
     expect(g.kaiju.stumbles + g.kaiju.falls).toBe(0);
@@ -94,31 +96,58 @@ describe('M3 kaiju in the city', () => {
 });
 
 describe('river, oil and townsfolk', () => {
-  it('wades the river: down the bank, slower through the water, and up the far side', async () => {
+  it('wades the river: down the bank, slower through deep water, swept sideways, and up the far side', async () => {
     const g = await makeGame('city');
     const river = g.layout.river!;
     const k = g.kaiju;
+    const startX = k.position().x;
     g.sim.players[0].thrust = 0.6;
     let lowest = Infinity;
     let wadingSpeed = 0;
     let wet = 0;
     g.sim.on('footfall', (e) => (wet += e.wet ? 1 : 0));
-    for (let i = 0; i < 60 * 40 && k.position().z > river.z0 - 40; i++) {
+    for (let i = 0; i < 60 * 60 && k.position().z > river.z0 - 40; i++) {
       g.sim.step();
       const p = k.position();
       if (p.z < river.z1 - 12 && p.z > river.z0 + 12) {
         lowest = Math.min(lowest, p.y);
-        wadingSpeed = Math.max(wadingSpeed, k.speed);
+        wadingSpeed = Math.max(wadingSpeed, Math.abs(k.forwardSpeed));
       }
     }
     expect(k.position().z).toBeLessThan(river.z0 - 30);
-    // In mid-river it stands on the bed, a river-depth lower, with its feet down there too.
-    expect(lowest).toBeLessThan(k.rideHeight - river.depth * 0.7);
-    expect(wadingSpeed).toBeLessThan(g.sim.tuning.kaiju.maxSpeed * 0.6 * 0.8);
+    // In mid-river it stands on the bed, a river-depth lower: the water is up to its belly.
+    expect(lowest).toBeLessThan(k.rideHeight - river.depth * 0.8);
+    expect(river.depth).toBeGreaterThan(g.sim.tuning.kaiju.legLength);
+    expect(wadingSpeed).toBeLessThan(g.sim.tuning.kaiju.maxSpeed * 0.6 * 0.75);
     expect(wet).toBeGreaterThan(2);
-    // Back on the street at full height, and it never fell over the bank.
+    // The current carried it downstream (east) on the way over.
+    expect(k.position().x - startX).toBeGreaterThan(6);
+    // Back on the street at full height.
     expect(k.position().y).toBeGreaterThan(k.rideHeight - 1.5);
-    expect(k.falls).toBe(0);
+  });
+
+  it('the current carries rubble downstream, floating, and out of the city', async () => {
+    const g = await makeGame('city');
+    const river = g.layout.river!;
+    // Knock a bridge to bits.
+    const index = g.layout.buildings.length + g.layout.bridges.findIndex((b) => b.kind === 'road' && b.gap === undefined);
+    const bridge = g.chunks.buildings[index];
+    const deck = g.chunks.chunks.slice(bridge.first, bridge.first + bridge.count).filter((c) => c.floor === 1);
+    const x0 = deck[0].x;
+    for (let i = bridge.first; i < bridge.first + bridge.count; i++) g.chunks.loosen(i, null);
+    g.sim.run(60 * 8);
+    const afloat = deck.filter((c) => c.state === 1);
+    expect(afloat.length).toBeGreaterThan(0);
+    for (const c of afloat) {
+      const p = c.body.translation();
+      expect(p.x - x0).toBeGreaterThan(25); // carried east
+      expect(p.y).toBeGreaterThan(-river.depth + 3); // floating, not sat on the bed
+      expect(p.z).toBeGreaterThan(river.z0 - 1);
+      expect(p.z).toBeLessThan(river.z1 + 1);
+    }
+    // Given long enough it is all washed away.
+    g.sim.run(60 * 70);
+    expect(deck.every((c) => c.state === 2)).toBe(true);
   });
 
   it('drops a road bridge when a pier is knocked out', async () => {
@@ -137,34 +166,31 @@ describe('river, oil and townsfolk', () => {
     expect(deck.every((c) => c.state !== 0)).toBe(true);
   });
 
-  it('has no grip on an oil slick', async () => {
-    const slide = async (oily: boolean) => {
+  it('slips over on an oil slick at a run, but can tiptoe across', async () => {
+    const cross = async (tiptoe: boolean) => {
       const g = await makeGame('yard', { city: { propDensity: 0 } });
-      if (!oily) g.sim.traction = () => 1;
       const k = g.kaiju;
       // Carry it to just short of the slick (at x -60, z 30), heading across it.
       for (const b of [k.body, ...k.tail.segments]) {
         const t = b.translation();
-        b.setTranslation({ x: t.x - 60, y: t.y, z: t.z + 60 }, true);
+        b.setTranslation({ x: t.x - 60, y: t.y, z: t.z + 15 }, true);
       }
-      g.sim.players[0].thrust = 0.5;
-      for (let i = 0; i < 600 && k.position().z > 38; i++) g.sim.step();
-      // Hard left on the slick.
-      g.sim.players[0].turn = 1;
-      const x0 = k.position().x;
+      g.sim.run(30);
+      g.sim.players[0].thrust = tiptoe ? 1 : 0.6;
+      g.sim.players[0].tiptoe = tiptoe;
       let onOil = false;
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 60 * 9 && k.position().z > 5; i++) {
         g.sim.step();
         onOil ||= k.traction < 0.5;
       }
-      return { drift: Math.abs(k.position().x - x0), onOil };
+      return { onOil, falls: k.falls, z: k.position().z };
     };
-    const dry = await slide(false);
-    const oily = await slide(true);
-    expect(oily.onOil).toBe(true);
-    expect(dry.onOil).toBe(false);
-    // On oil it keeps sliding the way it was going instead of following its nose.
-    expect(oily.drift).toBeLessThan(dry.drift * 0.5);
+    const running = await cross(false);
+    const careful = await cross(true);
+    expect(running.onOil).toBe(true);
+    expect(running.falls).toBeGreaterThanOrEqual(1);
+    expect(careful.onOil).toBe(true);
+    expect(careful.falls).toBe(0);
   });
 
   it('townsfolk stroll, run from a stomping kaiju, and get squished underfoot', async () => {

@@ -71,8 +71,8 @@ export class FollowCamera {
     this.yaw = lerpAngle(this.yaw, this.kaiju.yaw, 1 - Math.exp(-frameDt / Math.max(0.01, c.yawLag)));
 
     // The tuned distance and height set the resting view; the mouse offsets move along a dome.
-    // Crouching drops the view too: steadier on its feet, but it can't see over the rooftops.
-    const squat = this.kaiju.mode === 'crouch' ? 1 - this.sim.tuning.modes.crouchView : 1;
+    // Crawling drops the view too: steady as a rock, but it can't see over the rooftops.
+    const squat = this.kaiju.mode === 'crawl' ? 1 - this.sim.tuning.modes.crawlView : 1;
     this.squat += (squat - this.squat) * Math.min(1, frameDt * 4);
     const height = c.height * this.squat;
     const range = Math.hypot(c.distance, height) * this.zoom;
