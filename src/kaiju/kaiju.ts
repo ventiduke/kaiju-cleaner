@@ -910,8 +910,11 @@ export class Kaiju implements System {
       }
     }
     const sliding = this.sliding > 0;
-    const low = input.crouch || sliding;
+    // (With its hands full the crouch key plants its feet instead: it stays standing, and turns
+    // on the spot to face the way the player is looking, to line a piece up.)
+    const low = (input.crouch && !this.carrying) || sliding;
     if (!sliding && push > 0.05) turnTo = wish;
+    else if (this.planted && this.carrying && input.crouch) turnTo = input.look;
 
     // --- Facing: it swings toward where it is going, with a moment to get the turn started and to end it.
     const off = Math.atan2(Math.sin(turnTo - this.yaw), Math.cos(turnTo - this.yaw));

@@ -196,22 +196,27 @@ export const codeDefaults = {
     handHeight: 1,
     liftTime: 0.5,
     /**
-     * The balance gauge. A marker sits in the middle of it until something throws it out:
-     * the kaiju setting off, braking or swinging round (`sway`: how far a full-blooded one
-     * throws it, as a share of the gauge), or the load shifting by itself (by `wander`, every
-     * `shiftEvery` seconds or so). A shove of the mouse the way the prompt says brings it
-     * back; it cannot be over-corrected. While it is outside the middle band (`tolerance`,
-     * as a share of the gauge) the grip lasts `slipTime` seconds; inside, it recovers in
-     * `gripRecover`.
+     * Keeping hold. A load works loose in the hands: over `holdSeconds` when it is carried
+     * gently, sooner the more it is thrown about (`rough`: hard starts and stops, sharp
+     * turns), and in lumps when it is knocked. Once the grip is down to `slipAt` the load
+     * is slipping, and a bar comes up beside it: a marker runs back and forth along it, once
+     * across every `sweep` seconds, and a press of the jump key while the marker is in the
+     * zone in the middle (`zone`, as a share of the bar; up to `zoneStill` times wider
+     * standing still or with feet planted) takes a firm hold again. A press anywhere else is
+     * a fumble and costs `fumble` of the grip. Left alone, a slipping load is on the ground
+     * `slipTime` seconds after it started to go.
      */
-    sway: 0.75,
-    wander: 0.7,
-    shiftEvery: 8,
-    tolerance: 0.36,
-    slipTime: 2.2,
-    gripRecover: 1.5,
-    /** Seconds of steady heaving to stand a toppled piece back up. */
-    raiseTime: 4,
+    holdSeconds: 9,
+    rough: 1,
+    slipAt: 0.3,
+    slipTime: 3.4,
+    sweep: 0.62,
+    zone: 0.24,
+    zoneStill: 1.6,
+    fumble: 0.1,
+    /** Standing a toppled piece back up: this many good heaves, each a press in the zone, before the grip (`heaveSeconds` of it) gives out. */
+    heaves: 5,
+    heaveSeconds: 16,
     /** Shares of normal speed, acceleration, turn rate and turn acceleration while carrying. */
     speed: 0.6,
     accel: 0.5,
@@ -219,8 +224,9 @@ export const codeDefaults = {
     turnAccel: 0.4,
     /** Released within this distance (m) of where it belongs, a piece goes in. */
     snapRadius: 6,
-    /** Within this distance (m), square on and steady, it goes in straight. */
-    straightRadius: 2,
+    /** Within this distance (m), with a firm hold, it goes in straight; within `perfectRadius`, it could not be bettered. */
+    straightRadius: 2.6,
+    perfectRadius: 1,
   },
   sneeze: {
     /** How much each chunk breaking right beside it tickles (1 = a sneeze). Crumbling counts double. */
@@ -234,8 +240,6 @@ export const codeDefaults = {
     /** How far the blast reaches (m) and how hard it throws things (m/s close up). */
     range: 80,
     power: 32,
-    /** Seconds it can hold its breath. */
-    breathSeconds: 5,
   },
   citizens: {
     /** How many people stroll each block's sidewalks (x5). */
@@ -287,7 +291,7 @@ export const codeDefaults = {
    * dials together; each can still be changed by hand afterwards.
    */
   move: {
-    /** Which style was last chosen: 0 lumbering, 1 steady, 2 wild. Only a label; the numbers are what count. */
+    /** Which style was last chosen: 0 lumbering, 1 steady, 2 wild, 3 the Runner (what it ships as). Only a label; the numbers are what count. */
     style: 1,
     /** How high it can leap, in metres (0: it cannot). It comes down hard. */
     jump: 0,
@@ -605,19 +609,23 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     holdForward: [4, 20, 0.5],
     handHeight: [-6, 8, 0.5],
     liftTime: [0.1, 2, 0.05],
-    sway: [0, 1.5, 0.05],
-    wander: [0, 1.2, 0.05],
-    shiftEvery: [1, 30, 0.5],
-    tolerance: [0.05, 0.8, 0.01],
-    slipTime: [0.2, 5, 0.05],
-    gripRecover: [0.2, 6, 0.05],
-    raiseTime: [0.5, 15, 0.5],
+    holdSeconds: [2, 40, 0.5],
+    rough: [0, 4, 0.1],
+    slipAt: [0.05, 0.8, 0.05],
+    slipTime: [0.5, 10, 0.1],
+    sweep: [0.2, 2, 0.02],
+    zone: [0.05, 0.8, 0.01],
+    zoneStill: [1, 3, 0.05],
+    fumble: [0, 0.5, 0.01],
+    heaves: [1, 12, 1],
+    heaveSeconds: [4, 40, 1],
     speed: [0.2, 1, 0.05],
     accel: [0.1, 1, 0.05],
     turn: [0.1, 1, 0.05],
     turnAccel: [0.02, 1, 0.01],
     snapRadius: [1, 15, 0.5],
     straightRadius: [0.5, 8, 0.1],
+    perfectRadius: [0.2, 4, 0.1],
   },
   sneeze: {
     dust: [0, 0.2, 0.002],
@@ -626,7 +634,6 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     kick: [0, 40, 0.5],
     range: [10, 200, 5],
     power: [0, 80, 1],
-    breathSeconds: [1, 20, 0.5],
   },
   citizens: { density: [0, 4, 0.1] },
   audio: { volume: [0, 1, 0.01] },

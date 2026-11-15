@@ -74,66 +74,95 @@ async function boot(): Promise<void> {
   const citizens = sim.parts.citizens as Citizens | undefined;
   const pieces = sim.parts.pieces as Pieces | undefined;
   const nose = sim.parts.nose as Nose | undefined;
-  const gauge = document.getElementById('gauge')!;
-  const gaugeCanvas = gauge.querySelector('canvas')!;
-  const gaugeCtx = gaugeCanvas.getContext('2d')!;
-  const gaugeText = gauge.querySelector('div')!;
-  let gaugeSaid = '';
+  const grip = document.getElementById('grip')!;
+  const gripCanvas = grip.querySelector('canvas')!;
+  const gripCtx = gripCanvas.getContext('2d')!;
+  const gripText = grip.querySelector('div')!;
+  const gripAt = new THREE.Vector3();
+  let gripSaid = '';
   /**
-   * The balance gauge, at the side of the screen while the kaiju has hold of something.
-   * One marker, one green band to keep it in, and when it strays a big arrow saying which
-   * way to move the mouse. It is meant to be read out of the corner of the eye.
+   * The grip bar. It is drawn just above whatever the kaiju is holding, because that is where
+   * the player is already looking (an earlier dial at the side of the screen "was too
+   * distracting: it's hard to see where to go"). Held firm, it is a thin strip that drains.
+   * Slipping, it is a bar with a green zone and a marker running across it: Space in the green.
+   * It ticks as the marker crosses the zone, so it can be done by ear.
    */
   const drawGauge = () => {
     const held = pieces?.held;
-    gauge.style.display = held ? 'flex' : 'none';
+    grip.style.display = held ? 'block' : 'none';
     if (!held || !pieces) return;
-    const c = gaugeCtx;
-    const W = 64;
-    const H = 300;
-    const top = 16;
-    const len = H - 32;
-    const tol = tuning.carry.tolerance;
-    const out = pieces.prompt !== 0;
-    const y = (m: number) => top + ((1 - m) / 2) * len;
-    c.clearRect(0, 0, W, H);
-    c.fillStyle = out ? (pieces.grip < 0.4 ? 'rgba(170,30,20,0.85)' : 'rgba(150,95,10,0.85)') : 'rgba(20,24,32,0.7)';
-    c.beginPath();
-    c.roundRect(14, 4, 36, H - 8, 12);
-    c.fill();
-    // The band to keep it in.
-    c.fillStyle = out ? 'rgba(125,255,154,0.45)' : 'rgba(125,255,154,0.85)';
-    c.fillRect(18, y(tol), 28, y(-tol) - y(tol));
-    // Grip left: a strip down the side that burns away from the top.
-    c.fillStyle = 'rgba(255,255,255,0.15)';
-    c.fillRect(2, top, 6, len);
-    c.fillStyle = pieces.grip > 0.6 ? '#7dff9a' : pieces.grip > 0.3 ? '#ffd23f' : '#ff5544';
-    c.fillRect(2, top + len * (1 - Math.max(0, pieces.grip)), 6, len * Math.max(0, pieces.grip));
-    // The marker.
-    c.fillStyle = '#ffffff';
-    c.strokeStyle = 'rgba(0,0,0,0.6)';
-    c.lineWidth = 2;
-    c.beginPath();
-    c.roundRect(10, y(pieces.marker) - 7, 44, 14, 6);
-    c.fill();
-    c.stroke();
+    const o = held.tracked.object.position;
+    gripAt.set(o.x, o.y + (held.state === 'raising' ? 14 : held.job.height + 5), o.z).project(camera);
+    const sx = THREE.MathUtils.clamp((gripAt.x * 0.5 + 0.5) * window.innerWidth, 200, window.innerWidth - 200);
+    const sy = THREE.MathUtils.clamp((-gripAt.y * 0.5 + 0.5) * window.innerHeight, 150, window.innerHeight - 220);
+    grip.style.left = `${sx}px`;
+    grip.style.top = `${sy}px`;
+
+    const t = tuning.carry;
+    const c = gripCtx;
+    const W = 360;
+    const H = 54;
     const raising = held.state === 'raising';
-    const said = out
-      ? pieces.prompt > 0
-        ? '▲\nMOUSE UP'
-        : 'MOUSE DOWN\n▼'
-      : raising
-        ? `heaving… ${Math.round(pieces.progress * 100)}%`
-        : 'steady';
-    if (said !== gaugeSaid) {
-      gaugeSaid = said;
-      gaugeText.textContent = said;
-      const hint = document.createElement('small');
-      hint.textContent = raising ? 'keep it in the green until it is up   click: let go' : 'click: put down   Space: plant feet';
-      gaugeText.appendChild(hint);
+    const up = pieces.slipping;
+    const since = pieces.lastPress ? (sim.tick - pieces.lastPress.tick) / 60 : 9;
+    const flash = since < 0.4 ? pieces.lastPress!.kind : null;
+    c.clearRect(0, 0, W, H);
+    const left = up ? Math.max(0, pieces.grip / (raising ? 1 : t.slipAt)) : THREE.MathUtils.clamp((pieces.grip - t.slipAt) / (1 - t.slipAt), 0, 1);
+    if (up || flash) {
+      // The bar.
+      c.fillStyle = flash === 'fumble' ? 'rgba(190,40,30,0.9)' : left < 0.4 && !raising ? 'rgba(150,40,20,0.85)' : 'rgba(20,24,32,0.8)';
+      c.beginPath();
+      c.roundRect(4, 4, W - 8, 34, 10);
+      c.fill();
+      const x0 = 12;
+      const len = W - 24;
+      const zone = pieces.zone * len;
+      c.fillStyle = flash === 'perfect' ? '#fff3b0' : flash === 'catch' ? '#eaffef' : 'rgba(125,255,154,0.8)';
+      c.fillRect(x0 + len / 2 - zone, 8, zone * 2, 26);
+      // Dead centre.
+      c.fillStyle = flash === 'perfect' ? '#ffd23f' : 'rgba(255,255,255,0.65)';
+      c.fillRect(x0 + len / 2 - zone * 0.35, 8, zone * 0.7, 26);
+      if (up) {
+        c.fillStyle = '#ffffff';
+        c.strokeStyle = 'rgba(0,0,0,0.7)';
+        c.lineWidth = 2;
+        c.beginPath();
+        c.roundRect(x0 + pieces.bar * len - 5, 2, 10, 38, 4);
+        c.fill();
+        c.stroke();
+      }
     }
-    gaugeText.style.color = out ? (pieces.grip < 0.4 ? '#ff8a7a' : '#ffd23f') : '#b9ffc8';
-    gaugeText.style.fontSize = out ? '30px' : '18px';
+    // What is left of the grip: a strip under the bar (or, held firm, the strip alone).
+    const stripW = up || flash ? W - 24 : 120;
+    const stripX = (W - stripW) / 2;
+    c.fillStyle = 'rgba(20,24,32,0.6)';
+    c.fillRect(stripX, 44, stripW, 6);
+    c.fillStyle = up ? (left > 0.5 ? '#ffd23f' : '#ff5544') : left > 0.35 ? '#7dff9a' : '#ffd23f';
+    c.fillRect(stripX, 44, stripW * Math.min(1, left), 6);
+
+    const said =
+      flash === 'perfect'
+        ? raising ? 'HEAVE!  dead centre' : 'GOT IT  ·  dead centre'
+        : flash === 'catch'
+          ? raising ? 'HEAVE!' : 'GOT IT'
+          : flash === 'fumble'
+            ? 'FUMBLED'
+            : raising
+              ? `SPACE in the green to heave   ${Math.round(pieces.progress * 100)}%`
+              : up
+                ? 'SLIPPING!   SPACE in the green'
+                : pieces.over === 'perfect'
+                  ? 'CLICK to set it down  ·  PERFECT'
+                  : pieces.over === 'straight'
+                    ? 'CLICK to set it down  ·  straight'
+                    : pieces.over === 'crooked'
+                      ? 'closer, for a straight fit'
+                      : '';
+    if (said !== gripSaid) {
+      gripSaid = said;
+      gripText.textContent = said;
+    }
+    gripText.style.color = flash === 'fumble' ? '#ff8a7a' : flash === 'perfect' || pieces.over === 'perfect' ? '#ffd23f' : up && !raising ? '#ffd23f' : pieces.over === 'crooked' ? '#ffb86b' : '#b9ffc8';
   };
 
   /** Mode badge and stamina bar: what the kaiju is doing, and how long it can keep it up. */
@@ -142,19 +171,13 @@ async function boot(): Promise<void> {
   const modeFill = modeBar.querySelector('i')!;
   const drawMode = () => {
     if (!kaiju) return;
-    // The nose takes over the bar when a sneeze is brewing or the breath is being held.
-    if (nose && (nose.tickle > 0.25 || nose.holding || nose.windup > 0 || nose.breath < 0.999)) {
+    // The nose takes over the bar when a sneeze is brewing: there is no stopping it, only aiming it.
+    if (nose && (nose.tickle > 0.4 || nose.windup > 0)) {
       modeBar.style.display = 'flex';
       (modeFill.parentElement as HTMLElement).style.visibility = 'visible';
-      if (nose.holding || (nose.breath < 0.999 && nose.tickle <= 0.25)) {
-        modeLabel.textContent = nose.holding ? 'HOLDING BREATH' : 'catching breath';
-        modeFill.style.width = `${Math.round(nose.breath * 100)}%`;
-        modeFill.style.background = nose.breath < 0.3 ? '#ff5544' : '#8fd3ff';
-      } else {
-        modeLabel.textContent = nose.windup > 0 ? 'AH… AH…' : 'dust in the nose  (hold F to hold your breath)';
-        modeFill.style.width = `${Math.round(nose.tickle * 100)}%`;
-        modeFill.style.background = nose.tickle > 0.75 ? '#ff5544' : '#ffd23f';
-      }
+      modeLabel.textContent = nose.windup > 0 ? 'AH… AH…   point it somewhere harmless!' : 'dust in the nose';
+      modeFill.style.width = `${Math.round(nose.tickle * 100)}%`;
+      modeFill.style.background = nose.tickle > 0.75 ? '#ff5544' : '#ffd23f';
       return;
     }
     const tiring = kaiju.mode === 'tiptoe' || kaiju.toeMeter < 0.999;
@@ -377,10 +400,10 @@ async function boot(): Promise<void> {
   });
 
   document.getElementById('help')!.textContent = [
-    'W/A/S/D move   Shift: tiptoe   C: crawl (at a run, in Wild style: slide)   Space: leap (Wild style)   F: hold breath   V: bow',
-    '1 / 2 / 3: movement style (Lumbering, Steady, Wild)   X: steer by the screen, or like a tank',
-    '4: Runner, a third-person animal: the mouse turns the view (click or Tab to capture it, Esc or Tab to free it), W A S D run that way on the screen, Shift sprints, Space jumps (hold for height), C crouches; C on the move slides',
-    'CLICK (or E) by a marked piece: take hold; click again over its marker to put it back. C while holding plants your feet.',
+    'The Runner (key 4, the default): the mouse turns the view (click or Tab to capture it, Esc or Tab to free it), W A S D run that way on the screen, Shift sprints, Space jumps (hold for height), C crouches; C on the move slides   V: bow',
+    '1 / 2 / 3: the balancing styles (Lumbering, Steady, Wild): W/A/S/D move   Shift: tiptoe   C: crawl   X: steer by the screen, or like a tank',
+    'CLICK (or E) by a marked piece: take hold; click again over its marker to put it back. When it slips, a bar comes up: SPACE as the marker crosses the green.',
+    'C while holding plants your feet: a wider green, and the mouse turns you on the spot to line it up.',
     'blocked road: shove, kick, tail-sweep or sneeze the rubble off it.      going over? steer into the fall to save it',
     'mouse drag: look around   wheel: zoom   double-click: reset view   Q/Z: swing   T: time of day',
     'N: note for Claude   M: sound   B: throw ball   \\: free camera   `: tuning and feedback panel   H: hide this',

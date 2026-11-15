@@ -213,6 +213,17 @@ export function skybridgeFloor(t: Tuning): number {
   return Math.max(2, Math.ceil((crawlTop + 2.5) / t.city.floorHeight));
 }
 
+/**
+ * The tallest stump (in floors) a tower top can be set back on: no higher than the kaiju's
+ * hands, or the top cannot be carried over it. (Stumps were five floors whatever the kaiju's
+ * size; at the size it now ships at, its hands are three and a half floors up, and one job in
+ * the first city could not be finished.)
+ */
+export function reachFloors(t: Tuning): number {
+  const hands = t.kaiju.legLength + t.kaiju.bodyRadius + t.kaiju.bodyHalfHeight + t.carry.handHeight;
+  return Math.max(1, Math.min(5, Math.floor(hands / t.city.floorHeight)));
+}
+
 /** A bus, stranded at (x, y, z) and wanted on the road at (toX, toZ). It is modelled lying along z. */
 export function busJob(x: number, y: number, z: number, yaw: number, toX: number, toZ: number, color: number): JobSpec {
   const boxes: PieceBox[] = [
@@ -258,8 +269,9 @@ export function addRubble(sweep: SweepSpec, props: PropSpec[], rng: Rng): void {
 
 /**
  * @param bridgeFloor the floor skybridges hang at: just above a crawling kaiju's back (see `skybridgeFloor`)
+ * @param stumpFloors the tallest stump a tower top goes back on (see `reachFloors`)
  */
-export function generateCity(cfg: Tuning['city'], bridgeFloor = 5): CityLayout {
+export function generateCity(cfg: Tuning['city'], bridgeFloor = 5, stumpFloors = 5): CityLayout {
   const rng = new Rng(cfg.seed);
   const n = Math.max(1, Math.round(cfg.blocks));
   const perimeter = cfg.avenueWidth;
@@ -465,7 +477,7 @@ export function generateCity(cfg: Tuning['city'], bridgeFloor = 5): CityLayout {
     crossing.taken = true;
     const pieceFloors = 3;
     // The stump is kept low enough for the piece to be carried over it.
-    const stump = Math.min(t.floors - pieceFloors, 5);
+    const stump = Math.max(1, Math.min(t.floors - pieceFloors, stumpFloors));
     t.floors = stump;
     // Plain blockwork, so the top that comes off matches the stump it goes back on.
     b.style = 'grid';

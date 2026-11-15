@@ -42,7 +42,7 @@ export function snapshot(sim: Sim): Record<string, unknown> {
         }
       : null,
     holding: held
-      ? { job: held.job.name ?? held.job.kind, state: held.state, marker: r(pieces!.marker, 2), prompt: pieces!.prompt, grip: r(pieces!.grip, 2), raised: r(pieces!.progress, 2) }
+      ? { job: held.job.name ?? held.job.kind, state: held.state, grip: r(pieces!.grip, 2), slipping: pieces!.slipping, bar: r(pieces!.bar, 2), zone: r(pieces!.zone, 2), over: pieces!.over, raised: r(pieces!.progress, 2) }
       : null,
     jobs: approval
       ? { done: approval.board.done, total: approval.board.total, list: approval.board.list().map((j) => `${j.done ? (j.sloppy ? '~' : 'x') : j.active ? '>' : ' '} ${j.name}: ${j.note}`) }

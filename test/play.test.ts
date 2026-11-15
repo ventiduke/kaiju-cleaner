@@ -66,7 +66,10 @@ describe('named states', () => {
       if (name === 'bowing') expect(g.kaiju.bow).toBe(1);
       if (name === 'job-nearby') expect(pieces.nearest()?.job.kind).toBe('top');
       if (name === 'carrying') expect(pieces.held?.state).toBe('held');
-      if (name === 'carrying-prompt') expect(pieces.prompt).not.toBe(0);
+      if (name === 'carrying-slipping') {
+        expect(pieces.slipping).toBe(true);
+        expect(pieces.held?.state).toBe('held');
+      }
       if (name === 'raising') expect(pieces.progress).toBeGreaterThanOrEqual(0.5);
       if (name === 'bus-nearby') expect(pieces.nearest()?.job.kind).toBe('bus');
       if (name === 'geyser') expect((g.sim.parts.mains as WaterMains).bursts).toBe(1);

@@ -29,6 +29,8 @@ export const FEEDBACK: { [E in keyof SimEvents]?: { tier: Tier; scale?: number; 
   chunkBreak: { tier: 'small', scale: 0.8 },
   citizenSquish: { tier: 'small', scale: 0.5 },
   pieceGrab: { tier: 'small' },
+  gripCatch: { tier: 'small', scale: 1.5 },
+  gripFumble: { tier: 'small', scale: 2.5 },
   kaijuJump: { tier: 'small' },
   kaijuSlide: { tier: 'small', scale: 2.5 },
   kaijuSkid: { tier: 'small', scale: 1.2 },

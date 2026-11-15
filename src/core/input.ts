@@ -41,14 +41,7 @@ export class InputManager {
   private tapped = new Set<string>();
   /** Clicks waiting to be passed on as a press of the grab button. */
   private clicks = 0;
-  private lastY: number | null = null;
-  private atEdge = 0;
   private wasGrab = false;
-  /**
-   * Balance shoves not yet passed on, in gauge half-lengths: moving the mouse up is positive,
-   * down negative (as are I and K). Only movement counts, never where the pointer is.
-   */
-  private balance = 0;
 
   /**
    * @param view when set and it returns headings, the direction keys steer by the screen
@@ -84,16 +77,6 @@ export class InputManager {
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
-    window.addEventListener('pointermove', (e) => {
-      const dy = this.lastY === null ? 0 : e.clientY - this.lastY;
-      this.lastY = e.clientY;
-      // With the pointer pinned to the top or bottom of the screen, keep going that way.
-      this.atEdge = e.clientY <= 2 ? 1 : e.clientY >= window.innerHeight - 3 ? -1 : 0;
-      // A drag is looking around, not balancing.
-      if (e.buttons !== 0) return;
-      // A tenth of the screen's height of travel takes the marker from the end of the gauge to the middle.
-      this.balance -= dy / (window.innerHeight * 0.1);
-    });
   }
 
   /** The mouse (or a drag) turning the runner's view: `dx` in pixels, right is positive. */
@@ -123,13 +106,10 @@ export class InputManager {
       let tiptoe = false;
       let crouch = false;
       let grab = false;
-      let breath = false;
       let bow = false;
       let jump = false;
       let strafe = 0;
       let sprint = false;
-      const balanceX = 0;
-      let balanceZ = 0;
       if (i === 0) {
         const fwd = this.key('KeyW', 'ArrowUp') - this.key('KeyS', 'ArrowDown');
         const side = this.key('KeyA', 'ArrowLeft') - this.key('KeyD', 'ArrowRight');
@@ -153,7 +133,6 @@ export class InputManager {
         tiptoe = !this.runner() && this.key('ShiftLeft', 'ShiftRight') > 0;
         crouch = this.runner() ? this.crouched : this.key('KeyC') > 0;
         jump = this.key('Space') > 0;
-        breath = this.key('KeyF') > 0;
         bow = this.key('KeyV') > 0;
         // One tap of E, or one click, is one press; the game takes hold or lets go on each.
         grab = this.key('KeyE') > 0;
@@ -162,7 +141,6 @@ export class InputManager {
           this.clicks--;
         }
         this.wasGrab = grab;
-        this.balance += (this.key('KeyI') - this.key('KeyK') + this.atEdge) * 2.5 * FIXED_DT;
       }
       const pad = pads[i];
       if (pad) {
@@ -185,10 +163,7 @@ export class InputManager {
         camYaw += axis(pad.axes[2] ?? 0);
         tiptoe ||= (pad.buttons[7]?.value ?? 0) > 0.4;
         crouch ||= !!pad.buttons[1]?.pressed || (pad.buttons[6]?.value ?? 0) > 0.4;
-        breath ||= !!pad.buttons[3]?.pressed;
         grab ||= !!pad.buttons[2]?.pressed || !!pad.buttons[5]?.pressed;
-        // The right stick, pushed up or down, balances a load directly.
-        if (i === 0) this.balance -= axis(pad.axes[3] ?? 0) * 2.5 * FIXED_DT;
         bow ||= !!pad.buttons[4]?.pressed;
       }
       if (i === 0 && this.runner() && this.look !== null) {
@@ -201,26 +176,18 @@ export class InputManager {
         const toward = Math.min(1, 1 + Math.cos(Math.atan2(strafe, thrust)));
         if ((thrust || strafe) && this.sinceLook > 0.4 && Math.abs(off) < 2.6) this.look += Math.sin(off) * this.follow() * toward * FIXED_DT;
       }
-      if (i === 0) {
-        // Passed on in hundredths, keeping the remainder, so that a recorded session replays exactly.
-        balanceZ = Math.round(Math.max(-1, Math.min(1, this.balance)) * 100) / 100;
-        this.balance = Math.abs(this.balance) > 1 ? 0 : this.balance - balanceZ;
-      }
       p.thrust = Math.max(-1, Math.min(1, thrust));
       p.turn = Math.max(-1, Math.min(1, turn));
       p.camYaw = Math.max(-1, Math.min(1, camYaw));
       p.tiptoe = tiptoe;
       p.crouch = crouch;
       p.grab = grab;
-      p.breath = breath;
       p.bow = bow;
       p.jump = jump;
       p.strafe = Math.max(-1, Math.min(1, strafe));
       p.sprint = sprint;
       // (To a thousandth of a radian, which is what a recorded session keeps.)
       if (i === 0) p.look = Math.round((this.look ?? 0) * 1000) / 1000;
-      p.balanceX = balanceX;
-      p.balanceZ = balanceZ;
     }
     this.tapped.clear();
   }

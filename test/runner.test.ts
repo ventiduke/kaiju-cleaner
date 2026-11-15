@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CourseBot, runCourse } from '../src/bot/coursebot';
 import type { Course } from '../src/city/course';
+import type { Pieces } from '../src/city/pieces';
 import { runSpec } from '../src/scenes/course';
 import { STYLES } from '../src/core/tuning';
 import defaults from '../src/tuning/defaults.json';
 import { makeGame } from './helpers';
 
 /** A game with the runner's body (the fourth style). */
-const runner = (scene: 'plane' | 'course' | 'run' = 'plane', extra: Record<string, unknown> = {}) => makeGame(scene, { move: STYLES[3].move, ...extra });
+const runner = (scene: 'plane' | 'course' | 'run' | 'yard' = 'plane', extra: Record<string, unknown> = {}) => makeGame(scene, { move: STYLES[3].move, ...extra });
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /** Up to speed, straight ahead: the start of most of these. */
@@ -368,6 +369,77 @@ describe('the runner', () => {
     // The tail is its own again: still behind it, and not flung anywhere.
     const tip = k.tail.tip();
     expect(Math.hypot(tip.x - k.position().x, tip.z - k.position().z)).toBeLessThan(g.sim.tuning.tail.length * 1.2);
+  });
+
+  it('with its hands full: no jumping or crawling; Space is for the grip bar, and C plants its feet and aims by the view', async () => {
+    const g = await runner('yard', { city: { propDensity: 0 } });
+    const pieces = g.sim.parts.pieces as Pieces;
+    const k = g.kaiju;
+    const inp = g.sim.players[0];
+    const piece = pieces.pieces[0];
+    const reach = g.sim.tuning.kaiju.bodyRadius + g.sim.tuning.carry.holdForward;
+    // Walk up to the tower top lying in the yard, and take hold of it.
+    const to = piece.job.start;
+    const walked = g.sim.stepUntil(
+      () => Math.hypot(to.x - k.position().x, to.z - k.position().z) < reach + 1 && k.speed < 1,
+      30,
+      () => {
+        const d = Math.hypot(to.x - k.position().x, to.z - k.position().z);
+        inp.look = Math.atan2(to.x - k.position().x, to.z - k.position().z);
+        inp.thrust = d > reach + 0.5 ? Math.min(1, Math.max(0.15, (d - reach) / 20)) : 0;
+      },
+    );
+    expect(walked.met).toBe(true);
+    inp.thrust = 0;
+    expect(pieces.nearest()).toBe(piece);
+    inp.grab = true;
+    g.sim.step();
+    inp.grab = false;
+    g.sim.run(45);
+    expect(pieces.held).toBe(piece);
+    expect(k.carrying).toBe(1);
+    // Space does not jump...
+    inp.jump = true;
+    g.sim.run(3);
+    inp.jump = false;
+    expect(k.airborne).toBe(false);
+    expect(k.jumps).toBe(0);
+    // ...it runs slower, and cannot sprint or slide.
+    inp.look = 0;
+    inp.thrust = 1;
+    inp.sprint = true;
+    g.sim.run(120);
+    expect(k.speed).toBeLessThan(g.sim.tuning.runner.speed * g.sim.tuning.carry.speed * 1.05);
+    expect(k.speed).toBeGreaterThan(g.sim.tuning.runner.speed * g.sim.tuning.carry.speed * 0.9);
+    // C plants its feet: it stays upright (no crawl), stops, and turns on the spot to face where the view points.
+    inp.sprint = false;
+    inp.crouch = true;
+    g.sim.run(60);
+    expect(k.slides).toBe(0);
+    expect(k.planted).toBe(true);
+    expect(k.mode).toBe('normal');
+    expect(k.crawl).toBeLessThan(0.05);
+    expect(k.speed).toBeLessThan(1);
+    const at = k.position().clone();
+    inp.look = 1.2;
+    g.sim.run(60);
+    expect(Math.abs(wrap(k.yaw - 1.2))).toBeLessThan(0.05);
+    expect(k.position().distanceTo(at)).toBeLessThan(1.5);
+    // The load is squared to the kaiju, out in front of it.
+    const p = piece.body.translation();
+    expect(Math.hypot(p.x - (k.position().x + k.forward.x * reach), p.z - (k.position().z + k.forward.z * reach))).toBeLessThan(1);
+    // When it slips, Space on the bar catches it.
+    inp.crouch = false;
+    pieces.grip = g.sim.tuning.carry.slipAt + 0.01;
+    g.sim.stepUntil(() => pieces.slipping, 5);
+    g.sim.stepUntil(() => pieces.inZone(0.3), 5);
+    inp.jump = true;
+    g.sim.step();
+    inp.jump = false;
+    expect(pieces.slipping).toBe(false);
+    expect(pieces.catches).toBe(1);
+    expect(k.jumps).toBe(0);
+    expect(pieces.held).toBe(piece);
   });
 
   it('is the same run every time', async () => {

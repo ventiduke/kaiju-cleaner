@@ -1,7 +1,6 @@
 import { Face, facadeMaterial } from '../gfx/facade';
 import type { Look } from '../gfx/look';
 import * as THREE from 'three';
-import { Rng } from '../core/rng';
 import { ALL_GROUPS, FIXED_DT, Group, groups, type RigidBody } from '../core/physics';
 import type { Kaiju } from '../kaiju/kaiju';
 import type { Sim, System, Tracked } from '../sim';
@@ -9,7 +8,8 @@ import type { JobSpec } from './cityGen';
 import type { ChunkField } from './destruction';
 
 export type PieceState = 'loose' | 'lifting' | 'held' | 'raising' | 'placed';
-export type Fit = 'straight' | 'crooked';
+/** How well a piece went back: dead on its mark with a firm hold, well enough, or skew. */
+export type Fit = 'perfect' | 'straight' | 'crooked';
 
 export interface Piece {
   job: JobSpec;
@@ -39,8 +39,10 @@ const q2 = new THREE.Quaternion();
 /** While loose: everything except feet. While carried: only things it can shove without pinching anyone. */
 const LOOSE_GROUPS = groups(Group.PIECE, ALL_GROUPS & ~Group.FOOT);
 const HELD_GROUPS = groups(Group.PIECE, Group.PROP | Group.BALL);
-/** How far the load visibly leans when the marker is at the end of the gauge (rad). */
+/** How far a load that is all but out of the hands has tipped (rad). */
 const MAX_LEAN = 0.4;
+/** The middle share of the zone that counts as dead centre. */
+const PERFECT = 0.35;
 /** Seconds after a piece is set in place during which a knock will not dislodge it. */
 const PLACED_GRACE = 4;
 
@@ -66,10 +68,12 @@ function startPose(job: JobSpec, pos: THREE.Vector3, rot: THREE.Quaternion): voi
  * there. A toppled one is stood back up where it lies, the kaiju rooted to the spot and
  * heaving.
  *
- * Either way there is one thing to mind, shown on a gauge at the side of the screen: a
- * marker that drifts up and down, shoved by the kaiju's own starts, stops and turns.
- * Move the mouse up or down to bring it back to the middle. While it is outside the
- * middle band the grip burns down, and when the grip is gone the piece slips.
+ * Either way there is one thing to mind: its grip. A load works loose, faster the more it is
+ * thrown about, and when it starts to slip a bar comes up beside it with a marker running
+ * back and forth. A press of the jump key as the marker crosses the zone in the middle takes
+ * a firm hold again; a press at the wrong moment is a fumble; no press at all and it is on
+ * the ground in a few seconds. Standing a toppled piece up is the same bar used the other
+ * way: every press in the zone is a heave.
  */
 export class Pieces implements System {
   readonly pieces: Piece[] = [];
@@ -78,23 +82,36 @@ export class Pieces implements System {
   placed = 0;
   crooked = 0;
   drops = 0;
-  /** Where the marker is on the gauge: -1 bottom, 0 middle, 1 top. */
-  marker = 0;
-  /** Which way to move the mouse to fix it: 1 up, -1 down, 0 it is fine. */
-  prompt = 0;
+  perfect = 0;
   /** How much grip is left (1 firm, 0 gone), and how far a toppled piece has been raised (0..1). */
   grip = 1;
   progress = 0;
+  /** True while the load is slipping and the bar is up (for a piece being stood up, it always is). */
+  slipping = false;
+  /** Where the marker is along the bar (0..1; the zone is centred on 0.5), and half the zone's width right now. */
+  bar = 0;
+  zone = 0.12;
+  /** Presses that found the zone, and those that did not. */
+  catches = 0;
+  fumbles = 0;
+  /** What letting go right now would do: nothing, or set it in crooked, straight or perfect. */
+  over: Fit | null = null;
+  /** The last press on the bar, for whoever draws it: what it was, and the tick it happened on. */
+  lastPress: { kind: 'catch' | 'perfect' | 'fumble'; tick: number } | null = null;
 
-  private sway = 0;
-  /** The kaiju's forward acceleration, smoothed (m/s^2). */
+  /** The kaiju's forward acceleration and rate of turn, smoothed (m/s^2, rad/s). */
   private push = 0;
+  private swing = 0;
   private lastVel = new THREE.Vector3();
-  /** The load's own shifts: how far it is being thrown now, for how long, and when the next comes. */
-  private shift = 0;
-  private shiftFor = 0;
-  private shiftIn = 0;
-  private rng = new Rng(977);
+  private lastYaw = 0;
+  private barTime = 0;
+  private wasJump = false;
+  /** Standing a piece up: heaves landed so far (a dead-centre one counts for more), and how this attempt has gone. */
+  private heaved = 0;
+  private heaveFumbles = 0;
+  private heavePerfects = 0;
+  /** A jolt to the load from a fumble, dying away (rad). */
+  private jolt = 0;
   private liftTime = 0;
   private liftFrom = new THREE.Vector3();
   private liftQuat = new THREE.Quaternion();
@@ -258,11 +275,7 @@ export class Pieces implements System {
   grab(piece: Piece): void {
     if (this.held) return;
     const { R } = this.sim;
-    if (piece.state === 'placed') {
-      this.placed--;
-      if (piece.fit === 'crooked') this.crooked--;
-      piece.fit = null;
-    }
+    if (piece.state === 'placed') this.unplace(piece);
     const p = piece.body.translation();
     const r = piece.body.rotation();
     this.liftFrom.set(p.x, p.y, p.z);
@@ -273,16 +286,32 @@ export class Pieces implements System {
     piece.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
     this.setGroups(piece, HELD_GROUPS);
     this.held = piece;
-    this.sway = 0;
     this.push = 0;
-    this.shift = 0;
-    this.shiftIn = piece.job.kind === 'raise' ? 0.8 : this.sim.tuning.carry.shiftEvery * 0.5;
-    this.marker = 0;
-    this.prompt = 0;
+    this.swing = 0;
     this.grip = 1;
+    this.slipping = false;
+    this.bar = 0;
+    this.barTime = 0;
+    this.heaved = 0;
+    this.heaveFumbles = 0;
+    this.heavePerfects = 0;
+    this.jolt = 0;
+    this.over = null;
+    this.lastPress = null;
+    // (A press already down as it takes hold is not a press on the bar.)
+    this.wasJump = true;
     const v = this.kaiju.body.linvel();
     this.lastVel.set(v.x, 0, v.z);
+    this.lastYaw = this.kaiju.yaw;
     this.sim.emit('pieceGrab', { x: p.x, y: p.y, z: p.z });
+  }
+
+  /** A piece that was in place no longer is: take it off the counts. */
+  private unplace(piece: Piece): void {
+    this.placed--;
+    if (piece.fit === 'crooked') this.crooked--;
+    if (piece.fit === 'perfect') this.perfect--;
+    piece.fit = null;
   }
 
   private setGroups(piece: Piece, g: number): void {
@@ -297,6 +326,9 @@ export class Pieces implements System {
     this.held = null;
     this.kaiju.carrying = 0;
     this.kaiju.planted = false;
+    const firm = !this.slipping;
+    this.slipping = false;
+    this.over = null;
     const carried = piece.state === 'held';
     piece.state = 'loose';
     piece.body.setBodyType(R.RigidBodyType.Dynamic, true);
@@ -313,27 +345,49 @@ export class Pieces implements System {
     const offset = Math.hypot(p.x - s.x, p.z - s.z);
     if (reason === 'let go' && carried && offset < t.snapRadius && p.y > s.y - 2.5) {
       const twist = angleDiff(s.yaw, this.kaiju.yaw, piece.job.symmetry);
-      const steady = this.prompt === 0 && this.grip > 0.5;
-      this.place(piece, offset, twist, offset < t.straightRadius && Math.abs(twist) < 0.22 && steady);
+      this.place(piece, offset, twist, this.fitAt(offset, firm));
       return;
     }
     if (reason === 'slipped') this.drops++;
     this.sim.emit('pieceDrop', { x: p.x, y: p.y, z: p.z });
   }
 
-  /** World-space axis (scaled by how far) the load is leaning about: forward or back, with the marker. */
+  /**
+   * Whether a press on the next step would land in the zone (`share` 1), or within that share
+   * of it (under 0.35 is dead centre). False when the bar is not up. For bots, tests and states:
+   * a player has only eyes and ears.
+   */
+  inZone(share = 1): boolean {
+    if (!this.slipping) return false;
+    const u = ((this.barTime + FIXED_DT) / Math.max(0.1, this.sim.tuning.carry.sweep)) % 2;
+    return Math.abs((u < 1 ? u : 2 - u) - 0.5) <= this.zone * share;
+  }
+
+  /** How well a carried piece would go in, let go this far (m) from its mark: only a firm hold puts it in true. */
+  private fitAt(offset: number, firm: boolean): Fit {
+    const t = this.sim.tuning.carry;
+    return firm && offset < t.perfectRadius ? 'perfect' : firm && offset < t.straightRadius ? 'straight' : 'crooked';
+  }
+
+  /** How far out of the hands the load is (0 firm .. 1 gone), counting a fumble's jolt. */
+  private get slack(): number {
+    const t = this.sim.tuning.carry;
+    return THREE.MathUtils.clamp((this.slipping ? 1 - this.grip / t.slipAt : 0) + this.jolt, 0, 1);
+  }
+
+  /** World-space axis (scaled by how far) the load is leaning about: it tips away from the kaiju as it goes. */
   private leanAxis(target: THREE.Vector3): THREE.Vector3 {
-    // Marker high means it is tipping away from the kaiju; low, back toward it.
-    c.copy(this.kaiju.forward).multiplyScalar(this.marker);
+    c.copy(this.kaiju.forward).multiplyScalar(this.slack);
     // Leaning toward a direction v is a turn about UP x v.
     return target.crossVectors(UP, c);
   }
 
   /** Sets a piece into its place. A sloppy job still counts, but it sits visibly skew. */
-  private place(piece: Piece, offset: number, twist: number, straight: boolean): void {
+  private place(piece: Piece, offset: number, twist: number, fit: Fit): void {
     const { R } = this.sim;
     const s = piece.job.socket;
     const p = piece.body.translation();
+    const straight = fit !== 'crooked';
     if (straight) {
       a.set(s.x, s.y, s.z);
       q.setFromAxisAngle(UP, s.yaw);
@@ -342,7 +396,7 @@ export class Pieces implements System {
       const keep = 0.4;
       a.set(s.x + (p.x - s.x) * keep, s.y, s.z + (p.z - s.z) * keep);
       q.setFromAxisAngle(UP, s.yaw + twist * 0.8);
-      const lean = THREE.MathUtils.clamp(0.07 + offset * 0.018 + Math.abs(this.marker) * 0.06, 0.07, 0.17);
+      const lean = THREE.MathUtils.clamp(0.07 + offset * 0.018, 0.07, 0.17);
       b.set(p.z - s.z, 0, -(p.x - s.x));
       if (b.lengthSq() < 0.01) b.set(this.kaiju.left.x, 0, this.kaiju.left.z);
       q.premultiply(q2.setFromAxisAngle(b.normalize(), lean));
@@ -354,9 +408,10 @@ export class Pieces implements System {
     this.setGroups(piece, LOOSE_GROUPS);
     piece.state = 'placed';
     piece.placedAt = this.sim.time;
-    piece.fit = straight ? 'straight' : 'crooked';
+    piece.fit = fit;
     this.placed++;
-    this.sim.emit('piecePlace', { x: a.x, y: a.y, z: a.z, straight });
+    if (fit === 'perfect') this.perfect++;
+    this.sim.emit('piecePlace', { x: a.x, y: a.y, z: a.z, straight, perfect: fit === 'perfect' });
   }
 
   /** True once every piece is back where it belongs. */
@@ -373,9 +428,7 @@ export class Pieces implements System {
     if (force * FIXED_DT < piece.mass * this.sim.tuning.destruction.breakSpeed * 2.5) return;
     piece.body.setBodyType(this.sim.R.RigidBodyType.Dynamic, true);
     piece.state = 'loose';
-    this.placed--;
-    if (piece.fit === 'crooked') this.crooked--;
-    piece.fit = null;
+    this.unplace(piece);
     const p = piece.body.translation();
     this.sim.emit('pieceDrop', { x: p.x, y: p.y, z: p.z });
   }
@@ -392,7 +445,7 @@ export class Pieces implements System {
       const fall = power * 0.5 * (1 - dist / range);
       piece.body.setLinvel({ x: dir.x * fall, y: fall * 0.3, z: dir.z * fall }, true);
     }
-    if (this.held) this.grip -= 0.5;
+    if (this.held) this.grip -= 0.4;
   }
 
   preStep(dt: number): void {
@@ -446,49 +499,67 @@ export class Pieces implements System {
       return;
     }
 
-    // --- The balance gauge ---
-    // What throws the marker out: the kaiju speeding up (down the gauge), braking (up), and
-    // swinging round (up for a left turn, down for a right). Gentle driving barely moves it.
-    const kt = this.sim.tuning.kaiju;
+    // --- Keeping hold ---
+    // What works a load loose: time, and being thrown about (hard starts and stops, sharp turns).
     const v = k.body.linvel();
     const fwd = ((v.x - this.lastVel.x) * k.forward.x + (v.z - this.lastVel.z) * k.forward.z) / dt;
     this.lastVel.set(v.x, 0, v.z);
+    const turned = Math.atan2(Math.sin(k.yaw - this.lastYaw), Math.cos(k.yaw - this.lastYaw)) / dt;
+    this.lastYaw = k.yaw;
     // Smoothed, so that it is the manoeuvre that counts and not each footstep.
-    this.push += (fwd - this.push) * Math.min(1, dt / 0.35);
-    const accel = THREE.MathUtils.clamp(this.push / (kt.acceleration * t.accel), -1.3, 1.3);
-    const swing = THREE.MathUtils.clamp(k.body.angvel().y / (kt.maxTurnRate * t.turn), -1.3, 1.3);
-    // And now and then the load shifts by itself. Standing a piece up, that is all there is,
-    // so it comes more often; with feet planted for a carry, it is much smaller.
-    this.clock += dt;
-    this.shiftIn -= dt;
-    if (this.shiftIn <= 0) {
-      const raising = piece.state === 'raising';
-      this.shift = (this.rng.chance(0.5) ? 1 : -1) * t.wander * (0.8 + 0.4 * this.rng.next()) * (planted && !raising ? 0.35 : 1);
-      this.shiftFor = 1.3;
-      this.shiftIn = (raising ? 0.3 : 1) * t.shiftEvery * (0.6 + 0.8 * this.rng.next());
-    }
-    this.shiftFor -= dt;
-    if (this.shiftFor <= 0) this.shift = 0;
-    const target = THREE.MathUtils.clamp(t.sway * (swing - accel) + this.shift, -1.2, 1.2);
-    this.sway += (target - this.sway) * Math.min(1, dt / 0.6);
-    // The player's shove moves the marker itself: back toward the band from outside it, or
-    // about inside it, but never out the far side. Over-correcting is not a thing.
-    const shove = input.balanceZ;
-    const limit = t.tolerance * 0.7;
-    if (shove > 0) this.sway = Math.min(this.sway + shove, Math.max(this.sway, limit));
-    else if (shove < 0) this.sway = Math.max(this.sway + shove, Math.min(this.sway, -limit));
-    this.marker = THREE.MathUtils.clamp(this.sway, -1, 1);
-    const out = Math.abs(this.marker) - t.tolerance;
-    // Marker too low: move the mouse up. Too high: down.
-    const prompt = out > 0 ? -Math.sign(this.marker) : 0;
-    if (prompt && prompt !== this.prompt) this.sim.emit('gaugePrompt', { x: anchorX, y: anchorY, z: anchorZ, up: prompt > 0 });
-    this.prompt = prompt;
-    if (out > 0) this.grip -= dt / t.slipTime;
-    else this.grip = Math.min(1, this.grip + dt / t.gripRecover);
+    this.push += (fwd - this.push) * Math.min(1, dt / 0.25);
+    this.swing += (turned - this.swing) * Math.min(1, dt / 0.25);
+    const speed = Math.hypot(v.x, v.z);
+    // (With its feet planted nothing is thrown about, however the body sways.)
+    const rough = planted ? 0 : Math.min(2, Math.abs(this.push) / 45 + (Math.abs(this.swing) * speed) / 45);
+    const raising = piece.state === 'raising';
+    const press = input.jump && !this.wasJump;
+    this.wasJump = input.jump;
+    this.jolt = Math.max(0, this.jolt - dt * 1.5);
 
-    if (piece.state === 'raising') {
-      // Standing it up: steady heaving while the marker is in the band; it sags back while it isn't.
-      this.progress = THREE.MathUtils.clamp(this.progress + (out > 0 ? -0.35 : 1) * (dt / t.raiseTime), 0, 1);
+    // The bar: a marker running end to end and back, and a zone in the middle that is wider the stiller it stands.
+    const wasLeft = this.bar < 0.5;
+    this.barTime += dt;
+    const u = (this.barTime / Math.max(0.1, t.sweep)) % 2;
+    this.bar = u < 1 ? u : 2 - u;
+    const still = planted ? 1 : 1 - THREE.MathUtils.clamp(speed / 12, 0, 1);
+    this.zone = (t.zone / 2) * (1 + (t.zoneStill - 1) * still);
+    const up = this.slipping || raising;
+    if (up && wasLeft !== this.bar < 0.5) this.sim.emit('gripTick', { x: anchorX, y: anchorY, z: anchorZ });
+    /** A press on the bar: 0 none, 1 in the zone, 2 dead centre, -1 a fumble. */
+    let hit = 0;
+    if (press && up) {
+      const off = Math.abs(this.bar - 0.5);
+      hit = off <= this.zone * PERFECT ? 2 : off <= this.zone ? 1 : -1;
+      this.lastPress = { kind: hit === 2 ? 'perfect' : hit === 1 ? 'catch' : 'fumble', tick: this.sim.tick };
+      if (hit > 0) {
+        this.catches++;
+        this.sim.emit('gripCatch', { x: anchorX, y: anchorY, z: anchorZ, perfect: hit === 2, heave: raising });
+      } else {
+        this.fumbles++;
+        this.jolt = 0.35;
+        this.sim.emit('gripFumble', { x: anchorX, y: anchorY, z: anchorZ });
+      }
+    }
+
+    if (raising) {
+      // Standing it up: every press in the zone is a heave, and a fumble lets it sag. The grip
+      // only lasts so long, so it cannot be left half way.
+      this.slipping = true;
+      this.grip -= dt / t.heaveSeconds;
+      if (hit > 0) {
+        this.heaved += hit === 2 ? 1.5 : 1;
+        if (hit === 2) this.heavePerfects++;
+        this.grip = Math.min(1, this.grip + 0.1);
+      } else if (hit < 0) {
+        // It lurches back at once, and there is that much more to do.
+        this.heaved = Math.max(0, this.heaved - 0.5);
+        this.progress = Math.max(0, this.progress - 0.3 / Math.max(1, t.heaves));
+        this.heaveFumbles++;
+        this.grip -= t.fumble * 2;
+      }
+      const goal = THREE.MathUtils.clamp(this.heaved / Math.max(1, t.heaves), 0, 1);
+      this.progress = THREE.MathUtils.clamp(this.progress + THREE.MathUtils.clamp(goal - this.progress, -dt * 0.6, dt * 1.1), 0, 1);
       if (this.grip <= 0) {
         this.release('slipped');
         return;
@@ -500,22 +571,38 @@ export class Pieces implements System {
       a.y += Math.sin(Math.PI * s) * 0.21 * piece.bounds.hx;
       q.setFromAxisAngle(UP, sock.yaw);
       q2.copy(this.liftQuat).slerp(q, s);
-      // It shudders as the grip goes.
-      if (out > 0) q2.multiply(q.setFromAxisAngle(UP, Math.sin(this.clock * 31) * 0.015));
+      // It shudders after a fumble.
+      if (this.jolt > 0) q2.multiply(q.setFromAxisAngle(UP, Math.sin(this.clock * 31) * 0.05 * this.jolt));
+      this.clock += dt;
       piece.body.setNextKinematicTranslation(a);
       piece.body.setNextKinematicRotation(q2);
       piece.tilt = (1 - s) * Math.abs(piece.job.start.roll ?? 0);
-      if (this.progress >= 1) {
+      if (this.progress >= 0.999) {
         this.held = null;
+        this.slipping = false;
         k.carrying = 0;
         k.planted = false;
         piece.body.setTranslation(a, true);
-        this.place(piece, 0, 0, this.grip > 0.55);
+        // Clean heaves, most of them dead centre, could not be bettered; a couple of fumbles and it stands skew.
+        const fit: Fit = this.heaveFumbles === 0 && this.heavePerfects * 2 >= t.heaves ? 'perfect' : this.heaveFumbles >= 2 ? 'crooked' : 'straight';
+        this.place(piece, 0, 0, fit);
       }
       return;
     }
 
-    // Carried through a building, it takes the building with it, and jolts the grip.
+    if (this.slipping) {
+      // Going: catch it on the bar, or it is on the ground in a few seconds.
+      if (hit > 0) {
+        this.slipping = false;
+        this.grip = hit === 2 ? 1.25 : 1;
+      } else {
+        this.grip -= (t.slipAt / t.slipTime) * dt + (hit < 0 ? t.fumble : 0);
+      }
+    } else {
+      this.grip -= dt * (((1 - t.slipAt) / t.holdSeconds) * (planted ? 0.3 : 1) + 0.4 * t.rough * rough);
+    }
+
+    // Carried through a building, it takes the building with it, and that jolts the grip.
     if (this.chunks) {
       const bd = piece.bounds;
       const shape = new this.sim.R.Cuboid(bd.hx, bd.hy, bd.hz);
@@ -529,12 +616,28 @@ export class Pieces implements System {
       this.release('slipped');
       return;
     }
+    if (!this.slipping && this.grip <= t.slipAt) {
+      this.slipping = true;
+      // (The marker starts from one end, so the first crossing is always a moment away.)
+      this.barTime = 0;
+      this.bar = 0;
+      this.sim.emit('gripSlip', { x: anchorX, y: anchorY, z: anchorZ });
+    }
 
-    // Show it: the load tips forward or back with the marker, more as the grip goes.
+    // Near where it belongs, it squares itself up to the place: which way the kaiju happens to
+    // be facing is not the test. What letting go would do now is kept for the screen to say.
+    const sock = piece.job.socket;
+    const offset = Math.hypot(anchorX - sock.x, anchorZ - sock.z);
+    const reachable = anchorY > sock.y - 2.5;
+    this.over = offset < t.snapRadius && reachable ? this.fitAt(offset, !this.slipping) : null;
+    const near = 1 - THREE.MathUtils.smoothstep(offset, t.snapRadius * 0.6, t.snapRadius * 1.8);
+    const yaw = k.yaw + angleDiff(k.yaw, sock.yaw, piece.job.symmetry) * near;
+
+    // Show it: the load tips away as the grip goes, and lurches at a fumble.
     this.leanAxis(a);
     const lean = Math.min(1, a.length());
-    piece.tilt = lean * MAX_LEAN * (0.6 + 0.4 * (1 - this.grip));
-    q.setFromAxisAngle(UP, k.yaw);
+    piece.tilt = lean * MAX_LEAN;
+    q.setFromAxisAngle(UP, yaw);
     if (lean > 1e-4) q.premultiply(q2.setFromAxisAngle(a.normalize(), piece.tilt));
     piece.body.setNextKinematicTranslation({ x: anchorX, y: anchorY, z: anchorZ });
     piece.body.setNextKinematicRotation(q);

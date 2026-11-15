@@ -114,7 +114,7 @@ export const STATES: Record<string, Setup> = {
     const p = piece.body.translation();
     s.handsOver(p.x, p.z + 4, Math.PI);
   },
-  /** A tower top up on the hands, gauge quiet. */
+  /** A tower top up on the hands, held firm. */
   carrying: (s) => {
     const pieces = s.sim.parts.pieces as Pieces;
     const piece = pieceOf(s, 'top');
@@ -123,13 +123,14 @@ export const STATES: Record<string, Setup> = {
     pieces.grab(piece);
     s.run(0.9);
   },
-  /** Carrying, with the gauge thrown out and the prompt showing. */
-  'carrying-prompt': (s) => {
+  /** Carrying, with the load slipping and the bar up. */
+  'carrying-slipping': (s) => {
     STATES.carrying(s);
     const pieces = s.sim.parts.pieces as Pieces;
-    s.sim.players[0].thrust = 1;
-    for (let i = 0; i < 240 && pieces.prompt === 0 && pieces.held; i++) s.sim.step();
-    s.sim.players[0].thrust = 0;
+    // (Rather than walk about for ten seconds waiting for it to work loose.)
+    pieces.grip = s.sim.tuning.carry.slipAt + 0.02;
+    for (let i = 0; i < 240 && !pieces.slipping && pieces.held; i++) s.sim.step();
+    s.run(0.25);
   },
   /** Half way through standing the clock tower up. */
   raising: (s) => {
@@ -138,11 +139,12 @@ export const STATES: Record<string, Setup> = {
     const k = piece.job.socket;
     s.handsOver(k.x + 12, k.z, Math.PI);
     pieces.grab(piece);
-    for (let i = 0; i < 600 && pieces.progress < 0.5 && pieces.held; i++) {
-      s.sim.players[0].balanceZ = pieces.prompt * 0.1;
+    for (let i = 0; i < 900 && pieces.progress < 0.5 && pieces.held; i++) {
+      // A heave each time the marker is in the zone.
+      s.sim.players[0].jump = pieces.inZone(0.6);
       s.sim.step();
     }
-    s.sim.players[0].balanceZ = 0;
+    s.sim.players[0].jump = false;
   },
   /** Standing by the bus on its roof. */
   'bus-nearby': (s) => {

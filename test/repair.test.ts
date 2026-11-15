@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import type { Pieces } from '../src/city/pieces';
 import { ChunkState } from '../src/city/destruction';
+import { STYLES } from '../src/core/tuning';
 import { makeGame, type Game } from './helpers';
 
 interface Yard extends Game {
@@ -53,12 +54,12 @@ function pickUp(g: Yard): void {
   g.sim.run(45);
 }
 
-/** A player who does what the prompt says: a shove of the mouse the way the arrow points. */
-function mind(g: Yard): void {
-  g.sim.players[0].balanceZ = g.pieces.prompt * 0.1;
+/** A player who minds the bar: a press as the marker comes within this share of the zone (under 0.35 is dead centre). */
+function mind(g: Yard, share = 0.3): void {
+  g.sim.players[0].jump = g.pieces.inZone(share);
 }
 
-/** Steps while holding, with or without someone minding the gauge. Returns the lowest the grip got. */
+/** Steps while holding, with or without someone minding the bar. Returns the lowest the grip got. */
 function carry(g: Yard, seconds: number, minding: boolean): number {
   let worst = 1;
   for (let i = 0; i < seconds * 60; i++) {
@@ -66,12 +67,14 @@ function carry(g: Yard, seconds: number, minding: boolean): number {
     g.sim.step();
     if (g.pieces.held) worst = Math.min(worst, g.pieces.grip);
   }
-  g.sim.players[0].balanceZ = 0;
+  g.sim.players[0].jump = false;
   return worst;
 }
 
-/** No shifting loads: only the kaiju's own motion moves the gauge. */
-const STILL = { carry: { wander: 0 } };
+/** Steps until the load starts to slip (or the time runs out). Returns the seconds it took. */
+function untilSlipping(g: Yard, seconds = 60): number {
+  return g.sim.stepUntil(() => g.pieces.slipping || !g.pieces.held, seconds).seconds;
+}
 
 describe('repair pieces', () => {
   it('start asleep, each with a place to go', async () => {
@@ -121,83 +124,107 @@ describe('repair pieces', () => {
     expect(g.pieces.held).toBe(null);
   });
 
-  it('the gauge sits still for gentle handling and is thrown by sudden moves', async () => {
-    const g = await yard(STILL);
-    const piece = g.pieces.pieces[0];
-    const inp = g.sim.players[0];
-    faceOpenGround(g);
-    handsOver(g, piece.job.start.x, piece.job.start.z);
-    pickUp(g);
-    const watch = (ticks: number) => {
-      let lo = 0;
-      let hi = 0;
-      let prompted = 0;
-      for (let i = 0; i < ticks; i++) {
-        g.sim.step();
-        lo = Math.min(lo, g.pieces.marker);
-        hi = Math.max(hi, g.pieces.marker);
-        if (g.pieces.prompt) prompted = g.pieces.prompt;
-        g.pieces.grip = 1;
-      }
-      return { lo, hi, prompted };
+  it('a load works loose in the hands: slowly carried gently, sooner thrown about', async () => {
+    // (As the Runner, the body the game ships with: it can be thrown about properly.)
+    const loose = async (rough: boolean) => {
+      const g = await yard({ move: STYLES[3].move });
+      const piece = g.pieces.pieces[0];
+      const inp = g.sim.players[0];
+      const k = g.kaiju;
+      // Facing +z, where the yard is open ground.
+      k.yaw = 0;
+      inp.look = 0;
+      g.sim.run(5);
+      handsOver(g, piece.job.start.x, piece.job.start.z);
+      pickUp(g);
+      expect(g.pieces.held).toBe(piece);
+      expect(g.pieces.slipping).toBe(false);
+      expect(g.pieces.grip).toBeGreaterThan(0.9);
+      const ahead = k.yaw;
+      inp.thrust = rough ? 1 : 0.4;
+      let n = 0;
+      const seconds = g.sim.stepUntil(
+        () => g.pieces.slipping || !g.pieces.held,
+        60,
+        () => {
+          // Rough: flat out, flung from one side to the other, stopping dead between.
+          if (rough) {
+            n++;
+            inp.look = ahead + (Math.floor(n / 40) % 2 ? 1.5 : -1.5);
+            inp.thrust = Math.floor(n / 25) % 3 === 2 ? 0 : 1;
+          }
+        },
+      ).seconds;
+      return { seconds, g, piece };
     };
-    // Standing still: dead centre, nothing to do.
-    const idle = watch(240);
-    expect(idle.lo).toBeGreaterThan(-0.05);
-    expect(idle.hi).toBeLessThan(0.05);
-    expect(idle.prompted).toBe(0);
-    // Setting off flat out throws it down the gauge: "mouse up".
-    inp.thrust = 1;
-    const start = watch(90);
-    expect(start.lo).toBeLessThan(-0.45);
-    expect(start.prompted).toBe(1);
-    // Once it is up to speed it settles again.
-    watch(360);
-    const cruise = watch(120);
-    expect(cruise.lo).toBeGreaterThan(-0.2);
-    expect(cruise.hi).toBeLessThan(0.2);
-    // A hard left throws it up: "mouse down". An easy one doesn't trouble it.
-    inp.turn = 1;
-    const hard = watch(90);
-    expect(hard.hi).toBeGreaterThan(0.45);
-    expect(hard.prompted).toBe(-1);
-    inp.turn = 0;
-    watch(180);
-    inp.turn = -0.35;
-    const easy = watch(120);
-    expect(easy.prompted).toBe(0);
-    expect(g.pieces.held).toBe(piece);
+    const gentle = await loose(false);
+    const rough = await loose(true);
+    const t = gentle.g.sim.tuning.carry;
+    // Gently: about as long as the setting says, and it is still in hand when it starts to go.
+    expect(gentle.seconds).toBeGreaterThan(t.holdSeconds * 0.7);
+    expect(gentle.seconds).toBeLessThan(t.holdSeconds * 1.2);
+    expect(gentle.g.pieces.held).toBe(gentle.piece);
+    expect(gentle.g.pieces.grip).toBeLessThanOrEqual(t.slipAt);
+    // Thrown about: in half the time or less.
+    expect(rough.seconds).toBeLessThan(gentle.seconds * 0.5);
   });
 
-  it('a shove of the mouse the way the prompt says fixes it, and cannot overdo it', async () => {
-    const g = await yard(STILL);
+  it('slipping, a bar comes up: a press in the zone catches it, dead centre best, and a press outside is a fumble', async () => {
+    const g = await yard();
     const piece = g.pieces.pieces[0];
     const inp = g.sim.players[0];
+    const t = g.sim.tuning.carry;
     faceOpenGround(g);
     handsOver(g, piece.job.start.x, piece.job.start.z);
     pickUp(g);
-    inp.thrust = 1;
-    while (g.pieces.prompt === 0 && g.sim.tick < 2000) g.sim.step();
-    expect(g.pieces.prompt).toBe(1);
-    // One enormous heave upward: back in the band, and no further than its far side.
-    inp.balanceZ = 1;
+    const heard: string[] = [];
+    g.sim.on('gripSlip', () => heard.push('slip'));
+    g.sim.on('gripTick', () => heard.push('tick'));
+    g.sim.on('gripCatch', (e) => heard.push(e.perfect ? 'perfect' : 'catch'));
+    g.sim.on('gripFumble', () => heard.push('fumble'));
+    // A press while it is held firm is nothing at all.
+    inp.jump = true;
     g.sim.step();
-    inp.balanceZ = 0;
-    expect(g.pieces.prompt).toBe(0);
-    expect(g.pieces.marker).toBeLessThan(g.sim.tuning.carry.tolerance);
-    expect(g.pieces.marker).toBeGreaterThan(0);
-    // Shoving the wrong way while it is out does nothing worse than leave it there.
-    inp.thrust = 0;
-    g.sim.run(240);
-    expect(g.pieces.prompt).toBe(0);
-    inp.balanceZ = -1;
+    inp.jump = false;
     g.sim.step();
-    inp.balanceZ = 0;
-    expect(g.pieces.prompt).toBe(0);
+    expect(heard).toEqual([]);
+    expect(g.pieces.fumbles).toBe(0);
+
+    const press = (when: () => boolean) => {
+      g.sim.stepUntil(when, 5);
+      inp.jump = true;
+      g.sim.step();
+      inp.jump = false;
+    };
+    // Let it go to the point of slipping. The marker starts from one end and ticks as it crosses the middle.
+    untilSlipping(g);
+    expect(heard).toEqual(['slip']);
+    expect(g.pieces.bar).toBeLessThan(0.1);
+    g.sim.run(Math.round(t.sweep * 60 * 2.2));
+    expect(heard.filter((h) => h === 'tick').length).toBe(2);
+    // A press nowhere near the zone: a fumble. It costs grip, and the load is still going.
+    const before = g.pieces.grip;
+    press(() => !g.pieces.inZone(2.2));
+    expect(heard.at(-1)).toBe('fumble');
+    expect(g.pieces.fumbles).toBe(1);
+    expect(g.pieces.slipping).toBe(true);
+    expect(g.pieces.grip).toBeLessThan(before - t.fumble * 0.9);
+    // A press in the zone, off centre: caught, and held firm again.
+    press(() => g.pieces.inZone(0.95) && !g.pieces.inZone(0.6));
+    expect(heard.at(-1)).toBe('catch');
+    expect(g.pieces.slipping).toBe(false);
+    expect(g.pieces.grip).toBeCloseTo(1, 1);
     expect(g.pieces.held).toBe(piece);
+    // Next time, dead centre: a better hold than it started with, so the next slip is further off.
+    untilSlipping(g);
+    press(() => g.pieces.inZone(0.2));
+    expect(heard.at(-1)).toBe('perfect');
+    expect(g.pieces.grip).toBeGreaterThan(1.1);
+    expect(g.pieces.catches).toBe(2);
+    expect(g.pieces.drops).toBe(0);
   });
 
-  it('carrying is a balancing act: follow the prompts and it stays up, ignore them and it slips', async () => {
+  it('minded, it is carried all day; ignored, it is on the ground a few seconds after it starts to go', async () => {
     const run = async (minding: boolean) => {
       const g = await yard();
       const piece = g.pieces.pieces[0];
@@ -205,98 +232,98 @@ describe('repair pieces', () => {
       faceOpenGround(g);
       handsOver(g, piece.job.start.x, piece.job.start.z);
       pickUp(g);
+      let dropped = -1;
+      let slipped = -1;
+      g.sim.on('gripSlip', () => slipped < 0 && (slipped = g.sim.time));
+      g.sim.on('pieceDrop', () => dropped < 0 && (dropped = g.sim.time));
       // Set off, throw it round one way and the other, and pull up.
       inp.thrust = 1;
-      let worst = carry(g, 4, minding);
+      let worst = carry(g, 6, minding);
       inp.turn = 1;
-      worst = Math.min(worst, carry(g, 3, minding));
+      worst = Math.min(worst, carry(g, 5, minding));
       inp.turn = -1;
-      worst = Math.min(worst, carry(g, 3, minding));
+      worst = Math.min(worst, carry(g, 5, minding));
       inp.turn = 0;
       inp.thrust = 0;
-      worst = Math.min(worst, carry(g, 4, minding));
-      return { drops: g.pieces.drops, worst, held: g.pieces.held === piece };
+      worst = Math.min(worst, carry(g, 14, minding));
+      return { drops: g.pieces.drops, worst, held: g.pieces.held === piece, catches: g.pieces.catches, warning: dropped - slipped, t: g.sim.tuning.carry };
     };
     const minded = await run(true);
     const ignored = await run(false);
     expect(minded.drops).toBe(0);
     expect(minded.held).toBe(true);
-    expect(minded.worst).toBeGreaterThan(0.8);
+    expect(minded.catches).toBeGreaterThanOrEqual(2);
+    // (It only ever got as low as the point where the bar comes up, and a moment past.)
+    expect(minded.worst).toBeGreaterThan(minded.t.slipAt * 0.5);
     expect(ignored.drops).toBe(1);
     expect(ignored.held).toBe(false);
+    // From the bar coming up to the load hitting the ground: the warning the setting promises.
+    expect(ignored.warning).toBeGreaterThan(ignored.t.slipTime * 0.8);
+    expect(ignored.warning).toBeLessThan(ignored.t.slipTime * 1.2);
   });
 
-  it('the load shifts by itself now and then, less so with feet planted', async () => {
-    const shifts = async (planted: boolean) => {
-      const g = await yard({ carry: { shiftEvery: 2 } });
-      const piece = g.pieces.pieces[0];
-      faceOpenGround(g);
-      handsOver(g, piece.job.start.x, piece.job.start.z);
-      pickUp(g);
-      g.sim.players[0].crouch = planted;
-      let prompts = 0;
-      let was = 0;
-      for (let i = 0; i < 20 * 60; i++) {
-        mind(g);
-        g.sim.step();
-        if (g.pieces.prompt && !was) prompts++;
-        was = g.pieces.prompt;
-      }
-      return { prompts, g, piece };
-    };
-    const standing = await shifts(false);
-    const planted = await shifts(true);
-    expect(standing.prompts).toBeGreaterThan(3);
-    expect(planted.prompts).toBe(0);
-    expect(standing.g.pieces.held).toBe(standing.piece);
-    // Planted, it will not walk or turn; and it does not drop to a crawl with its hands full.
-    const { g } = planted;
+  it('the zone is wider standing still, and widest with feet planted, which also steadies the load', async () => {
+    const g = await yard();
+    const piece = g.pieces.pieces[0];
+    const inp = g.sim.players[0];
+    const t = g.sim.tuning.carry;
+    faceOpenGround(g);
+    handsOver(g, piece.job.start.x, piece.job.start.z);
+    pickUp(g);
+    g.sim.run(30);
+    const standing = g.pieces.zone;
+    expect(standing).toBeCloseTo((t.zone / 2) * t.zoneStill, 2);
+    inp.thrust = 1;
+    g.sim.run(240);
+    const moving = g.pieces.zone;
+    expect(moving).toBeLessThan(standing * 0.8);
+    expect(moving).toBeGreaterThanOrEqual(t.zone / 2 - 1e-6);
+    inp.thrust = 0;
+    g.sim.run(120);
+    // Planted (the crouch key, with hands full): no walking, no turning, no crawl, and the load keeps far longer.
+    inp.crouch = true;
+    g.pieces.grip = 1;
+    g.pieces.slipping = false;
+    g.sim.run(10);
     const at = g.kaiju.position().clone();
     const yaw = g.kaiju.yaw;
-    g.sim.players[0].thrust = 1;
-    g.sim.players[0].turn = 1;
+    inp.thrust = 1;
+    inp.turn = 1;
+    const grip = g.pieces.grip;
     g.sim.run(120);
     expect(g.kaiju.planted).toBe(true);
     expect(g.kaiju.mode).toBe('normal');
+    expect(g.pieces.zone).toBeCloseTo(standing, 3);
     expect(g.kaiju.position().distanceTo(at)).toBeLessThan(2);
     expect(Math.abs(g.kaiju.yaw - yaw)).toBeLessThan(0.1);
+    expect(grip - g.pieces.grip).toBeLessThan(((1 - t.slipAt) / t.holdSeconds) * 2 * 0.5);
     // Feet free again, off it goes.
-    g.sim.players[0].crouch = false;
-    g.sim.players[0].turn = 0;
+    inp.crouch = false;
+    inp.turn = 0;
     carry(g, 2, true);
     expect(g.kaiju.planted).toBe(false);
     expect(g.kaiju.position().distanceTo(at)).toBeGreaterThan(8);
   });
 
-  it('is slower and gentler with its hands full, and a careful turn needs no minding', async () => {
-    const g = await yard(STILL);
+  it('is slower with its hands full', async () => {
+    const g = await yard();
     const t = g.sim.tuning;
     const piece = g.pieces.pieces[0];
-    const inp = g.sim.players[0];
     faceOpenGround(g);
     handsOver(g, piece.job.start.x, piece.job.start.z);
     pickUp(g);
-    inp.thrust = 1;
+    g.sim.players[0].thrust = 1;
     carry(g, 6, true);
     expect(g.kaiju.speed).toBeLessThan(t.kaiju.maxSpeed * t.carry.speed * 1.08);
     expect(g.kaiju.speed).toBeGreaterThan(t.kaiju.maxSpeed * t.carry.speed * 0.8);
-    // Ease off to half speed and bring it round gently, hands off the mouse.
-    inp.thrust = 0.5;
-    carry(g, 3, true);
-    const yaw0 = g.kaiju.yaw;
-    inp.turn = 0.4;
-    const worst = carry(g, 5, false);
-    inp.turn = 0;
-    expect(Math.abs(g.kaiju.yaw - yaw0)).toBeGreaterThan(0.8);
-    expect(worst).toBeGreaterThan(0.95);
-    expect(g.pieces.drops).toBe(0);
     expect(g.pieces.held).toBe(piece);
   });
 
-  it('a toppled piece is stood up where it lies: steady heaving with the gauge in the green', async () => {
+  it('a toppled piece is stood up with heaves: a press each time the marker is in the zone', async () => {
     const g = await yard();
     const tower = g.pieces.pieces[1];
     const s = tower.job.socket;
+    const t = g.sim.tuning.carry;
     // Stand by its middle and take hold.
     handsOver(g, s.x + 12, s.z + 2);
     expect(g.pieces.nearest()).toBe(tower);
@@ -304,26 +331,36 @@ describe('repair pieces', () => {
     expect(tower.state).toBe('raising');
     g.sim.run(30);
     expect(g.kaiju.planted).toBe(true);
+    // The bar is up from the start, and nothing happens until it is used.
+    expect(g.pieces.slipping).toBe(true);
+    expect(g.pieces.progress).toBe(0);
     // Rooted to the spot while it heaves.
     const at = g.kaiju.position().clone();
     g.sim.players[0].thrust = 1;
-    let placed: boolean | null = null;
-    g.sim.on('piecePlace', (e) => (placed = e.straight));
+    let placed: { straight: boolean; perfect: boolean } | null = null;
+    let heaves = 0;
+    g.sim.on('piecePlace', (e) => (placed = e));
+    g.sim.on('gripCatch', (e) => e.heave && heaves++);
     let last = 0;
     let rose = true;
-    for (let i = 0; i < 12 * 60 && tower.state === 'raising'; i++) {
-      mind(g);
+    // (Off centre, so each heave counts for one.)
+    for (let i = 0; i < 20 * 60 && tower.state === 'raising'; i++) {
+      g.sim.players[0].jump = g.pieces.inZone(0.9);
       g.sim.step();
-      if (i === 90) expect(g.pieces.progress).toBeGreaterThan(0.15);
-      if (g.pieces.progress < last - 0.05) rose = false;
+      if (g.pieces.progress < last - 0.01) rose = false;
       last = Math.max(last, g.pieces.progress);
     }
     g.sim.players[0].thrust = 0;
+    g.sim.players[0].jump = false;
     expect(rose).toBe(true);
+    expect(heaves).toBe(t.heaves);
     expect(tower.state).toBe('placed');
-    expect(placed).toBe(true);
+    expect(tower.fit).toBe('straight');
+    expect(placed!.straight).toBe(true);
+    expect(placed!.perfect).toBe(false);
     expect(g.pieces.placed).toBe(1);
     expect(g.pieces.held).toBe(null);
+    expect(g.pieces.slipping).toBe(false);
     expect(g.kaiju.planted).toBe(false);
     expect(g.kaiju.position().distanceTo(at)).toBeLessThan(3);
     const p = tower.body.translation();
@@ -332,44 +369,89 @@ describe('repair pieces', () => {
     expect(tower.tilt).toBeLessThan(0.01);
   });
 
-  it('let the gauge go while heaving and it sags back, then slips out of the hands', async () => {
-    const g = await yard({ carry: { shiftEvery: 3 } });
+  it('heaves dead centre lift harder and stand it up perfectly; fumbles let it sag and leave it skew', async () => {
+    const raise = async (share: number, fumbleEvery: number) => {
+      const g = await yard();
+      const tower = g.pieces.pieces[1];
+      const s = tower.job.socket;
+      handsOver(g, s.x + 12, s.z + 2);
+      press(g);
+      let heaves = 0;
+      let crossings = 0;
+      let sagged = false;
+      let last = 0;
+      let was = false;
+      g.sim.on('gripCatch', () => heaves++);
+      for (let i = 0; i < 30 * 60 && tower.state === 'raising'; i++) {
+        const centre = g.pieces.inZone(share);
+        const edge = !g.pieces.inZone(1.8);
+        if (centre && !was) crossings++;
+        was = centre;
+        // Every so often, a stab at the wrong moment.
+        g.sim.players[0].jump = fumbleEvery && crossings % fumbleEvery === fumbleEvery - 1 ? edge && i % 20 === 0 : centre;
+        g.sim.step();
+        if (g.pieces.progress < last - 0.02) sagged = true;
+        last = g.pieces.progress;
+      }
+      return { fit: tower.fit, heaves, sagged, fumbles: g.pieces.fumbles, t: g.sim.tuning.carry, perfect: g.pieces.perfect };
+    };
+    const centred = await raise(0.2, 0);
+    expect(centred.fit).toBe('perfect');
+    expect(centred.perfect).toBe(1);
+    expect(centred.heaves).toBeLessThan(centred.t.heaves);
+    const clumsy = await raise(0.9, 3);
+    expect(clumsy.fumbles).toBeGreaterThanOrEqual(2);
+    expect(clumsy.sagged).toBe(true);
+    expect(clumsy.fit).toBe('crooked');
+  });
+
+  it('left alone while heaving, the grip gives out and it falls back over', async () => {
+    const g = await yard();
     const tower = g.pieces.pieces[1];
     const s = tower.job.socket;
     handsOver(g, s.x + 12, s.z + 2);
     press(g);
-    let peak = 0;
-    for (let i = 0; i < 20 * 60 && g.pieces.held; i++) {
+    // A couple of heaves, then nothing.
+    let heaves = 0;
+    g.sim.on('gripCatch', () => heaves++);
+    for (let i = 0; i < 600 && heaves < 2; i++) {
+      g.sim.players[0].jump = g.pieces.inZone(0.9);
       g.sim.step();
-      peak = Math.max(peak, g.pieces.progress);
     }
-    expect(g.pieces.held).toBe(null);
+    g.sim.players[0].jump = false;
+    g.sim.run(60);
+    expect(g.pieces.progress).toBeGreaterThan(0.2);
+    const gone = g.sim.stepUntil(() => !g.pieces.held, 40);
+    expect(gone.met).toBe(true);
+    expect(gone.seconds).toBeLessThan(g.sim.tuning.carry.heaveSeconds * 1.1);
     expect(tower.state).toBe('loose');
     expect(g.pieces.drops).toBe(1);
     expect(g.pieces.placed).toBe(0);
-    expect(peak).toBeLessThan(1);
     // It falls back over and can be tried again.
     g.sim.run(240);
     expect(tower.tilt).toBeGreaterThan(1);
     expect(g.pieces.nearest()).toBe(tower);
   });
 
-  it('goes in straight when let go squarely over its place', async () => {
-    const g = await yard(STILL);
+  it('goes in perfectly when let go dead on its place with a firm hold, whichever way the kaiju is facing', async () => {
+    const g = await yard();
     const piece = g.pieces.pieces[0];
     const s = piece.job.socket;
     handsOver(g, s.x, s.z);
     g.pieces.grab(piece);
     g.sim.run(45);
     expect(piece.state).toBe('held');
-    let placed: boolean | null = null;
-    g.sim.on('piecePlace', (e) => (placed = e.straight));
+    // The screen can say what letting go would do, before it is done.
+    expect(g.pieces.over).toBe('perfect');
+    let placed: { straight: boolean; perfect: boolean } | null = null;
+    g.sim.on('piecePlace', (e) => (placed = e));
     press(g);
     g.sim.run(5);
     expect(piece.state).toBe('placed');
-    expect(piece.fit).toBe('straight');
-    expect(placed).toBe(true);
+    expect(piece.fit).toBe('perfect');
+    expect(placed).toEqual(expect.objectContaining({ straight: true, perfect: true }));
     expect(g.pieces.placed).toBe(1);
+    expect(g.pieces.perfect).toBe(1);
     expect(g.pieces.crooked).toBe(0);
     const p = piece.body.translation();
     expect([p.x, p.y, p.z].map((v) => Math.round(v * 100) / 100)).toEqual([s.x, s.y, s.z]);
@@ -380,8 +462,34 @@ describe('repair pieces', () => {
     expect(g.chunks.chunks.slice(stump.first, stump.first + stump.count).every((c) => c.state === ChunkState.Fixed)).toBe(true);
   });
 
+  it('goes in straight a couple of metres off; and crooked if it is slipping when it is let go', async () => {
+    const g = await yard();
+    const piece = g.pieces.pieces[0];
+    const s = piece.job.socket;
+    handsOver(g, s.x + 2, s.z);
+    g.pieces.grab(piece);
+    g.sim.run(45);
+    expect(g.pieces.over).toBe('straight');
+    press(g);
+    g.sim.run(5);
+    expect(piece.fit).toBe('straight');
+    expect(g.pieces.perfect).toBe(0);
+    const p = piece.body.translation();
+    expect([p.x, p.y, p.z].map((v) => Math.round(v * 100) / 100)).toEqual([s.x, s.y, s.z]);
+    // Up again, and this time let it go while it is slipping out of the hands.
+    g.pieces.grab(piece);
+    g.sim.run(45);
+    g.pieces.grip = g.sim.tuning.carry.slipAt + 0.01;
+    untilSlipping(g);
+    expect(g.pieces.over).toBe('crooked');
+    press(g);
+    g.sim.run(5);
+    expect(piece.state).toBe('placed');
+    expect(piece.fit).toBe('crooked');
+  });
+
   it('still counts when let go a few metres off, but sits crooked', async () => {
-    const g = await yard(STILL);
+    const g = await yard();
     const piece = g.pieces.pieces[0];
     const s = piece.job.socket;
     handsOver(g, s.x + 4, s.z);
@@ -401,7 +509,7 @@ describe('repair pieces', () => {
   });
 
   it('just drops when let go nowhere near its place', async () => {
-    const g = await yard(STILL);
+    const g = await yard();
     const piece = g.pieces.pieces[0];
     const s = piece.job.socket;
     handsOver(g, s.x + 25, s.z + 30);
@@ -415,7 +523,7 @@ describe('repair pieces', () => {
   });
 
   it('can be knocked off again, and picked back up', async () => {
-    const g = await yard(STILL);
+    const g = await yard();
     const piece = g.pieces.pieces[0];
     const s = piece.job.socket;
     handsOver(g, s.x, s.z);

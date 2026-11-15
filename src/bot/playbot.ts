@@ -38,6 +38,11 @@ export interface BotReport {
   stumbles: number;
   falls: number;
   drops: number;
+  /** On the grip bar: presses that caught it, and fumbles. And how the repairs went in. */
+  catches: number;
+  fumbles: number;
+  perfect: number;
+  sneezes: number;
   damage: { chunks: number; buildings: number; squashed: number };
 }
 
@@ -53,7 +58,7 @@ const nearest = (list: number[], value: number) => list.reduce((best, c) => (Mat
 
 /**
  * A scripted player. It reads the same things a person could see (where the jobs are, what
- * it is holding, what the gauge says) and presses the same controls. It is not clever, and
+ * it is holding, where the marker is on the bar) and presses the same controls. It is not clever, and
  * that is the point: if a plodding, literal-minded player cannot finish a job, or keeps
  * getting stuck in the same place, that is worth knowing before a person finds out.
  */
@@ -84,6 +89,9 @@ export class PlayBot {
   private lastPhase = '';
   private lastJob = -1;
   private backOff = false;
+  private backTo: number | null = null;
+  private presses = 0;
+  private pressed = false;
 
   constructor(
     private sim: Sim,
@@ -194,6 +202,17 @@ export class PlayBot {
     const dist = Math.hypot(to.x - p.x, to.z - p.z);
     const err = wrap(Math.atan2(to.x - p.x, to.z - p.z) - k.yaw);
     const reckless = this.style === 'reckless';
+    if (this.runner) {
+      // The Runner is pointed, not steered: told which way to go, it turns to go there. It has no
+      // reverse, so on arriving it simply stops (still facing the way it came, which is at the thing).
+      const near = reckless ? 1 : THREE.MathUtils.clamp((dist - stopAt) / 18, 0, 1);
+      input.turn = 0;
+      input.strafe = 0;
+      input.look = Math.atan2(to.x - p.x, to.z - p.z);
+      input.thrust = dist - stopAt < 0.4 ? 0 : Math.max(0.1, cap * near);
+      this.pushing = input.thrust > 0.25;
+      return dist;
+    }
     input.turn = THREE.MathUtils.clamp(err * 2.2, -1, 1) * (reckless || Math.abs(err) > 0.5 ? 1 : 0.7);
     // Point first, then go; and ease up on arriving.
     // (Eased off smoothly: stamping on the brakes for a corner tips the kaiju as surely as taking it flat out.)
@@ -214,6 +233,11 @@ export class PlayBot {
     const err = wrap(yaw - this.kaiju.yaw);
     this.sim.players[0].turn = THREE.MathUtils.clamp(err * 2.5, -0.8, 0.8);
     return Math.abs(err);
+  }
+
+  /** True when it is the Runner being driven (the body the game ships with), not the balancing kaiju. */
+  private get runner(): boolean {
+    return this.sim.tuning.move.controller === 1;
   }
 
   private click(): void {
@@ -271,8 +295,9 @@ export class PlayBot {
       const gentle = this.style === 'reckless' ? 1 : 0.55;
       const dist = this.drive(this.path[0], gentle);
       if (this.path.length > 1 && dist < 12) this.path.shift();
-      // (In the river "there" is looser: the current will not let it stand on a spot until its feet are planted.)
-      else if (this.path.length === 1 && dist < (this.style === 'reckless' ? 7 : this.kaiju.wading > 0.05 ? 6 : 2.5)) this.phase = 'square';
+      // (In the river "there" is looser: the current will not let it stand on a spot until its feet are planted.
+      // And the Runner goes straight on to the place itself from wherever it has got to.)
+      else if (this.path.length === 1 && dist < (this.runner ? 14 : this.style === 'reckless' ? 7 : this.kaiju.wading > 0.05 ? 6 : 2.5)) this.phase = 'square';
       // Never so gentle that the current wins.
       if (this.kaiju.wading > 0.05 && dist > 3) this.sim.players[0].thrust = Math.max(this.sim.players[0].thrust, 0.3);
     } else if (this.phase === 'square') {
@@ -280,17 +305,33 @@ export class PlayBot {
         this.take(this.current);
         return;
       }
-      // Turn to face it square, shuffle until the hands are over the spot, and let go once the gauge is quiet.
-      const off = this.turnTo(this.heading);
+      // Get the hands over the spot, and let go once the hold is firm. (The piece squares itself
+      // up to its place as it gets there; which way the kaiju is facing is not the test.)
       const fussy = this.style === 'careful';
       const s = piece.job.socket;
       pieces.anchor(v);
       const short = (s.x - v.x) * this.kaiju.forward.x + (s.z - v.z) * this.kaiju.forward.z;
       const miss = Math.hypot(s.x - v.x, s.z - v.z);
-      if (off < 0.3) this.sim.players[0].thrust = THREE.MathUtils.clamp(short * 0.12, -0.35, 0.35);
-      // In the river, once it is roughly there, plant the feet so the current cannot carry it off the mark.
-      if (this.kaiju.wading > 0.05 && off < 0.12 && miss < 3) this.sim.players[0].crouch = true;
-      const ready = off < (fussy ? 0.1 : 0.5) && this.kaiju.speed < 2 && (!fussy || (pieces.prompt === 0 && miss < (this.kaiju.wading > 0.05 ? 3 : 1.4)));
+      const wet = this.kaiju.wading > 0.05;
+      let off = 0;
+      if (this.runner) {
+        // Walk at the place until the hands are over it. Too close to turn the load onto it: walk off and come again.
+        const dist = this.drive(s, 0.45, this.reach);
+        if (dist < this.reach - 3 && miss > 2.5) {
+          this.recover = 1.1;
+          this.phase = 'deliver';
+          this.path = [{ x: s.x, z: s.z }];
+          return;
+        }
+        // In the river, once it is roughly there, plant the feet so the current cannot carry it off the mark.
+        if (wet && miss < 3) this.sim.players[0].crouch = true;
+      } else {
+        off = this.turnTo(this.heading);
+        if (off < 0.3) this.sim.players[0].thrust = THREE.MathUtils.clamp(short * 0.12, -0.35, 0.35);
+        if (wet && off < 0.12 && miss < 3) this.sim.players[0].crouch = true;
+      }
+      const want = this.sim.tuning.carry;
+      const ready = off < (fussy ? 0.1 : 0.5) && this.kaiju.speed < 2 && (!fussy || (!pieces.slipping && miss < (wet ? want.straightRadius : want.perfectRadius) * 0.9));
       if (ready || this.sim.time - this.phaseSince > 20) {
         this.click();
         this.phase = 'set';
@@ -304,7 +345,7 @@ export class PlayBot {
     }
   }
 
-  /** A toppled piece: stand by its middle, take hold, and mind the gauge until it is up. */
+  /** A toppled piece: stand by its middle, take hold, and heave on the bar until it is up. */
   private raise(piece: Piece): void {
     const pieces = this.pieces!;
     if (pieces.held === piece) return;
@@ -363,7 +404,7 @@ export class PlayBot {
     input.thrust = 0;
     input.turn = 0;
     input.grab = false;
-    input.balanceZ = 0;
+    input.jump = false;
     input.crouch = false;
     this.pushing = false;
     const k = this.kaiju;
@@ -374,8 +415,15 @@ export class PlayBot {
 
     this.tally();
 
-    // Whatever else is going on, mind the gauge: a shove the way it asks.
-    if (this.pieces?.held) input.balanceZ = this.pieces.prompt * 0.1;
+    // Whatever else is going on, mind the bar: a press as the marker crosses the zone. The careful
+    // player waits for dead centre; the reckless one stabs at it, and one press in four is a fumble.
+    if (this.pieces?.slipping) {
+      const sloppy = this.style === 'reckless' && this.presses % 4 === 3;
+      const now = this.pieces.inZone(this.style === 'careful' ? 0.3 : sloppy ? 1.6 : 0.9);
+      if (now && !this.pressed) this.presses++;
+      this.pressed = now;
+      input.jump = now;
+    } else this.pressed = false;
     // Flat on its back: mash a direction to scramble up.
     if (k.state === 'fallen' || k.state === 'getup' || k.state === 'falling') {
       input.thrust = 1;
@@ -384,11 +432,20 @@ export class PlayBot {
     if (this.recover > 0) {
       // Stuck a moment ago (or just set something down): back out, and after a stall come at it from a different angle.
       this.recover -= FIXED_DT;
+      if (this.runner) {
+        // (The Runner turns about and walks out, rather than backing.)
+        this.backTo ??= k.yaw + Math.PI + (this.backOff ? 0 : this.stalls.length % 2 ? 0.8 : -0.8);
+        input.look = this.backTo;
+        input.thrust = 0.6;
+        input.turn = 0;
+        return;
+      }
       input.thrust = -0.7;
       input.turn = this.backOff ? 0 : this.stalls.length % 2 ? 0.8 : -0.8;
       return;
     }
     this.backOff = false;
+    this.backTo = null;
 
     if (this.current < 0 || this.jobs[this.current].done) this.choose();
     if (this.current < 0) return;
@@ -441,6 +498,10 @@ export class PlayBot {
       stumbles: this.kaiju.stumbles,
       falls: this.kaiju.falls,
       drops: this.pieces?.drops ?? 0,
+      catches: this.pieces?.catches ?? 0,
+      fumbles: this.pieces?.fumbles ?? 0,
+      perfect: this.pieces?.perfect ?? 0,
+      sneezes: (this.sim.parts.nose as { sneezes: number } | undefined)?.sneezes ?? 0,
       damage: { chunks: damage.chunksBroken, buildings: damage.buildingsDamaged, squashed: damage.citizensSquished },
     };
   }
@@ -480,7 +541,8 @@ export function formatBotReport(r: BotReport, title: string): string {
   const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   const lines = [
     `${title}: ${r.finished ? 'finished' : 'DID NOT FINISH'} in ${clock(r.seconds)}, approval ${r.approval}%`,
-    `  jobs ${r.jobs.filter((j) => j.done).length}/${r.jobs.length}   walked ${r.distance} m   ${r.stumbles} stumbles, ${r.falls} falls, ${r.drops} drops`,
+    `  jobs ${r.jobs.filter((j) => j.done).length}/${r.jobs.length} (${r.perfect} perfect)   walked ${r.distance} m   ${r.stumbles} stumbles, ${r.falls} falls`,
+    `  grip: ${r.catches} catches, ${r.fumbles} fumbles, ${r.drops} drops   ${r.sneezes} sneezes`,
     `  damage: ${r.damage.chunks} chunks in ${r.damage.buildings} buildings, ${r.damage.squashed} people`,
   ];
   for (const j of r.jobs) {

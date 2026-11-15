@@ -14,15 +14,13 @@ export interface PlayerInput {
   crouch: boolean;
   /** Pressed (not held) to take hold of a piece, and again to let go. */
   grab: boolean;
-  /** Unused. */
+  /** Unused now (a balance gauge worked by the mouse, and a breath to hold): kept so that sessions recorded with them still load. */
   balanceX: number;
-  /** This step's shove on the balance gauge, in gauge half-lengths: up is positive. */
   balanceZ: number;
-  /** Held to hold its breath, keeping dust out of its nose. */
   breath: boolean;
   /** Tapped to bow in apology. */
   bow: boolean;
-  /** Tapped to leap, for a kaiju that can. */
+  /** Tapped to leap, for a kaiju that can; and, with something in its hands, the press that catches a slipping load on the bar. */
   jump: boolean;
   /** For the runner: sideways drive (+1 is left), the compass heading to face (radians), and whether it is sprinting. */
   strafe: number;
@@ -57,8 +55,12 @@ export interface SimEvents {
   groundCollapse: { x: number; y: number; z: number; radius: number };
   /** The kaiju has bowed in apology (at the bottom of the bow). */
   kaijuBow: { x: number; y: number; z: number };
-  /** The balance gauge has strayed out of its band: `up` if the fix is to move the mouse up. */
-  gaugePrompt: { x: number; y: number; z: number; up: boolean };
+  /** What it is holding has started to slip (the bar is up); the marker has just crossed the middle of the zone. */
+  gripSlip: { x: number; y: number; z: number };
+  gripTick: { x: number; y: number; z: number };
+  /** A press on the bar: in the zone (`perfect` if dead centre; `heave` if it was standing something up), or not. */
+  gripCatch: { x: number; y: number; z: number; perfect: boolean; heave: boolean };
+  gripFumble: { x: number; y: number; z: number };
   /** A blocked road has been swept clear. */
   sweepDone: { x: number; y: number; z: number };
   /** The city's opinion just moved: by how much, why, and where it happened. */
@@ -87,7 +89,7 @@ export interface SimEvents {
   propHit: { x: number; y: number; z: number };
   pieceGrab: { x: number; y: number; z: number };
   pieceDrop: { x: number; y: number; z: number };
-  piecePlace: { x: number; y: number; z: number; straight: boolean };
+  piecePlace: { x: number; y: number; z: number; straight: boolean; perfect: boolean };
   chunkBreak: { x: number; y: number; z: number; size: number };
   kaijuFall: { x: number; y: number; z: number };
 }

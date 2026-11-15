@@ -18,8 +18,9 @@ export const WORTH = {
   start: 50,
   /** Shared between all the jobs of a shift. */
   jobs: 50,
-  /** A crooked repair earns this share of a straight one. */
+  /** A crooked repair earns this share of a straight one; a perfect one earns this much more than one. */
   crookedShare: 0.6,
+  perfectBonus: 0.25,
   /** Per person won over by a bow, up to `forgivenMax` in all. */
   forgiven: 0.4,
   forgivenMax: 8,
@@ -53,7 +54,7 @@ export class Approval implements System {
   forgiven = 0;
   /** Set once every job is done: the time it took, and the score at that moment. */
   finished: { seconds: number; approval: number } | null = null;
-  private last = { straight: 0, crooked: 0, swept: 0, forgiven: 0, squished: 0, buildings: 0 };
+  private last = { straight: 0, crooked: 0, perfect: 0, swept: 0, forgiven: 0, squished: 0, buildings: 0 };
   private at = {
     job: { x: 0, y: 0, z: 0 },
     squish: { x: 0, y: 0, z: 0 },
@@ -99,6 +100,7 @@ export class Approval implements System {
     const now = {
       straight: p ? p.placed - p.crooked : 0,
       crooked: p?.crooked ?? 0,
+      perfect: p?.perfect ?? 0,
       swept: this.sweeps?.sweeps.filter((s) => s.done).length ?? 0,
       forgiven: Math.min(WORTH.forgivenMax, this.forgiven * WORTH.forgiven),
       squished: d.citizensSquished,
@@ -107,7 +109,7 @@ export class Approval implements System {
     const each = this.perJob;
     const raw =
       WORTH.start +
-      (now.straight + now.swept + now.crooked * WORTH.crookedShare) * each +
+      (now.straight + now.swept + now.crooked * WORTH.crookedShare + now.perfect * WORTH.perfectBonus) * each +
       now.forgiven +
       now.squished * WORTH.squished +
       now.buildings * WORTH.building +
@@ -121,8 +123,8 @@ export class Approval implements System {
     const tell = (delta: number, why: string, at: { x: number; y: number; z: number }) => {
       if (Math.abs(delta) > 0.01) this.sim.emit('approval', { x: at.x, y: at.y, z: at.z, delta, why });
     };
-    const jobs = (now.straight - last.straight + (now.crooked - last.crooked) * WORTH.crookedShare) * each;
-    tell(jobs, jobs < 0 ? 'Knocked it off again' : now.crooked > last.crooked ? 'Close enough…' : 'Good as new!', this.at.job);
+    const jobs = (now.straight - last.straight + (now.crooked - last.crooked) * WORTH.crookedShare + (now.perfect - last.perfect) * WORTH.perfectBonus) * each;
+    tell(jobs, jobs < 0 ? 'Knocked it off again' : now.crooked > last.crooked ? 'Close enough…' : now.perfect > last.perfect ? 'Perfect fit!' : 'Good as new!', this.at.job);
     tell((now.swept - last.swept) * each, 'Road clear!', this.at.job);
     tell(now.forgiven - last.forgiven, 'Apology accepted', this.at.kaiju);
     tell((now.squished - last.squished) * WORTH.squished, 'Squashed!', this.at.squish);

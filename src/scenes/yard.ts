@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addRubble, busJob, monumentJob, type CityLayout, type PropSpec, type SweepSpec } from '../city/cityGen';
+import { addRubble, busJob, monumentJob, reachFloors, type CityLayout, type PropSpec, type SweepSpec } from '../city/cityGen';
 import { Rng } from '../core/rng';
 import { ALL_GROUPS, Group, groups } from '../core/physics';
 import type { Sim } from '../sim';
@@ -7,7 +7,8 @@ import { populate } from './city';
 import { addEnvironment } from './common';
 
 /** Hand-placed test pieces: a low block, a slim tower, a topless tower to repair, and a row of props. */
-export function yardLayout(): CityLayout {
+/** @param stumpFloors how tall the topless tower's stump is: no higher than the kaiju's hands (see `reachFloors`) */
+export function yardLayout(stumpFloors = 5): CityLayout {
   const props: PropSpec[] = [];
   const colors = [0xd9482b, 0x2f6fb5, 0xf2c230, 0xf4f1ea, 0x4d9a5b];
   for (let i = 0; i < 8; i++) {
@@ -33,7 +34,7 @@ export function yardLayout(): CityLayout {
         x: 50,
         z: -60,
         color: 0xc9b79c,
-        tiers: [{ floors: 5, w: 17, d: 17, nx: 2, nz: 2 }],
+        tiers: [{ floors: stumpFloors, w: 17, d: 17, nx: 2, nz: 2 }],
       },
     ],
     props,
@@ -61,7 +62,7 @@ export function yardLayout(): CityLayout {
         ],
         height: 9.2,
         start: { x: 40, z: 20, yaw: 0.6 },
-        socket: { x: 50, y: 20, z: -60, yaw: 0 },
+        socket: { x: 50, y: 4 * stumpFloors, z: -60, yaw: 0 },
         symmetry: Math.PI / 2,
         color: 0xffd23f,
       },
@@ -100,7 +101,7 @@ export function buildPlane(sim: Sim): void {
 /** The test yard: a flat plane with a few things to knock about. The permanent tuning scene. */
 export function buildYard(sim: Sim): void {
   addEnvironment(sim);
-  populate(sim, yardLayout());
+  populate(sim, yardLayout(reachFloors(sim.tuning)));
   const { R, world } = sim;
 
   // A box that drops in at start: the "is physics alive" check.

@@ -20,7 +20,9 @@ export const REF = {
   kaiju: { size: 1, bodyRadius: 6.9, bodyHalfHeight: 8.1, legLength: 9.3, density: 4, hoverFrequency: 3.2, oilSlip: 5, fallDuration: 1.4, getUpDuration: 1.3 },
   tail: { wrecks: 0, wreckSpeed: 38, bite: 3, segments: 5, length: 34, baseRadius: 3.8, tipRadius: 1.3, density: 2.8, stiffness: 14, damping: 3.5 },
   city: { boulevardWidth: 44, avenueWidth: 30, sideStreetWidth: 24 },
-  move: { style: 1, jump: 0, slide: 0, relative: 1 },
+  // (The balancing body: it is what most of these tests are about. The Runner, which the game
+  // now ships with, has its own in test/runner.test.ts.)
+  move: { style: 1, jump: 0, slide: 0, relative: 1, controller: 0 },
 };
 
 export interface Rig {

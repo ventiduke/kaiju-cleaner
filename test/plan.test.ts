@@ -190,17 +190,20 @@ describe('city approval', () => {
     g.sim.run(45);
     tap(g, 'grab');
     g.sim.run(5);
-    expect(top.fit).toBe('straight');
-    expect(approval.value).toBeCloseTo(before + approval.perJob, 1);
+    // (Dead on its mark with a firm hold: worth a little more than a plain good job.)
+    expect(top.fit).toBe('perfect');
+    expect(approval.value).toBeCloseTo(before + approval.perJob * (1 + WORTH.perfectBonus), 1);
     expect(done).toBe(null);
     // Stand the clock tower up, and that is the lot.
     const clock = pieces.pieces[1];
     moveTo(g, clock.job.socket.x + 12 - k.forward.x * d, clock.job.socket.z - k.forward.z * d);
     tap(g, 'grab');
     for (let i = 0; i < 60 * 15 && clock.state === 'raising'; i++) {
-      g.sim.players[0].balanceZ = pieces.prompt * 0.1;
+      // (A heave each time the marker is in the zone, off centre: a plain good job.)
+      g.sim.players[0].jump = pieces.inZone(0.9);
       g.sim.step();
     }
+    g.sim.players[0].jump = false;
     g.sim.step();
     expect(clock.state).toBe('placed');
     expect(done).toBe(null);
@@ -222,7 +225,8 @@ describe('city approval', () => {
     g.sim.run(15);
     expect(sweeps.sweeps[0].done).toBe(true);
     expect(approval.board.allDone()).toBe(true);
-    expect(approval.value).toBeCloseTo(swept + approval.perJob, 1);
+    // (The score stops at a hundred: this shift, with its perfect fit, has earned the lot.)
+    expect(approval.value).toBeCloseTo(Math.min(100, swept + approval.perJob), 1);
     expect(reasons).toContain('Road clear!');
     expect(approval.finished).not.toBe(null);
     expect(done).toBeCloseTo(approval.value, 5);

@@ -12,18 +12,16 @@ const dir = new THREE.Vector3();
  * Dust gets up the kaiju's nose. Every chunk that breaks or crumbles nearby adds to the
  * tickle; let it build and the kaiju sneezes: it is thrown backwards, and a gale goes out
  * the front that flattens the nearest wall and sends everything loose (rubble, cars,
- * people) flying. Holding its breath keeps dust out, for as long as the breath lasts.
+ * people) flying. There is no stopping one once it is coming: there is only the moment of
+ * "ah... ah..." in which to point it somewhere it will do no harm (or some good: it clears
+ * a blocked road as well as anything).
  */
 export class Nose implements System {
   /** How close to a sneeze: 0 clear, 1 it is coming. */
   tickle = 0;
-  /** Breath left for holding: 1 full, 0 out. */
-  breath = 1;
-  holding = false;
   /** Seconds until the sneeze, once it has started (0 when none is coming). */
   windup = 0;
   sneezes = 0;
-  private gasping = false;
 
   constructor(
     private sim: Sim,
@@ -32,7 +30,6 @@ export class Nose implements System {
     private props: PropField | null,
   ) {
     const dust = (amount: number) => (e: { x: number; y: number; z: number }) => {
-      if (this.holding) return;
       const p = kaiju.body.translation();
       const d = Math.hypot(e.x - p.x, e.z - p.z);
       this.tickle = Math.min(1, this.tickle + (sim.tuning.sneeze.dust * amount) / (1 + (d / 30) ** 2));
@@ -44,22 +41,6 @@ export class Nose implements System {
   preStep(dt: number): void {
     const t = this.sim.tuning.sneeze;
     const k = this.kaiju;
-    const input = this.sim.players[k.player] ?? this.sim.players[0];
-
-    // Holding its breath: no dust gets in, until it has to gasp.
-    if (this.gasping && this.breath > 0.6) this.gasping = false;
-    this.holding = input.breath && !this.gasping && this.breath > 0;
-    if (this.holding) {
-      this.breath -= dt / t.breathSeconds;
-      if (this.breath <= 0) {
-        // Out of air: a great gulp of whatever is in it.
-        this.breath = 0;
-        this.gasping = true;
-        this.holding = false;
-        this.tickle = Math.min(1, this.tickle + 0.3);
-      }
-    } else this.breath = Math.min(1, this.breath + dt / (t.breathSeconds * 0.6));
-
     if (this.windup > 0) {
       this.windup -= dt;
       if (this.windup <= 0) this.sneeze();

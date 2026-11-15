@@ -108,20 +108,20 @@ export class GameHud {
     for (const j of jobs) count.set(j.name, (count.get(j.name) ?? 0) + 1);
     this.card((card) => {
       card.append(el('div', 'gh-kicker', `SHIFT ${this.d.tuning.game.shift}`), el('h1', '', 'Kaiju Cleaners'));
-      card.append(el('p', 'gh-lede', 'You are thirty metres tall, very sorry about the city, and here to help put it right. Try not to make it worse.'));
+      card.append(el('p', 'gh-lede', 'You are twenty metres tall, very sorry about the city, and here to help put it right. Try not to make it worse.'));
       const todo = el('div', 'gh-todo');
       todo.append(el('b', '', "Today's jobs"));
       for (const [name, n] of count) todo.append(el('span', '', `${n} × ${name}`));
       card.append(todo);
       const keys = el('div', 'gh-keys');
       const rows: [string, string][] = [
-        ['W A S D', 'walk and turn'],
+        ['Mouse', 'look around (click the game to capture it; Esc or Tab frees it)'],
+        ['W A S D', 'run that way on the screen'],
+        ['Shift', 'sprint'],
+        ['Space', 'jump; and, carrying, catch a slipping load on the bar'],
+        ['C', 'crouch (on the move: slide); carrying, plant your feet'],
         ['Click', 'take hold / let go'],
-        ['Shift', 'tiptoe'],
-        ['Space', 'crawl'],
         ['V', 'bow (say sorry)'],
-        ['F', 'hold your breath'],
-        ['Drag / wheel', 'look around'],
         ['T', 'time of day'],
       ];
       for (const [k, what] of rows) keys.append(el('kbd', '', k), el('span', '', what));
@@ -387,11 +387,11 @@ export class GameHud {
     if (!board.total) return;
     const held = pieces?.held;
     if (sim.time > 1.5 && this.say('move', 'W / S to walk, A / D to turn. The arrows point at your jobs. Mind the buildings.')) return;
-    if (held?.state === 'raising' && this.say('raise', 'Heave! Keep the gauge on the left in the green: shove the mouse the way it says.')) return;
-    if (held && held.state !== 'raising' && this.say('carry', 'Got it. Carry it to the matching marker and click to set it down. Gentle turns keep the gauge quiet.')) return;
+    if (held?.state === 'raising' && this.say('raise', 'Heave! Press SPACE each time the marker crosses the green. Dead centre heaves hardest.')) return;
+    if (held && held.state !== 'raising' && this.say('carry', 'Got it. Carry it to the matching marker and click to set it down. It works loose as you go: when the bar comes up, SPACE as the marker crosses the green.')) return;
     if (!held && pieces?.nearest() && this.say('grab', 'Click (or E) to take hold of it.')) return;
     if (kaiju.stumbles > 0 && this.say('stumble', 'Wobbling? Ease off the turn. Going over? Steer into the fall to save it.')) return;
-    if (nose && nose.tickle > 0.45 && this.say('dust', 'Dust up the nose. Hold F to hold your breath, or point the sneeze somewhere harmless.')) return;
+    if (nose && nose.tickle > 0.45 && this.say('dust', 'Dust up the nose: a sneeze is coming. Point it somewhere harmless (or at a blocked road).')) return;
     if (citizens && citizens.scared > 5 && this.say('bow', 'You are frightening people. Stop and press V to bow.')) return;
     if (this.d.approval.value < 38 && this.say('careful', 'The city is losing patience. Shift tiptoes; Space crawls under things.')) return;
     if (sim.time > 40 && this.say('modes', 'Shift: tiptoe past delicate things. Space: crawl under skybridges. T: change the time of day.')) return;

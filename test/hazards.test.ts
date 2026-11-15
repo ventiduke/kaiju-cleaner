@@ -62,27 +62,23 @@ describe('sneezing', () => {
     expect(g.chunks.chunks.slice(low.first, low.first + low.count).every((c) => c.state === ChunkState.Fixed)).toBe(true);
   });
 
-  it('holding its breath keeps the dust out, until the breath runs out', async () => {
+  it('cannot be held in: the only warning is the wind-up, which is long enough to turn somewhere harmless', async () => {
     const g = await makeGame('yard', { city: { propDensity: 0 } });
     const nose = g.sim.parts.nose as Nose;
     const t = g.sim.tuning.sneeze;
-    moveTo(g, 0, -27 + g.sim.tuning.kaiju.bodyRadius);
+    let warned = -1;
+    let blew = -1;
+    g.sim.on('sneezeWindup', () => (warned = g.sim.time));
+    g.sim.on('sneeze', () => (blew = g.sim.time));
+    // The old breath key does nothing now.
     g.sim.players[0].breath = true;
-    g.sim.step();
-    expect(nose.holding).toBe(true);
-    const tower = g.chunks.buildings[1];
-    for (let i = tower.first; i < tower.first + 4; i++) g.chunks.loosen(i, null);
-    g.sim.run(60 * 3);
+    nose.tickle = 1;
+    g.sim.run(Math.round(60 * (t.windup + 0.5)));
+    expect(warned).toBeGreaterThanOrEqual(0);
+    expect(blew - warned).toBeCloseTo(t.windup, 1);
+    expect(t.windup).toBeGreaterThanOrEqual(0.9);
+    expect(nose.sneezes).toBe(1);
     expect(nose.tickle).toBe(0);
-    expect(nose.sneezes).toBe(0);
-    expect(nose.breath).toBeLessThan(0.5);
-    // Keep holding past the limit: it has to gasp, and that lets some in.
-    g.sim.run(Math.round(60 * (t.breathSeconds - 3)) + 10);
-    expect(nose.holding).toBe(false);
-    expect(nose.tickle).toBeGreaterThan(0.2);
-    // And it cannot hold again straight away.
-    g.sim.run(30);
-    expect(nose.holding).toBe(false);
   });
 });
 
@@ -207,7 +203,7 @@ describe('townsfolk splats', () => {
     let cheers = 0;
     g.sim.on('citizenCheer', () => cheers++);
     const b = g.layout.blocks[0];
-    g.sim.emit('piecePlace', { x: b.x, y: 20, z: b.z, straight: true });
+    g.sim.emit('piecePlace', { x: b.x, y: 20, z: b.z, straight: true, perfect: false });
     g.sim.run(5);
     expect(cheers).toBe(1);
     expect(people.cheering()).toBeGreaterThan(5);

@@ -82,10 +82,25 @@ export class GameAudio {
       this.tone({ gain: 0.3, time: 0.2, from: 523, to: 523, type: 'triangle', delay: 0.05 });
       this.tone({ gain: 0.3, time: 0.2, from: 659, to: 659, type: 'triangle', delay: 0.2 });
       this.tone({ gain: 0.3, time: 0.45, from: e.straight ? 784 : 740, to: e.straight ? 784 : 690, type: 'triangle', delay: 0.35 });
+      // Dead on its mark: the chime goes on up.
+      if (e.perfect) this.tone({ gain: 0.3, time: 0.6, from: 1047, to: 1047, type: 'triangle', delay: 0.55 });
     });
-    // The balance gauge wants attention: a rising blip for "mouse up", a falling one for "mouse down".
-    sim.on('gaugePrompt', (e) => {
-      this.tone({ gain: 0.3, time: 0.14, from: e.up ? 520 : 780, to: e.up ? 780 : 520, type: 'square' });
+    // The grip bar. A creak as the load starts to go; a tick each time the marker crosses the
+    // zone, so that the press can be timed by ear with eyes on the street; a solid note for a
+    // catch (brighter dead centre, a grunt for a heave) and a clatter for a fumble.
+    sim.on('gripSlip', () => {
+      this.tone({ gain: 0.35, time: 0.35, from: 260, to: 170, type: 'sawtooth' });
+      this.burst({ gain: 0.2, time: 0.3, from: 900, to: 400, q: 2 });
+    });
+    sim.on('gripTick', () => this.tone({ gain: 0.22, time: 0.05, from: 1250, to: 1150, type: 'square' }));
+    sim.on('gripCatch', (e) => {
+      if (e.heave) this.tone({ gain: 0.5, time: 0.3, from: 110, to: 70, type: 'sawtooth', vary: 'small' });
+      this.tone({ gain: 0.35, time: 0.16, from: e.perfect ? 660 : 440, to: e.perfect ? 990 : 550, type: 'triangle' });
+      if (e.perfect) this.tone({ gain: 0.25, time: 0.22, from: 1320, to: 1320, type: 'triangle', delay: 0.09 });
+    });
+    sim.on('gripFumble', () => {
+      this.tone({ gain: 0.35, time: 0.22, from: 200, to: 120, type: 'square' });
+      this.burst({ gain: 0.3, time: 0.18, from: 600, to: 200, q: 1 });
     });
     sim.on('mainBurst', (e) => {
       this.tone({ gain: 0.8 * this.near(e), time: 0.5, from: 90, to: 40, type: 'sine' });
