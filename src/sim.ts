@@ -233,6 +233,22 @@ export class Sim {
     for (const s of this.systems) s.render?.(alpha, frameDt);
   }
 
+  /**
+   * Steps until `done()` says so, or `maxSeconds` of game time have gone by, whichever is
+   * first. Returns whether it got there and how long it took, so a test or a script can
+   * wait for the thing it cares about instead of guessing a number of steps.
+   */
+  stepUntil(done: () => boolean, maxSeconds: number, each?: () => void): { met: boolean; seconds: number; steps: number } {
+    const limit = Math.round(maxSeconds / FIXED_DT);
+    let steps = 0;
+    while (steps < limit && !done()) {
+      each?.();
+      this.step();
+      steps++;
+    }
+    return { met: done(), seconds: steps * FIXED_DT, steps };
+  }
+
   counts(): { bodies: number; awake: number } {
     return { bodies: this.world.bodies.len(), awake: this.awake };
   }

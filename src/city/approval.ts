@@ -6,19 +6,26 @@ import type { Sweeps } from './sweeps';
 import type { Kaiju } from '../kaiju/kaiju';
 import type { Sim, System } from '../sim';
 
-/** What each thing is worth, in points of approval (out of 100). All of it guesswork to be tuned by play. */
+/**
+ * What each thing is worth, in points of approval (out of 100). The city starts undecided at
+ * 50. Doing every job well earns the other 50, shared equally between the jobs, however many
+ * there are. The costs are set so that the careful playtest bot, which finishes a nine-job
+ * shift having scraped about fifty buildings and a hundred people, lands near the middle
+ * (`npm run playbot`): a person taking more care should end well above it, and a rampage
+ * well below.
+ */
 export const WORTH = {
   start: 50,
-  straight: 14,
-  crooked: 8,
-  /** A road swept clear. */
-  swept: 10,
+  /** Shared between all the jobs of a shift. */
+  jobs: 50,
+  /** A crooked repair earns this share of a straight one. */
+  crookedShare: 0.6,
   /** Per person won over by a bow, up to `forgivenMax` in all. */
-  forgiven: 0.5,
-  forgivenMax: 15,
-  squished: -1,
-  building: -1.2,
-  chunk: -0.01,
+  forgiven: 0.4,
+  forgivenMax: 8,
+  squished: -0.2,
+  building: -0.45,
+  chunk: -0.004,
 };
 
 export function verdict(approval: number): string {
@@ -81,6 +88,11 @@ export class Approval implements System {
 
   readonly board: JobBoard;
 
+  /** What one job done well is worth this shift. */
+  get perJob(): number {
+    return WORTH.jobs / Math.max(1, this.board.total);
+  }
+
   postStep(): void {
     const d = this.damage;
     const p = this.pieces;
@@ -92,11 +104,10 @@ export class Approval implements System {
       squished: d.citizensSquished,
       buildings: d.buildingsDamaged,
     };
+    const each = this.perJob;
     const raw =
       WORTH.start +
-      now.straight * WORTH.straight +
-      now.crooked * WORTH.crooked +
-      now.swept * WORTH.swept +
+      (now.straight + now.swept + now.crooked * WORTH.crookedShare) * each +
       now.forgiven +
       now.squished * WORTH.squished +
       now.buildings * WORTH.building +
@@ -110,9 +121,9 @@ export class Approval implements System {
     const tell = (delta: number, why: string, at: { x: number; y: number; z: number }) => {
       if (Math.abs(delta) > 0.01) this.sim.emit('approval', { x: at.x, y: at.y, z: at.z, delta, why });
     };
-    const jobs = (now.straight - last.straight) * WORTH.straight + (now.crooked - last.crooked) * WORTH.crooked;
+    const jobs = (now.straight - last.straight + (now.crooked - last.crooked) * WORTH.crookedShare) * each;
     tell(jobs, jobs < 0 ? 'Knocked it off again' : now.crooked > last.crooked ? 'Close enough…' : 'Good as new!', this.at.job);
-    tell((now.swept - last.swept) * WORTH.swept, 'Road clear!', this.at.job);
+    tell((now.swept - last.swept) * each, 'Road clear!', this.at.job);
     tell(now.forgiven - last.forgiven, 'Apology accepted', this.at.kaiju);
     tell((now.squished - last.squished) * WORTH.squished, 'Squashed!', this.at.squish);
     tell((now.buildings - last.buildings) * WORTH.building, 'That was somebody\'s building', this.at.damage);

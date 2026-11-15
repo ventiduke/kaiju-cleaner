@@ -12,7 +12,8 @@
     "smoke": "node scripts/smoke.mjs",
     "feel": "node scripts/feel.mjs",
     "shots": "node scripts/shots.mjs",
-    "verify:live": "node scripts/live.mjs"
+    "verify:live": "node scripts/live.mjs",
+    "playbot": "node scripts/playbot.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",

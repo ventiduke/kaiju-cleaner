@@ -432,7 +432,8 @@ describe('repair pieces', () => {
     press(g);
     g.sim.run(5);
     expect(g.pieces.placed).toBe(1);
-    // A cannonball does it too.
+    // A cannonball does it too, once the piece has been in place a few seconds (just set down, it shrugs a knock off).
+    g.sim.run(60 * 5);
     handsOver(g, s.x + 80, s.z + 80);
     g.ball.throw(new THREE.Vector3(s.x, s.y + 5, s.z + 60), new THREE.Vector3(0, 0, -1));
     g.sim.run(90);

@@ -191,7 +191,7 @@ describe('city approval', () => {
     tap(g, 'grab');
     g.sim.run(5);
     expect(top.fit).toBe('straight');
-    expect(approval.value).toBeCloseTo(before + WORTH.straight, 1);
+    expect(approval.value).toBeCloseTo(before + approval.perJob, 1);
     expect(done).toBe(null);
     // Stand the clock tower up, and that is the lot.
     const clock = pieces.pieces[1];
@@ -222,11 +222,11 @@ describe('city approval', () => {
     g.sim.run(15);
     expect(sweeps.sweeps[0].done).toBe(true);
     expect(approval.board.allDone()).toBe(true);
-    expect(approval.value).toBeCloseTo(swept + WORTH.swept, 1);
+    expect(approval.value).toBeCloseTo(swept + approval.perJob, 1);
     expect(reasons).toContain('Road clear!');
     expect(approval.finished).not.toBe(null);
     expect(done).toBeCloseTo(approval.value, 5);
-    expect(approval.finished!.approval).toBeGreaterThan(before + WORTH.straight);
+    expect(approval.finished!.approval).toBeGreaterThan(before + approval.perJob * 3);
   });
 
   it('has a verdict for every score', () => {

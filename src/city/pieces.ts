@@ -19,6 +19,8 @@ export interface Piece {
   fit: Fit | null;
   mass: number;
   /** Lean from upright, in radians, refreshed every step. */
+  /** Sim time it was last set in place. */
+  placedAt: number;
   tilt: number;
   /** Half-size of a box that bounds it, for sweeping it through buildings while carried. */
   bounds: { hx: number; hy: number; hz: number };
@@ -39,6 +41,8 @@ const LOOSE_GROUPS = groups(Group.PIECE, ALL_GROUPS & ~Group.FOOT);
 const HELD_GROUPS = groups(Group.PIECE, Group.PROP | Group.BALL);
 /** How far the load visibly leans when the marker is at the end of the gauge (rad). */
 const MAX_LEAN = 0.4;
+/** Seconds after a piece is set in place during which a knock will not dislodge it. */
+const PLACED_GRACE = 4;
 
 function angleDiff(from: number, to: number, period: number): number {
   let d = (to - from) % period;
@@ -179,6 +183,7 @@ export class Pieces implements System {
         fit: null,
         mass: volume * sim.tuning.destruction.chunkDensity,
         tilt: 0,
+        placedAt: -1e9,
         bounds: { hx: span, hy: job.height / 2, hz: span },
         marker,
         socketMarker,
@@ -213,7 +218,7 @@ export class Pieces implements System {
    * The point the hands hold a load at: straight ahead of the kaiju and a little above its
    * middle. It follows the kaiju's heading but not its lean; the arms soak that up.
    */
-  private anchor(target: THREE.Vector3): THREE.Vector3 {
+  anchor(target: THREE.Vector3): THREE.Vector3 {
     const k = this.sim.tuning.kaiju;
     const t = this.sim.tuning.carry;
     const p = this.kaiju.body.translation();
@@ -221,7 +226,7 @@ export class Pieces implements System {
   }
 
   /** Where on a piece the kaiju takes hold: its base, or the middle of it if it is lying down. */
-  private handle(piece: Piece, target: THREE.Vector3): THREE.Vector3 {
+  handle(piece: Piece, target: THREE.Vector3): THREE.Vector3 {
     const p = piece.body.translation();
     target.set(p.x, p.y, p.z);
     if (piece.job.kind === 'raise' && piece.state !== 'placed') {
@@ -348,6 +353,7 @@ export class Pieces implements System {
     piece.body.setRotation(q, true);
     this.setGroups(piece, LOOSE_GROUPS);
     piece.state = 'placed';
+    piece.placedAt = this.sim.time;
     piece.fit = straight ? 'straight' : 'crooked';
     this.placed++;
     this.sim.emit('piecePlace', { x: a.x, y: a.y, z: a.z, straight });
@@ -362,6 +368,8 @@ export class Pieces implements System {
   private onForce(c1: number, c2: number, force: number): void {
     const piece = this.byCollider.get(c1) ?? this.byCollider.get(c2);
     if (!piece || piece.state !== 'placed') return;
+    // Just set down: give the kaiju a moment to get clear before a careless elbow can undo it.
+    if (this.sim.time - piece.placedAt < PLACED_GRACE) return;
     if (force * FIXED_DT < piece.mass * this.sim.tuning.destruction.breakSpeed * 2.5) return;
     piece.body.setBodyType(this.sim.R.RigidBodyType.Dynamic, true);
     piece.state = 'loose';

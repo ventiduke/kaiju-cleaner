@@ -560,10 +560,12 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
         gap = Math.floor(pieces / 2);
         jobs.push({
           kind: 'span',
-          boxes: [{ x: 0, y: 0.75, z: 0, hx: width / 2, hy: 0.75, hz: length / 2 - 0.1, color: 0x9a9690 }],
+          // Modelled lying across the kaiju's path, because it is fitted from the side: the kaiju stands in
+          // the river beside the bridge, facing across it, and slots the span into the gap.
+          boxes: [{ x: 0, y: 0.75, z: 0, hx: length / 2 - 0.1, hy: 0.75, hz: width / 2, color: 0x9a9690 }],
           height: 1.5,
           start: { x: s.center, z: theRiver.z1 + quay * 0.55, yaw: 0.45 },
-          socket: { x: s.center, y: -1.1, z: theRiver.z0 + 0.3 + length * (gap + 0.5), yaw: 0 },
+          socket: { x: s.center, y: -1.1, z: theRiver.z0 + 0.3 + length * (gap + 0.5), yaw: Math.PI / 2 },
           symmetry: Math.PI,
           color: JOB_COLORS[jobs.length % JOB_COLORS.length],
         });
