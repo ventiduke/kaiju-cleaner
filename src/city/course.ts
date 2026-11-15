@@ -17,6 +17,8 @@ export interface Section {
   width: number;
   /** The corner points of this leg's centre line, ending at its gate. */
   path: Point[];
+  /** The line to drive, where that is not straight down the middle (a slalom). Ends at the gate too. */
+  line?: Point[];
 }
 
 export interface CourseSpec {
@@ -28,6 +30,10 @@ export interface CourseSpec {
   /** Stretches where staying low is the point (skybridges), and where stepping lightly is (thin ground). */
   crawlZones: { x: number; z: number; radius: number }[];
   tiptoeZones: { x: number; z: number; radius: number }[];
+  /** Low walls across the road, to be jumped (or walked through, at a price). */
+  hurdles?: Point[];
+  /** Towers standing in the road, to be gone round. */
+  pillars?: Point[];
 }
 
 export interface Leg {

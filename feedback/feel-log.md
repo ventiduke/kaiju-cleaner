@@ -5,6 +5,11 @@ why, in the playtester's words where there are any. Settings pasted from the in-
 
 | When | What | From → to | Why |
 | --- | --- | --- | --- |
+| 15 Nov 2026 | new body: the Runner (key 4, `move.controller` 1) | none → mouse look, strafe, sprint, jump, crouch toggle, slide | "Mouse controls look, WASD movement (forward, back, strafe), crouch toggle, and actual slide... completely different genre/styles of movements" |
+| 15 Nov 2026 | kaiju size (`kaiju.size`) | 1 (39 m tall) → 0.54 (21 m) | "the size of the kaiju I had above was feeling better" |
+| 15 Nov 2026 | legs, feet, stance, stride | fixed sizes → in proportion to the body | "the legs looked off, not sure how to adjust" |
+| 15 Nov 2026 | tail: `wrecks`, `wreckSpeed`, `bite` | smashes whatever it touches → only what it hits faster than 38 m/s, three chunks a swing | "The tail should cause some damage, but not as much as it is." Course, careful: 31 buildings always, 8 never, 16 now. |
+| 15 Nov 2026 | shipped feel, streets, tail shape | Steady preset, 24/30/44 m → the playtester's settings (speed 60.5, pickup 0.65, turning 5...; 27/37/57 m; tail 20 m in 4 parts) | Where he left the dials in playtest 7. |
 | 15 Nov 2026 | city streets: side / avenue / boulevard | 14 / 22 / 38 m → 24 / 30 / 44 m | "The city is also maybe a little too narrow streets." Course bot, careful: an 18 m street cost 10 buildings, a 26 m one cost 1. |
 | 15 Nov 2026 | `tail.wrecks` | 1 → 0 | Course bot: the tail did about half the damage (33 buildings against 18, same careful run), from behind the player. It still knocks cars, people and loose lumps about, and passes through walls rather than snagging on them. |
 | 15 Nov 2026 | lean from its own acceleration | all of it → `18 / acceleration` of it | Course bot: the quick styles stumbled on a straight road just from setting off (Wild: 56 stumbles in one careful run). |

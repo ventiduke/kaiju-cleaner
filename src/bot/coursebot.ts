@@ -28,7 +28,7 @@ export class CourseBot {
     readonly effort: Effort,
   ) {
     this.kaiju = sim.parts.kaiju as Kaiju;
-    this.points = course.spec.sections.flatMap((s) => s.path);
+    this.points = course.spec.sections.flatMap((s) => s.line ?? s.path);
     this.stuckAt.copy(this.kaiju.position());
   }
 
@@ -59,7 +59,12 @@ export class CourseBot {
     const to = this.points[this.at];
     const dist = Math.hypot(to.x - p.x, to.z - p.z);
     const err = wrap(Math.atan2(to.x - p.x, to.z - p.z) - k.yaw);
-    input.turn = THREE.MathUtils.clamp(err * 2.4, -1, 1);
+    const runner = this.sim.tuning.move.controller === 1;
+    // The balancing kaiju is steered; the runner is pointed, and sprints when it is in a hurry.
+    input.turn = runner ? 0 : THREE.MathUtils.clamp(err * 2.4, -1, 1);
+    input.look = Math.atan2(to.x - p.x, to.z - p.z);
+    input.strafe = 0;
+    input.sprint = runner && this.effort === 'flatout';
     const careful = this.effort === 'careful';
     let go = careful ? 0.75 : 1;
     // Facing the wrong way: turn first. A careful driver also eases off before a corner.
@@ -73,11 +78,21 @@ export class CourseBot {
 
     // Low under the bridges. Getting down takes a moment, so start early when going fast.
     for (const zone of spec.crawlZones) {
-      if (Math.hypot(zone.x - p.x, zone.z - p.z) < zone.radius + k.speed * 1.4) input.crouch = true;
+      // (The runner drops at once, so it can leave it late; the balancing kaiju takes most of a second.)
+      if (Math.hypot(zone.x - p.x, zone.z - p.z) < zone.radius + k.speed * (this.sim.tuning.move.controller === 1 ? 0.3 : 1.4)) input.crouch = true;
+    }
+    // Over the hurdles, for a kaiju that can jump: take off a moment before the wall.
+    for (const h of spec.hurdles ?? []) {
+      const ahead = (h.x - p.x) * k.forward.x + (h.z - p.z) * k.forward.z;
+      if (ahead > 0 && ahead < 7 + k.speed * 0.38 && Math.hypot(h.x - p.x, h.z - p.z) < 40) input.jump = true;
     }
     // Light over the thin ground.
     for (const zone of spec.tiptoeZones) {
-      if (Math.hypot(zone.x - p.x, zone.z - p.z) < zone.radius + k.speed * 0.4) input.tiptoe = true;
+      if (Math.hypot(zone.x - p.x, zone.z - p.z) < zone.radius + k.speed * 0.4) {
+        // (The runner has no tiptoe: crouched, its steps are as light.)
+        if (runner) input.crouch = true;
+        else input.tiptoe = true;
+      }
     }
 
     // Pushing and going nowhere: back out and try again.

@@ -297,6 +297,43 @@ export const codeDefaults = {
     relative: 1,
     /** Extra gravity while in the air, so that a leap is quick rather than floaty (multiples of normal). */
     hangGravity: 2.6,
+    /**
+     * Which body it has. 0: the balancing one, that leans, wobbles and falls (all the styles above).
+     * 1: the runner, a plain third-person character: always upright, goes where it is pointed.
+     */
+    controller: 0,
+  },
+  /**
+   * The runner: a conventional third-person character in a kaiju's body. The mouse looks, W A S D
+   * move and strafe, it stops when the keys are let go, and it never loses its balance. What
+   * makes it a kaiju is only what it knocks over.
+   */
+  runner: {
+    /** Running and sprinting speed (m/s). */
+    speed: 30,
+    sprint: 48,
+    /** Seconds to get up to speed, and to stop. */
+    accel: 0.2,
+    stop: 0.16,
+    /** How fast it turns to face where the camera points (rad/s). */
+    turn: 12,
+    /** Share of its ground steering that works in the air. */
+    airControl: 0.35,
+    /** Jump height (m), and how much harder than normal gravity pulls it back down. */
+    jump: 9,
+    gravity: 2.4,
+    /** Crouched, it moves at this share of running speed, and its steps are light. */
+    crouchSpeed: 0.45,
+    /** Crouching while faster than this share of running speed starts a slide. */
+    slideFrom: 0.9,
+    /** A slide gains this much speed as it starts (m/s), loses this much a second (m/s^2), and can be steered this fast (rad/s). */
+    slideBoost: 8,
+    slideFriction: 11,
+    slideSteer: 0.9,
+    /** Camera: how far behind and how far above, and how fast the mouse turns it. */
+    camDistance: 46,
+    camHeight: 16,
+    sensitivity: 1,
   },
   /** Which shift this is: each one is a new city. */
   game: { shift: 1 },
@@ -373,24 +410,31 @@ applyFeel(codeDefaults);
  * extra moves it has. They are starting points for a playtester to pick between and then
  * adjust, not fixed modes: choosing one just writes these numbers.
  */
-export const STYLES: { name: string; blurb: string; feel: Tuning['feel']; move: { jump: number; slide: number; relative: number } }[] = [
+export const STYLES: { name: string; blurb: string; feel: Tuning['feel'] | null; move: { jump: number; slide: number; relative: number; controller: number } }[] = [
   {
     name: 'Lumbering',
     blurb: 'heavy, wobbly, slow to answer: how it was',
     feel: { speed: 32, pickup: 2.1, turning: 2, grip: 35.5, wobble: 0.77, balance: 0.75 },
-    move: { jump: 0, slide: 0, relative: 0 },
+    move: { jump: 0, slide: 0, relative: 0, controller: 0 },
   },
   {
     name: 'Steady',
     blurb: 'answers at once, corners cleanly, still falls if you ask for it',
     feel: { speed: 40, pickup: 0.8, turning: 2.9, grip: 62, wobble: 0.32, balance: 0.8 },
-    move: { jump: 0, slide: 0, relative: 1 },
+    move: { jump: 0, slide: 0, relative: 1, controller: 0 },
   },
   {
     name: 'Wild',
     blurb: 'fast, with a leap (Space) and a belly-slide (C at a run)',
     feel: { speed: 56, pickup: 0.55, turning: 3.5, grip: 70, wobble: 0.4, balance: 0.78 },
-    move: { jump: 13, slide: 1, relative: 1 },
+    move: { jump: 13, slide: 1, relative: 1, controller: 0 },
+  },
+  {
+    // Not a setting of the feel dials at all: a different body. Its numbers are under "runner".
+    name: 'Runner',
+    blurb: 'third-person: the mouse looks, W A S D move and strafe, Shift sprints, Space jumps, C crouches (at a sprint: slides)',
+    feel: null,
+    move: { jump: 0, slide: 0, relative: 0, controller: 1 },
   },
 ];
 
@@ -418,7 +462,7 @@ export function applySize(t: Tuning, size: number): void {
 export function applyStyle(t: Tuning, index: number): void {
   const style = STYLES[index];
   if (!style) return;
-  Object.assign(t.feel, style.feel);
+  if (style.feel) Object.assign(t.feel, style.feel);
   Object.assign(t.move, style.move, { style: index });
   applyFeel(t);
 }
@@ -593,7 +637,25 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     footWidth: [1, 8, 0.1],
     footHeight: [0.5, 4, 0.1],
   },
-  move: { style: [0, 2, 1], jump: [0, 30, 0.5], slide: [0, 1, 1], relative: [0, 1, 1], hangGravity: [1, 5, 0.1] },
+  move: { style: [0, 3, 1], jump: [0, 30, 0.5], slide: [0, 1, 1], relative: [0, 1, 1], hangGravity: [1, 5, 0.1], controller: [0, 1, 1] },
+  runner: {
+    speed: [5, 80, 0.5],
+    sprint: [5, 120, 0.5],
+    accel: [0.02, 1.5, 0.01],
+    stop: [0.02, 1.5, 0.01],
+    turn: [1, 30, 0.5],
+    airControl: [0, 1, 0.05],
+    jump: [0, 30, 0.5],
+    gravity: [1, 5, 0.1],
+    crouchSpeed: [0.1, 1, 0.05],
+    slideFrom: [0.3, 1.5, 0.05],
+    slideBoost: [0, 30, 0.5],
+    slideFriction: [1, 40, 0.5],
+    slideSteer: [0, 4, 0.05],
+    camDistance: [10, 150, 1],
+    camHeight: [0, 60, 1],
+    sensitivity: [0.2, 3, 0.05],
+  },
   game: { shift: [1, 99, 1] },
   gfx: {
     hour: [6, 22, 0.1],

@@ -2,6 +2,15 @@
   "about": "Things the playtester has said they like (keep) or dislike (avoid), in their words, with the settings behind them. test/pins.test.ts fails if a pinned value moves: that is the cue to ask before changing it, then update the pin with the new quote.",
   "keep": [
     {
+      "said": "the size of the kaiju I had above was feeling better",
+      "when": "playtest 7, 15 Nov 2026",
+      "values": {
+        "kaiju.bodyRadius": 3.7,
+        "kaiju.bodyHalfHeight": 4.3,
+        "kaiju.legLength": 5
+      }
+    },
+    {
       "said": "Let's play around with some options (drunk style, more normal movement rules, even something faster paced with slides, jumps)",
       "when": "playtest 6, 15 Nov 2026",
       "outcome": "three-styles-to-switch-between"
@@ -54,6 +63,21 @@
       "said": "The city is also maybe a little too narrow streets (or the kaiju needs to be a little smaller)",
       "when": "playtest 6",
       "means": "A street the route depends on must be walkable without scraping by a player who is paying attention."
+    },
+    {
+      "said": "What I meant by other \"models\" for movement was like that - completely different genre/styles of movements, not tied to our original \"drunken\" movement style",
+      "when": "playtest 7",
+      "means": "When asked for options, offer things that are different in kind, not the same thing with different numbers."
+    },
+    {
+      "said": "The tail should cause some damage, but not as much as it is",
+      "when": "playtest 7",
+      "means": "The tail must not be the main source of damage. On the course a careful run should lose fewer buildings to the tail than to the body."
+    },
+    {
+      "said": "actual slide (not just getting down slowly)",
+      "when": "playtest 7",
+      "means": "Posture changes the player asks for happen at once."
     }
   ],
   "superseded": [

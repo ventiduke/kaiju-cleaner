@@ -24,12 +24,16 @@ export interface PlayerInput {
   bow: boolean;
   /** Tapped to leap, for a kaiju that can. */
   jump: boolean;
+  /** For the runner: sideways drive (+1 is left), the compass heading to face (radians), and whether it is sprinting. */
+  strafe: number;
+  look: number;
+  sprint: boolean;
   /** Camera orbit input (-1..1). */
   camYaw: number;
 }
 
 export function emptyInput(): PlayerInput {
-  return { thrust: 0, turn: 0, tiptoe: false, crouch: false, grab: false, balanceX: 0, balanceZ: 0, breath: false, bow: false, jump: false, camYaw: 0 };
+  return { thrust: 0, turn: 0, tiptoe: false, crouch: false, grab: false, balanceX: 0, balanceZ: 0, breath: false, bow: false, jump: false, strafe: 0, look: 0, sprint: false, camYaw: 0 };
 }
 
 export interface System {

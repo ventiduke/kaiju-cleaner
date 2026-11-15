@@ -66,11 +66,47 @@ export class FollowCamera {
     this.trauma = Math.min(1, this.trauma + amount / (1 + d / 60));
   }
 
+  /**
+   * The runner's camera: close behind and a little above, pointing exactly where the player has
+   * turned it. It does not drift round behind the kaiju by itself; the kaiju turns to face it.
+   */
+  private updateRunner(frameDt: number): void {
+    const r = this.sim.tuning.runner;
+    const c = this.sim.tuning.camera;
+    const input = this.sim.players[this.kaiju.player];
+    const at = this.kaiju.visual.position;
+    this.focus.lerp(at, 1 - Math.exp(-frameDt / 0.05));
+    this.yaw = input?.look ?? this.kaiju.yaw;
+    const elevation = THREE.MathUtils.clamp(0.3 + this.pitch, -0.25, 1.35);
+    const range = r.camDistance * this.zoom;
+    const flat = Math.cos(elevation) * range;
+    const eye = this.focus.y + r.camHeight * 0.25;
+    this.camera.position.set(this.focus.x - Math.sin(this.yaw) * flat, Math.max(2, eye + Math.sin(elevation) * range), this.focus.z - Math.cos(this.yaw) * flat);
+    if (this.camera.fov !== c.fov) {
+      this.camera.fov = c.fov;
+      this.camera.updateProjectionMatrix();
+    }
+    // Looking past the kaiju, so that what it is running at is in the middle of the screen.
+    this.camera.lookAt(this.focus.x + Math.sin(this.yaw) * 30, eye + r.camHeight * 0.2 - Math.sin(elevation - 0.3) * 30, this.focus.z + Math.cos(this.yaw) * 30);
+    this.trauma = Math.max(0, this.trauma - frameDt * 1.4);
+    const s = this.trauma * this.trauma * c.shake;
+    if (s > 0) {
+      const t = this.time * 38;
+      this.camera.position.x += Math.sin(t * 1.3) * s * 1.2;
+      this.camera.position.y += Math.sin(t * 1.7 + 1) * s * 1.2;
+    }
+  }
+
   update(frameDt: number): void {
     const c = this.sim.tuning.camera;
     const input = this.sim.players[this.kaiju.player];
     this.time += frameDt;
     this.orbit += (input?.camYaw ?? 0) * 1.6 * frameDt;
+
+    if (this.sim.tuning.move.controller === 1) {
+      this.updateRunner(frameDt);
+      return;
+    }
 
     this.focus.lerp(this.kaiju.visual.position, 1 - Math.exp(-frameDt / Math.max(0.01, c.followLag)));
     this.yaw = lerpAngle(this.yaw, this.kaiju.yaw, 1 - Math.exp(-frameDt / Math.max(0.01, c.yawLag)));

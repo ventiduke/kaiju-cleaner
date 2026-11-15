@@ -22,6 +22,8 @@ Scenes are picked with a URL parameter:
 - `?scene=city` (default): the city, 8×8 blocks either side of a river.
 - `?scene=course`: the movement test course: a timed kilometre of streets of different widths, with skybridges
   to get under and thin ground to step lightly over. The tuning dials are open beside it.
+- `?scene=run`: the Runner's course: a sprint, three low walls to jump, towers to strafe round and three low
+  bridges to slide under. It opens in the Runner mode.
 - `?scene=yard`: a flat practice ground with three test buildings, one of each repair job and one of each hazard.
 - `?scene=plane`: nothing but ground, for judging movement on its own.
 
@@ -32,6 +34,7 @@ Scenes are picked with a URL parameter:
 | Move | W A S D: by default the kaiju turns to go the way you point on screen | Left stick |
 | Switch steering: by the screen, or like a tank (A / D turn, W / S drive) | X | |
 | Movement style: Lumbering, Steady, Wild | 1 / 2 / 3 | |
+| Runner mode: a plain third-person body (see below) | 4 | |
 | Leap (Wild style) | Space | A |
 | Tiptoe: slow, quiet, light enough for thin ground, until the calves give out | Hold Shift | Right trigger |
 | Crawl on all fours: slow, can't be tipped, fits under skybridges. At a run in Wild style: a belly-slide | Hold C | B or left trigger |
@@ -113,6 +116,16 @@ playing (keys 1, 2, 3), each a setting of the six feel dials plus which extra mo
 - **Steady** (the default): moving within half a second, corners cleanly, still falls if you hold a hard turn.
 - **Wild**: fast, with a leap (Space) that comes down hard enough to shake buildings loose, and a
   belly-slide (C at a run) that goes under a skybridge without stopping.
+
+There is also a fourth, **Runner** (key 4), which is not a setting of those dials but a different body: a
+conventional third-person character. Click the game to capture the mouse, then the mouse looks, W A S D move
+and strafe, Shift sprints, Space jumps, and C toggles a crouch. Crouching at a sprint is a slide: it drops
+at once, gains a little speed and rides it down. It never leans, wobbles or falls; what is left of being a
+kaiju is what it knocks over. Its numbers are in the panel's Runner folder, and it has a course of its own
+(`?scene=run`).
+
+The kaiju's size is one dial (in the Feel folder; it needs "restart scene"). Legs, feet and stride follow
+the body, and skybridges are hung to suit.
 
 The test course (`?scene=course`, or the button on the briefing) is where to judge them. It times each leg
 and counts what was broken on it; the score is the time plus two seconds a building and three a fall, so

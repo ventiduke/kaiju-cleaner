@@ -125,8 +125,10 @@ export class GameHud {
       const go = el('button', 'gh-go', 'Start the shift');
       const test = el('button', 'gh-go gh-quiet', 'Movement test course');
       test.addEventListener('click', () => (location.search = '?scene=course'));
+      const run = el('button', 'gh-go gh-quiet', 'Runner course');
+      run.addEventListener('click', () => (location.search = '?scene=run'));
       const row = el('div', 'gh-buttons');
-      row.append(go, test);
+      row.append(go, test, run);
       card.append(row, el('div', 'gh-small', 'Enter or click to start   ·   H: all controls   ·   ` : tuning and feedback tools'));
       const start = () => {
         if (this.playing) return;

@@ -9,7 +9,7 @@ is checked by tests, a scripted player, and headless screenshots. `README.md` sa
 npm run typecheck        npm test                 npm run build && npm run smoke
 npm run feel [-- file]   # handling numbers; with a session file, the playtester's notes and a replay
 npm run playbot [-- <scene> <careful|reckless|idle> <seeds>]   # a scripted player plays a shift
-npm run course [-- <style 0|1|2> <careful|flatout>]              # a bot drives the timed test course on each movement style
+npm run course [-- [run] <style 0-3> <careful|flatout>]         # a bot drives the test course (or the runner's) on each movement style
 node scripts/shots.mjs '<json>'   # named-state screenshots, each with a state dump (needs a build)
 npm run verify:live      # is the deployed site serving this commit, and does it boot?
 ```
@@ -22,6 +22,8 @@ npm run verify:live      # is the deployed site serving this commit, and does it
   outside a short allowed list. Effects (sound, particles, camera, HUD) hang off `sim.emit` events.
 - Every number a player might want changed lives in `src/core/tuning.ts` with a range; the shipped feel is
   `src/tuning/defaults.json`. Tests run on a fixed reference feel, so shipped values can move freely.
+- The kaiju has two bodies (`move.controller`): the balancing one (`Kaiju.preStep`, tuned by the feel dials)
+  and the runner (`Kaiju.runnerStep`, tuned by `runner.*`). A change to one should not touch the other.
 - `src/main.ts` is the only browser shell. `window.__game` exposes `state()`, `setState(name)`, the sim
   and the tuning for scripts.
 - Comments say why. No planning documents in the repo; the plan lives in the shared doc the owner keeps.

@@ -18,9 +18,9 @@ const SHIPPED_FEEL = { feel: { ...shipped.feel } };
 /** What a pinned outcome means, as something that can be run. */
 const OUTCOMES: Record<string, () => Promise<void>> = {
   'three-styles-to-switch-between': async () => {
-    expect(STYLES.map((s) => s.name)).toEqual(['Lumbering', 'Steady', 'Wild']);
+    expect(STYLES.map((s) => s.name)).toEqual(['Lumbering', 'Steady', 'Wild', 'Runner']);
     // One wobbles, one is steady, one can leap and slide.
-    expect(STYLES[0].feel.wobble).toBeGreaterThan(STYLES[1].feel.wobble + 0.3);
+    expect(STYLES[0].feel!.wobble).toBeGreaterThan(STYLES[1].feel!.wobble + 0.3);
     expect(STYLES[2].move.jump).toBeGreaterThan(0);
     expect(STYLES[2].move.slide).toBe(1);
   },

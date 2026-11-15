@@ -8,7 +8,7 @@ import { courseSegments, courseSpec } from '../src/scenes/course';
 import { STYLES } from '../src/core/tuning';
 import { makeGame } from './helpers';
 
-const onStyle = (index: number) => makeGame('course', { feel: STYLES[index].feel, move: STYLES[index].move });
+const onStyle = (index: number) => makeGame('course', { ...(STYLES[index].feel ? { feel: STYLES[index].feel } : {}), move: STYLES[index].move });
 
 describe('the test course', () => {
   it('is about a kilometre of streets, each a different width, and nothing stirs before the start', async () => {

@@ -12,6 +12,7 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padSta
 const RUNS_KEY = 'kaiju-course-runs';
 
 interface Run {
+  course?: string;
   style: string;
   seconds: number;
   penalty: number;
@@ -24,8 +25,10 @@ interface Run {
 /** What to call the current settings: a style's name if they are exactly that style, otherwise "custom". */
 export function styleName(t: Tuning): string {
   const s = STYLES[t.move.style];
-  const same = s && (Object.keys(s.feel) as (keyof Tuning['feel'])[]).every((k) => s.feel[k] === t.feel[k]) && s.move.jump === t.move.jump && s.move.slide === t.move.slide;
-  return same ? s.name : `custom (from ${s?.name ?? '?'})`;
+  if (!s) return 'custom';
+  const feel = s.feel;
+  const same = (!feel || (Object.keys(feel) as (keyof Tuning['feel'])[]).every((k) => feel[k] === t.feel[k])) && s.move.jump === t.move.jump && s.move.slide === t.move.slide && s.move.controller === t.move.controller;
+  return same ? s.name : `custom (from ${s.name})`;
 }
 
 /**
@@ -69,15 +72,17 @@ export class CourseHud {
 
   private finish(): void {
     const r = this.course.result();
-    const mine: Run = { style: styleName(this.tuning), seconds: r.seconds, penalty: r.penalty, score: r.score, buildings: r.buildings, falls: r.falls, feel: { ...this.tuning.feel } };
-    const runs = [mine, ...this.runs()].slice(0, 12);
+    const mine: Run = { course: this.course.spec.name, style: styleName(this.tuning), seconds: r.seconds, penalty: r.penalty, score: r.score, buildings: r.buildings, falls: r.falls, feel: { ...this.tuning.feel } };
+    const all = [mine, ...this.runs()].slice(0, 30);
+    // Only runs of this course are comparable.
+    const runs = all.filter((x) => (x.course ?? 'Test course') === mine.course).slice(0, 10);
     try {
-      localStorage.setItem(RUNS_KEY, JSON.stringify(runs));
+      localStorage.setItem(RUNS_KEY, JSON.stringify(all));
     } catch {
       // No storage: the card still shows this run.
     }
     const card = el('div', 'gh-card ch-card');
-    card.append(el('div', 'gh-kicker', `TEST COURSE · ${mine.style.toUpperCase()}`), el('h1', '', clock(r.seconds)));
+    card.append(el('div', 'gh-kicker', `${this.course.spec.name.toUpperCase()} · ${mine.style.toUpperCase()}`), el('h1', '', clock(r.seconds)));
     card.append(el('p', 'gh-lede', `+ ${r.penalty} s for ${r.buildings} buildings and ${r.falls} falls  =  ${r.score.toFixed(1)}  (${PENALTY.building} s a building, ${PENALTY.fall} s a fall)`));
     const table = el('div', 'ch-table');
     table.append(el('b', '', 'Leg'), el('b', '', 'Time'), el('b', '', 'Buildings'), el('b', '', 'Stumbles'));
@@ -104,7 +109,7 @@ export class CourseHud {
     look.addEventListener('click', () => (this.overlay.style.display = 'none'));
     const buttons = el('div', 'gh-buttons');
     buttons.append(again, copy, look);
-    card.append(buttons, el('div', 'gh-small', '1 / 2 / 3 change the movement style, ` opens the dials: change something, then R to run it again.'));
+    card.append(buttons, el('div', 'gh-small', '1 / 2 / 3 / 4 change the movement style, ` opens the dials: change something, then R to run it again.'));
     this.overlay.replaceChildren(card);
     this.overlay.style.display = 'grid';
   }
@@ -113,8 +118,8 @@ export class CourseHud {
   private report(r: CourseResult, runs: Run[]): string {
     const t = this.tuning;
     return [
-      formatResult(r, `Test course, ${styleName(t)}`),
-      `settings: ${JSON.stringify({ feel: t.feel, move: t.move, tail: { wrecks: t.tail.wrecks } })}`,
+      formatResult(r, `${this.course.spec.name}, ${styleName(t)}`),
+      `settings: ${JSON.stringify(t.move.controller === 1 ? { runner: t.runner, move: t.move, kaiju: { size: t.kaiju.size } } : { feel: t.feel, move: t.move, kaiju: { size: t.kaiju.size }, tail: { wrecks: t.tail.wrecks, wreckSpeed: t.tail.wreckSpeed, bite: t.tail.bite } })}`,
       'earlier runs (newest first):',
       ...runs.slice(1).map((x) => `  ${x.style}: ${x.seconds.toFixed(1)} s + ${x.penalty} = ${x.score.toFixed(1)}  feel ${JSON.stringify(x.feel)}`),
     ].join('\n');

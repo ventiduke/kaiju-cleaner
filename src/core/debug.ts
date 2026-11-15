@@ -88,6 +88,27 @@ export function buildTuningGui(tuning: Tuning, opts: PanelOptions): GUI {
       opts.toast('Size changed: press "restart scene" to rebuild the kaiju at its new size.');
     });
 
+  // The runner (style 4) is a different body with its own short list.
+  const runnerFolder = gui.addFolder('Runner  (style 4)');
+  const runnerRanges = ranges.runner as Record<string, [number, number, number]>;
+  const runnerLabels: Partial<Record<keyof Tuning['runner'], string>> = {
+    speed: 'run speed  (m/s)',
+    sprint: 'sprint speed  (m/s)',
+    accel: 'secs to get going',
+    stop: 'secs to stop',
+    jump: 'jump height  (m)',
+    slideBoost: 'slide: kick at the start',
+    slideFriction: 'slide: how fast it slows',
+    camDistance: 'camera distance',
+    sensitivity: 'mouse sensitivity',
+  };
+  for (const key of Object.keys(runnerLabels) as (keyof Tuning['runner'])[]) {
+    const r = runnerRanges[key];
+    runnerFolder.add(tuning.runner, key, r[0], r[1], r[2]).name(runnerLabels[key]!).onChange(changed);
+  }
+  if (tuning.move.controller === 1) feel.close();
+  else runnerFolder.close();
+
   // --- Feedback ---
   const actions = {
     note: opts.addNote,

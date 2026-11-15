@@ -9,6 +9,8 @@ export type KaijuState = 'walk' | 'stumble' | 'falling' | 'fallen' | 'getup';
 export type KaijuMode = 'normal' | 'tiptoe' | 'crawl';
 
 const UP = new THREE.Vector3(0, 1, 0);
+const tmpQuat = new THREE.Quaternion();
+const AXIS_X = new THREE.Vector3(1, 0, 0);
 const pos = new THREE.Vector3();
 const vel = new THREE.Vector3();
 const quat = new THREE.Quaternion();
@@ -379,7 +381,13 @@ export class Kaiju implements System {
 
   private footfall(side: number, p: THREE.Vector3, strength: number): void {
     const k = this.sim.tuning.kaiju;
-    const quiet = this.mode === 'tiptoe';
+    const runner = this.sim.tuning.move.controller === 1;
+    // On tiptoe, or crouched as the runner, its steps are light.
+    const quiet = this.mode === 'tiptoe' || (runner && this.mode === 'crawl');
+    if (runner) {
+      this.sim.emit('footfall', { x: p.x, y: p.y, z: p.z, side, strength: quiet ? strength * 0.25 : strength, wet: this.wading > 0.05 });
+      return;
+    }
     if ((this.state === 'walk' || this.state === 'stumble') && !quiet) {
       // Each step rocks the body toward the foot that just landed.
       const w = this.body.angvel();
@@ -398,6 +406,10 @@ export class Kaiju implements System {
   }
 
   preStep(dt: number): void {
+    if (this.sim.tuning.move.controller === 1) {
+      this.runnerStep(dt);
+      return;
+    }
     const k = this.sim.tuning.kaiju;
     const g = this.sim.tuning.world.gravity;
     const body = this.body;
@@ -743,6 +755,165 @@ export class Kaiju implements System {
     this.tail.setPose(crawl, pitch);
     if (this.sim.tick % 30 === 0) this.tail.syncMotors();
     this.tail.arm(this.body.linvel());
+  }
+
+  /**
+   * The runner: a conventional third-person character in the kaiju's body. It faces where the
+   * player looks, moves and strafes at once, stops when the keys are let go, jumps, crouches,
+   * and slides if it crouches at a sprint. It does not lean, wobble or fall: all that is left
+   * of being a kaiju is its size, and what that does to the street.
+   */
+  private runnerStep(dt: number): void {
+    const t = this.sim.tuning;
+    const k = t.kaiju;
+    const r = t.runner;
+    const m = t.modes;
+    const g = t.world.gravity;
+    const body = this.body;
+    const input = this.input;
+    const p = body.translation();
+    const v = body.linvel();
+    pos.set(p.x, p.y, p.z);
+    this.state = 'walk';
+    this.tilt = 0;
+    this.load = 0;
+    this.stall = 0;
+
+    // It turns to face where the camera points. (A turn input, from a script or a pad without
+    // a look stick, steers it instead.)
+    const aim = input.turn ? this.yaw + input.turn * 0.7 : input.look;
+    const off = Math.atan2(Math.sin(aim - this.yaw), Math.cos(aim - this.yaw));
+    this.yaw += THREE.MathUtils.clamp(off, -r.turn * dt, r.turn * dt);
+    this.forward.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    this.left.set(this.forward.z, 0, -this.forward.x);
+
+    const ground = this.sim.ground;
+    const reach = k.bodyRadius;
+    const groundY = Math.max(
+      ground(p.x, p.z),
+      ground(p.x + this.forward.x * reach, p.z + this.forward.z * reach),
+      ground(p.x - this.forward.x * reach, p.z - this.forward.z * reach),
+      ground(p.x + this.left.x * reach, p.z + this.left.z * reach),
+      ground(p.x - this.left.x * reach, p.z - this.left.z * reach),
+    );
+    this.wading = THREE.MathUtils.clamp(-ground(p.x, p.z) / (k.legLength * 0.8), 0, 1);
+    const traction = this.sim.traction(p.x, p.z);
+    this.traction = traction;
+
+    let vx = v.x;
+    let vz = v.z;
+    let vy = v.y;
+    const speed = Math.hypot(vx, vz);
+
+    // A slide: crouching at a sprint throws it flat and forward, and it rides the speed down.
+    const crouchPressed = input.crouch && !this.crouchHeld;
+    this.crouchHeld = input.crouch;
+    if (crouchPressed && !this.airborne && this.sliding <= 0 && speed > r.speed * r.slideFrom) {
+      this.sliding = 1;
+      const boost = (speed + r.slideBoost) / speed;
+      vx *= boost;
+      vz *= boost;
+      this.slides++;
+      this.sim.emit('kaijuSlide', { x: p.x, y: p.y, z: p.z });
+    }
+    if (this.sliding > 0) {
+      const now = Math.hypot(vx, vz);
+      const next = now - r.slideFriction * (this.airborne ? 0.1 : 1) * dt;
+      // Standing up ends it, and so does running out of speed (it stays crouched).
+      if (!input.crouch || next < r.speed * r.crouchSpeed) this.sliding = 0;
+      else {
+        // It can be leaned a little toward where the player is looking, no more.
+        const heading = Math.atan2(vx, vz);
+        const want = Math.atan2(Math.sin(this.yaw - heading), Math.cos(this.yaw - heading));
+        const steered = heading + THREE.MathUtils.clamp(want, -r.slideSteer * dt, r.slideSteer * dt);
+        vx = Math.sin(steered) * next;
+        vz = Math.cos(steered) * next;
+      }
+    }
+    if (this.sliding <= 0) {
+      // Where the keys say to go, as a velocity; get there at a fixed rate, and stop the same way.
+      let wx = this.forward.x * input.thrust + this.left.x * input.strafe;
+      let wz = this.forward.z * input.thrust + this.left.z * input.strafe;
+      const push = Math.hypot(wx, wz);
+      if (push > 1) {
+        wx /= push;
+        wz /= push;
+      }
+      const top =
+        (input.crouch ? r.speed * r.crouchSpeed : input.sprint && input.thrust > 0.3 ? r.sprint : r.speed) *
+        (1 - 0.45 * this.wading) *
+        (1 - (1 - t.carry.speed) * this.carrying) *
+        (this.planted ? 0 : 1);
+      const rate = (r.sprint / Math.max(0.03, push > 0.05 ? r.accel : r.stop)) * traction * (this.airborne ? r.airControl : 1);
+      let dx = wx * top - vx;
+      let dz = wz * top - vz;
+      const gap = Math.hypot(dx, dz);
+      if (gap > rate * dt) {
+        dx *= (rate * dt) / gap;
+        dz *= (rate * dt) / gap;
+      }
+      vx += dx;
+      vz += dz;
+    }
+    if (this.wading > 0) vx += (this.sim.current(p.x, p.z) * (this.planted ? 0.15 : this.carrying ? 0.45 : 1) - vx) * 1.1 * this.wading * dt;
+
+    // Crouching and sliding share the low pose, and it drops into it at once.
+    const low = input.crouch || this.sliding > 0;
+    this.mode = low ? 'crawl' : 'normal';
+    this.crawl = THREE.MathUtils.clamp(this.crawl + (low ? dt : -dt) * 7, 0, 1);
+    const crawl = smooth(this.crawl);
+
+    const jumpPressed = input.jump && !this.jumpHeld;
+    this.jumpHeld = input.jump;
+    if (jumpPressed && !this.airborne && this.wading < 0.3 && !this.carrying && r.jump > 0) {
+      vy = Math.sqrt(2 * g * r.gravity * r.jump);
+      this.airborne = true;
+      this.airTime = 0;
+      this.jumps++;
+      this.sim.emit('kaijuJump', { x: p.x, y: p.y, z: p.z });
+    }
+
+    // Height: held at standing (or crouching) height by a stiff spring, or in free flight.
+    const standingHeight = this.rideHeight + this.legs.lift * 0.6;
+    const want = standingHeight + (k.bodyRadius + m.crawlClearance - standingHeight) * crawl;
+    const error = want - (p.y - groundY);
+    if (this.airborne) {
+      this.airTime += dt;
+      vy -= g * (r.gravity - 1) * dt;
+      if (this.airTime > 0.15 && vy < 0 && error > -1) {
+        this.airborne = false;
+        this.sim.emit('kaijuLand', { x: p.x, y: p.y, z: p.z, speed: -vy });
+        this.sim.emit('footfall', { x: p.x, y: groundY, z: p.z, side: 0, strength: 2, wet: this.wading > 0.2 });
+        this.chunks?.shake(p.x, p.z, k.bodyRadius + 2 + -vy * 0.15);
+      }
+    } else {
+      // (Gravity is still pulling: cancel it, then close on the height wanted.)
+      vy += g * dt;
+      vy += (THREE.MathUtils.clamp(error * 14, -40, 40) - vy) * Math.min(1, dt * 20);
+    }
+    body.setLinvel({ x: vx, y: vy, z: vz }, true);
+
+    // Always upright (tipped forward only by the crouch), facing where it faces.
+    const pitch = crawl * m.crawlPitch;
+    quat.setFromAxisAngle(UP, this.yaw).multiply(tmpQuat.setFromAxisAngle(AXIS_X, pitch));
+    body.setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+
+    this.speed = Math.hypot(vx, vz);
+    this.forwardSpeed = vx * this.forward.x + vz * this.forward.z;
+
+    const ctx = this.legContext;
+    ctx.pos.copy(pos);
+    ctx.velocity.set(vx, 0, vz);
+    ctx.yaw = this.yaw;
+    ctx.standing = !this.airborne;
+    ctx.stanceScale = 1;
+    ctx.footScale = 1;
+    this.legs.update(dt, ctx);
+    ctx.crawl = crawl;
+    this.tail.setPose(crawl, pitch);
+    if (this.sim.tick % 30 === 0) this.tail.syncMotors();
+    this.tail.arm(body.linvel());
   }
 
   /** The catch-step of a stumble: a stagger toward the side it is toppling to, which rights it a little. */

@@ -32,6 +32,7 @@ The city takes about a minute per run to simulate. Styles (`src/bot/playbot.ts`)
 npm run course                  # every movement style, careful and flat out
 npm run course -- 1 careful     # one style (0 Lumbering, 1 Steady, 2 Wild), one effort
 npm run course -- settings.json # the settings in a file pasted from the game
+npm run course -- run           # the runner's course (sprint, hurdles, slalom, low bars); style 3 is the Runner
 ```
 
 The course (`src/scenes/course.ts`) is a fixed kilometre: a 40 m boulevard, a 26 m avenue with parked cars,

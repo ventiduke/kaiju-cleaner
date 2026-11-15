@@ -33,7 +33,10 @@ async function boot(): Promise<void> {
   const sceneName: SceneName = requested && SCENES.includes(requested) ? requested : 'city';
 
   const R = await initRapier();
-  const tuning = makeTuning(takeRestartStash());
+  const stash = takeRestartStash();
+  const tuning = makeTuning(stash);
+  // The runner's course opens as the runner (unless it was restarted as something else on purpose).
+  if (sceneName === 'run' && !stash) applyStyle(tuning, 3);
   const sim = createGame(R, sceneName, tuning);
 
   // The stencil buffer is what lets the kaiju show through buildings as an outline.
@@ -198,7 +201,11 @@ async function boot(): Promise<void> {
   const followCam = kaiju ? new FollowCamera(sim, camera, kaiju) : null;
   let follow = !!followCam && params.get('cam') !== 'free';
   freeCam.enabled = !follow;
-  freeCam.onDrag = (dx, dy) => followCam?.drag(dx, dy);
+  freeCam.onDrag = (dx, dy) => {
+    if (isRunner()) {
+      if (document.pointerLockElement !== renderer.domElement) lookWith(dx, dy);
+    } else followCam?.drag(dx, dy);
+  };
   freeCam.onWheel = (dy) => followCam?.wheel(dy);
   freeCam.onDoubleClick = () => followCam?.reset();
 
@@ -216,12 +223,33 @@ async function boot(): Promise<void> {
   };
   // Steering by the screen needs to know which way the camera and the kaiju are facing.
   const lookDir = new THREE.Vector3();
-  const input = new InputManager(sim.players, () => {
-    if (!tuning.move.relative || !follow || !kaiju) return null;
-    camera.getWorldDirection(lookDir);
-    return { camera: Math.atan2(lookDir.x, lookDir.z), kaiju: kaiju.yaw };
+  const isRunner = () => tuning.move.controller === 1 && follow && !!kaiju;
+  const input = new InputManager(
+    sim.players,
+    () => {
+      if (!tuning.move.relative || !follow || !kaiju) return null;
+      camera.getWorldDirection(lookDir);
+      return { camera: Math.atan2(lookDir.x, lookDir.z), kaiju: kaiju.yaw };
+    },
+    isRunner,
+    () => kaiju?.yaw ?? 0,
+    () => tuning.runner.sensitivity,
+  );
+  // The runner's view: the captured mouse (or a drag) turns it and tips it.
+  const canvas = renderer.domElement;
+  const lookWith = (dx: number, dy: number) => {
+    input.lookBy(dx);
+    if (followCam) followCam.pitch = THREE.MathUtils.clamp(followCam.pitch + dy * 0.0022 * tuning.runner.sensitivity, -0.5, 1);
+  };
+  document.addEventListener('pointermove', (e) => {
+    if (document.pointerLockElement === canvas && isRunner()) lookWith(e.movementX, e.movementY);
   });
-  freeCam.onClick = (ndc) => (follow ? input.click() : throwBall(ndc));
+  freeCam.onClick = (ndc) => {
+    // The runner's first click captures the mouse; after that a click is a click.
+    if (isRunner() && document.pointerLockElement !== canvas) void canvas.requestPointerLock();
+    else if (follow) input.click();
+    else throwBall(ndc);
+  };
 
   const hud = new Hud();
   const toast = makeToast();
@@ -247,7 +275,10 @@ async function boot(): Promise<void> {
   const refreshPanel = () => {
     for (const c of gui.controllersRecursive()) c.updateDisplay();
     recorder.tuningChanged();
-    hint.textContent = `1/2/3: movement style (now ${STYLES[tuning.move.style]?.name ?? 'custom'})   X: steering (${tuning.move.relative ? 'by screen' : 'tank'})   H: controls   N: note   \`: tuning panel`;
+    hint.textContent =
+      `1/2/3/4: movement style (now ${STYLES[tuning.move.style]?.name ?? 'custom'})   ` +
+      (tuning.move.controller === 1 ? 'click: capture mouse' : `X: steering (${tuning.move.relative ? 'by screen' : 'tank'})`) +
+      '   H: controls   N: note   `: tuning panel';
   };
   refreshPanel();
   // The tuning panel is a dev tool: tucked away until the ` key asks for it.
@@ -255,12 +286,14 @@ async function boot(): Promise<void> {
 
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement) return;
-    const digit = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
+    const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code);
     if (digit >= 0) {
       // A whole movement style at a keypress.
       applyStyle(tuning, digit);
       refreshPanel();
-      toast(`${STYLES[digit].name}: ${STYLES[digit].blurb}`);
+      if (!isRunner()) document.exitPointerLock();
+      else if (followCam) followCam.pitch = 0;
+      toast(`${STYLES[digit].name}: ${STYLES[digit].blurb}` + (isRunner() ? '. Click the game to capture the mouse; Esc frees it.' : ''));
     } else if (e.code === 'KeyX') {
       tuning.move.relative = tuning.move.relative ? 0 : 1;
       refreshPanel();
@@ -289,6 +322,7 @@ async function boot(): Promise<void> {
   document.getElementById('help')!.textContent = [
     'W/A/S/D move   Shift: tiptoe   C: crawl (at a run, in Wild style: slide)   Space: leap (Wild style)   F: hold breath   V: bow',
     '1 / 2 / 3: movement style (Lumbering, Steady, Wild)   X: steer by the screen, or like a tank',
+    '4: Runner, a plain third-person body: mouse looks (click to capture), W A S D move and strafe, Shift sprints, Space jumps, C crouches; C at a sprint slides',
     'CLICK (or E) by a marked piece: take hold; click again over its marker to put it back. C while holding plants your feet.',
     'blocked road: shove, kick, tail-sweep or sneeze the rubble off it.      going over? steer into the fall to save it',
     'mouse drag: look around   wheel: zoom   double-click: reset view   Q/Z: swing   T: time of day',

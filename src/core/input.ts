@@ -55,9 +55,21 @@ export class InputManager {
    *   ("up" is away from the camera) instead of turning the kaiju like a tank. Both headings
    *   are compass angles in radians (0 faces +z).
    */
+  /** The runner's heading (where the camera points), once there is one, and whether it is crouched. */
+  private look: number | null = null;
+  private crouched = false;
+  private padCrouch = false;
+
+  /**
+   * @param runner tells whether the kaiju is the runner (mouse looks, keys move and strafe, C toggles a crouch)
+   * @param heading the kaiju's own heading, for the runner's camera to start from
+   */
   constructor(
     private players: PlayerInput[],
     private view: () => { camera: number; kaiju: number } | null = () => null,
+    private runner: () => boolean = () => false,
+    private heading: () => number = () => 0,
+    private sensitivity: () => number = () => 1,
   ) {
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
@@ -82,6 +94,11 @@ export class InputManager {
     });
   }
 
+  /** The mouse (or a drag) turning the runner's view: `dx` in pixels, right is positive. */
+  lookBy(dx: number): void {
+    if (this.look !== null) this.look -= dx * 0.0026 * this.sensitivity();
+  }
+
   /** A click on the game: the same as tapping the grab key. */
   click(): void {
     this.clicks++;
@@ -104,17 +121,32 @@ export class InputManager {
       let breath = false;
       let bow = false;
       let jump = false;
+      let strafe = 0;
+      let sprint = false;
       const balanceX = 0;
       let balanceZ = 0;
       if (i === 0) {
         const fwd = this.key('KeyW', 'ArrowUp') - this.key('KeyS', 'ArrowDown');
         const side = this.key('KeyA', 'ArrowLeft') - this.key('KeyD', 'ArrowRight');
-        const steer = steerByScreen(fwd, side, this.view());
-        thrust += steer.thrust;
-        turn += steer.turn;
+        if (this.runner()) {
+          // The runner: keys drive and strafe, and the view (not the keys) says which way it faces.
+          this.look ??= this.heading();
+          thrust += fwd;
+          strafe += side;
+          sprint = this.key('ShiftLeft', 'ShiftRight') > 0;
+          // C toggles the crouch; jumping stands it up.
+          if (this.tapped.has('KeyC')) this.crouched = !this.crouched;
+          if (this.key('Space')) this.crouched = false;
+        } else {
+          this.look = null;
+          this.crouched = false;
+          const steer = steerByScreen(fwd, side, this.view());
+          thrust += steer.thrust;
+          turn += steer.turn;
+        }
         camYaw += this.key('KeyZ') - this.key('KeyQ');
-        tiptoe = this.key('ShiftLeft', 'ShiftRight') > 0;
-        crouch = this.key('KeyC') > 0;
+        tiptoe = !this.runner() && this.key('ShiftLeft', 'ShiftRight') > 0;
+        crouch = this.runner() ? this.crouched : this.key('KeyC') > 0;
         jump = this.key('Space') > 0;
         breath = this.key('KeyF') > 0;
         bow = this.key('KeyV') > 0;
@@ -129,9 +161,21 @@ export class InputManager {
       }
       const pad = pads[i];
       if (pad) {
-        const steer = steerByScreen(-axis(pad.axes[1] ?? 0), -axis(pad.axes[0] ?? 0), i === 0 ? this.view() : null);
-        thrust += steer.thrust;
-        turn += steer.turn;
+        if (i === 0 && this.runner()) {
+          // Left stick moves and strafes, right stick looks, B toggles the crouch, a trigger sprints.
+          thrust += -axis(pad.axes[1] ?? 0);
+          strafe += -axis(pad.axes[0] ?? 0);
+          this.lookBy(axis(pad.axes[2] ?? 0) * 18);
+          sprint ||= (pad.buttons[7]?.value ?? 0) > 0.4 || !!pad.buttons[10]?.pressed;
+          const b = !!pad.buttons[1]?.pressed;
+          if (b && !this.padCrouch) this.crouched = !this.crouched;
+          this.padCrouch = b;
+          crouch = this.crouched;
+        } else {
+          const steer = steerByScreen(-axis(pad.axes[1] ?? 0), -axis(pad.axes[0] ?? 0), i === 0 ? this.view() : null);
+          thrust += steer.thrust;
+          turn += steer.turn;
+        }
         jump ||= !!pad.buttons[0]?.pressed;
         camYaw += axis(pad.axes[2] ?? 0);
         tiptoe ||= (pad.buttons[7]?.value ?? 0) > 0.4;
@@ -156,6 +200,9 @@ export class InputManager {
       p.breath = breath;
       p.bow = bow;
       p.jump = jump;
+      p.strafe = Math.max(-1, Math.min(1, strafe));
+      p.sprint = sprint;
+      if (i === 0) p.look = this.look ?? 0;
       p.balanceX = balanceX;
       p.balanceZ = balanceZ;
     }

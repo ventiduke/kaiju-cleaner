@@ -50,6 +50,40 @@ export function courseSpec(): CourseSpec {
   };
 }
 
+/**
+ * The runner's course: short, and each leg asks for one of its moves. A straight to sprint
+ * down, three low walls to jump, towers in the road to strafe round, and three low bridges
+ * in a row, close enough together to take in one slide.
+ */
+export function runSpec(): CourseSpec {
+  const sections: Section[] = [
+    { name: 'Sprint 40m', brief: 'Shift to sprint', width: 40, path: [P(0, 140)] },
+    { name: 'Hurdles 34m', brief: 'Low walls: jump them (Space)', width: 34, path: [P(0, -40)] },
+    {
+      name: 'Slalom 44m',
+      brief: 'Towers in the road: strafe round them (A / D)',
+      width: 44,
+      path: [P(-175, -40)],
+      line: [P(-34, -52), P(-68, -28), P(-102, -52), P(-136, -28), P(-175, -40)],
+    },
+    { name: 'Low bars 28m', brief: 'Three low bridges: crouch (C), or slide under all three at a sprint', width: 28, path: [P(-175, 150)] },
+  ];
+  return {
+    name: 'Runner course',
+    start: P(0, 270),
+    yaw: Math.PI,
+    sections,
+    crawlZones: [
+      { ...P(-175, 10), radius: 10 },
+      { ...P(-175, 50), radius: 10 },
+      { ...P(-175, 90), radius: 10 },
+    ],
+    tiptoeZones: [],
+    hurdles: [P(0, 95), P(0, 45), P(0, -5)],
+    pillars: [P(-34, -30), P(-68, -50), P(-102, -30), P(-136, -50)],
+  };
+}
+
 interface Segment {
   a: Point;
   b: Point;
@@ -97,13 +131,25 @@ export function courseLayout(spec: CourseSpec, tuning: Tuning): CityLayout {
     return buildings.length - 1;
   };
 
-  // The skybridges first, each between two buildings tall enough to carry it.
-  const lane = segments.find((s) => spec.sections[s.section].name.startsWith('Skybridges'))!;
+  // The skybridges first, each across whichever street it is on, between two buildings tall enough to carry it.
   for (const zone of spec.crawlZones) {
+    const lane = segments.reduce((best, seg) => (distanceTo(seg, zone.x, zone.z) < distanceTo(best, zone.x, zone.z) ? seg : best), segments[0]);
     const off = lane.width / 2 + SIDEWALK + LOT / 2;
-    const north = place(zone.x, zone.z - off, bridgeFloor + 2, lane);
-    const south = place(zone.x, zone.z + off, bridgeFloor + 2, lane);
-    bridges.push({ kind: 'sky', a: north, b: south, along: 'z', from: zone.z - off + LOT / 2, to: zone.z + off - LOT / 2, center: zone.x, floor: bridgeFloor, width: 5, color: 0x8fc7d8 });
+    const alongX = Math.abs(lane.b.x - lane.a.x) > Math.abs(lane.b.z - lane.a.z);
+    const a = alongX ? place(zone.x, zone.z - off, bridgeFloor + 2, lane) : place(zone.x - off, zone.z, bridgeFloor + 2, lane);
+    const b = alongX ? place(zone.x, zone.z + off, bridgeFloor + 2, lane) : place(zone.x + off, zone.z, bridgeFloor + 2, lane);
+    const mid = alongX ? zone.z : zone.x;
+    bridges.push({ kind: 'sky', a, b, along: alongX ? 'z' : 'x', from: mid - off + LOT / 2, to: mid + off - LOT / 2, center: alongX ? zone.x : zone.z, floor: bridgeFloor, width: 5, color: 0x8fc7d8 });
+  }
+  // Hurdles: a wall one floor high right across the road. Pillars: a small tower standing in it.
+  for (const h of spec.hurdles ?? []) {
+    const lane = segments.reduce((best, seg) => (distanceTo(seg, h.x, h.z) < distanceTo(best, h.x, h.z) ? seg : best), segments[0]);
+    const alongX = Math.abs(lane.b.x - lane.a.x) > Math.abs(lane.b.z - lane.a.z);
+    const cells = Math.max(2, Math.round(lane.width / 8));
+    buildings.push({ x: h.x, z: h.z, color: 0xd9a441, style: 'grid', tiers: [{ floors: 1, w: alongX ? 4 : lane.width, d: alongX ? lane.width : 4, nx: alongX ? 1 : cells, nz: alongX ? cells : 1 }] });
+  }
+  for (const pillar of spec.pillars ?? []) {
+    buildings.push({ x: pillar.x, z: pillar.z, color: rng.pick(PALETTE), style: 'grid', tiers: [{ floors: 3, w: 9, d: 9, nx: 1, nz: 1 }] });
   }
 
   // Then a row of buildings down each side of every street.
@@ -144,8 +190,8 @@ export function courseLayout(spec: CourseSpec, tuning: Tuning): CityLayout {
   // Thin ground: a band of cracked road right across the street, then a band of water mains.
   const [cracks, mains] = spec.tiptoeZones;
   for (const dxo of [-10, 0, 10]) {
-    hazards.push({ kind: 'weak', x: cracks.x + dxo, z: cracks.z, radius: 7.5 });
-    hazards.push({ kind: 'main', x: mains.x + dxo, z: mains.z, radius: 2.1 });
+    if (cracks) hazards.push({ kind: 'weak', x: cracks.x + dxo, z: cracks.z, radius: 7.5 });
+    if (mains) hazards.push({ kind: 'main', x: mains.x + dxo, z: mains.z, radius: 2.1 });
   }
 
   return {
@@ -211,11 +257,14 @@ function addRoads(sim: Sim, spec: CourseSpec): void {
   sim.scene.add(line);
 }
 
-export function buildCourse(sim: Sim): void {
-  const spec = courseSpec();
+export function buildCourse(sim: Sim, spec: CourseSpec = courseSpec()): void {
   const layout = courseLayout(spec, sim.tuning);
   addEnvironment(sim, 420, null);
   addRoads(sim, spec);
   populate(sim, layout);
   sim.parts.course = sim.add(new Course(sim, spec, sim.parts.kaiju as Kaiju, sim.parts.damage as Damage));
+}
+
+export function buildRun(sim: Sim): void {
+  buildCourse(sim, runSpec());
 }
