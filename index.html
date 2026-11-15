@@ -25,8 +25,25 @@
       #modebar { position: fixed; left: 50%; bottom: 104px; transform: translateX(-50%); display: none; align-items: center; gap: 10px; color: #fff; font-size: 13px; font-weight: bold; background: rgba(20, 24, 32, 0.7); padding: 7px 12px; border-radius: 6px; pointer-events: none; }
       #modebar b { display: block; width: 180px; height: 10px; background: rgba(255, 255, 255, 0.18); border-radius: 5px; overflow: hidden; }
       #modebar i { display: block; height: 100%; width: 100%; background: #7dff9a; }
-      #boot { position: fixed; inset: 0; display: grid; place-items: center; color: #fff; font-size: 16px; }
+      #boot { position: fixed; inset: 0; display: grid; place-items: center; color: #fff; font-size: 16px; line-height: 1.6; text-align: center; white-space: pre-line; padding: 0 24px; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); }
     </style>
+    <script>
+      // If the game's code cannot be fetched, say why instead of sitting on "Loading…".
+      window.addEventListener(
+        'error',
+        function (e) {
+          var t = e.target;
+          var boot = document.getElementById('boot');
+          if (!boot || !t || t.tagName !== 'SCRIPT') return;
+          boot.textContent = /\/src\/main\.ts$/.test(t.src)
+            ? 'This is the unbuilt source, not the game.\n' +
+              'GitHub Pages is publishing the repository itself instead of the built game.\n' +
+              'Fix: repo Settings → Pages → Source → "GitHub Actions", then re-run the "Deploy to GitHub Pages" workflow.'
+            : "The game's code did not load. A new version may be deploying.\nWait a minute, then reload (Ctrl+Shift+R or Cmd+Shift+R).";
+        },
+        true,
+      );
+    </script>
   </head>
   <body>
     <div id="boot">Loading…</div>

@@ -9,6 +9,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
 
 concurrency:
   group: pages
@@ -39,5 +40,21 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # If Pages is set to "Deploy from a branch", GitHub also publishes the raw repository on
+      # every push, and whichever publish lands last is what the site serves. Let that one
+      # finish first, so the built game is always last. (The real fix is Settings -> Pages ->
+      # Source -> "GitHub Actions"; then there is nothing to wait for.)
+      - name: Wait for any branch-based Pages publish of this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 40); do
+            busy=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${{ github.sha }}&per_page=50" \
+              --jq '[.workflow_runs[] | select(.path | startswith("dynamic/pages")) | select(.status != "completed")] | length')
+            [ "$busy" = "0" ] && exit 0
+            echo "branch-based Pages publish still running; waiting"
+            sleep 10
+          done
+          echo "gave up waiting; deploying anyway"
       - id: deployment
         uses: actions/deploy-pages@v4

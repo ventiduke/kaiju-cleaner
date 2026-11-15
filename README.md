@@ -2,6 +2,8 @@
 
 A 3D web game prototype: giant, earnest, clumsy kaiju trying to help clean up a wrecked city without breaking even more of it.
 
+**Play it: https://ventiduke.github.io/kaiju-cleaner/**
+
 Built with Vite, TypeScript, Three.js and Rapier. Deployed to GitHub Pages on every push to `main`.
 
 ## Run it
@@ -134,3 +136,7 @@ measurable checks in `test/`; whether it is *fun* is a playtest call.
 
 Repo Settings → Pages → Build and deployment → Source: **GitHub Actions**. After that, pushes to `main` deploy
 automatically.
+
+If Source is left on "Deploy from a branch", GitHub also publishes the raw repository on every push. The
+deploy workflow waits for that and publishes the built game after it, but if a build ever fails the raw
+source is what stays up, and the page says so instead of loading.
