@@ -1,6 +1,6 @@
 import { Rng } from '../core/rng';
 import type { Tuning } from '../core/tuning';
-import { shade } from './building';
+import { shade, type BuildStyle } from './building';
 
 /** One stacked section of a building. Tiers are centred on the building and listed bottom-up. */
 export interface Tier {
@@ -16,6 +16,8 @@ export interface BuildingSpec {
   z: number;
   tiers: Tier[];
   color: number;
+  /** How it is put together: plain blocks, brickwork, small blocks, or interlocking odd shapes. */
+  style?: BuildStyle;
 }
 
 export type PropKind = 'car' | 'lamp' | 'tree' | 'cart';
@@ -230,7 +232,13 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     } else {
       tiers.push({ floors, w, d, nx, nz });
     }
-    buildings.push({ x: cx, z: cz, tiers, color: rng.pick(BUILDING_COLORS) });
+    // A mix of construction: brickwork and interlocking pieces as well as plain blocks. The finer
+    // kinds go on the smaller buildings, to keep the number of pieces in hand.
+    const cells = tiers.reduce((sum, t) => sum + t.nx * t.nz * t.floors, 0);
+    const roll = rng.next();
+    const style: BuildStyle =
+      roll < 0.28 ? 'brick' : roll < 0.56 && cells <= 60 ? 'puzzle' : roll < 0.68 && cells <= 36 ? 'fine' : 'grid';
+    buildings.push({ x: cx, z: cz, tiers, color: rng.pick(BUILDING_COLORS), style });
     blockOf.push({ i: bi, j: bj });
   };
 
@@ -365,6 +373,8 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     // The stump is kept low enough for the piece to be carried over it.
     const stump = Math.min(t.floors - pieceFloors, 5);
     t.floors = stump;
+    // Plain blockwork, so the top that comes off matches the stump it goes back on.
+    b.style = 'grid';
     const boxes: PieceBox[] = [];
     const cw = t.w / t.nx;
     const cd = t.d / t.nz;

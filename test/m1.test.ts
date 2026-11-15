@@ -40,20 +40,38 @@ describe('city layout', () => {
     expect(cfg.sideStreetWidth + 2 * cfg.sidewalk).toBeLessThan(stance + 3);
   });
 
-  it('gives every chunk above the ground floor something to rest on', () => {
+  it('gives every chunk above the ground floor something to rest on, whatever the building is made of', () => {
+    const styles = new Set<string>();
     for (const b of layout.buildings) {
+      const style = b.style ?? 'grid';
+      styles.add(style);
       const chunks = buildingChunks(b, cfg.floorHeight);
-      expect(chunks.length).toBe(chunkCount(b));
+      if (style === 'grid') expect(chunks.length).toBe(chunkCount(b));
+      if (style === 'fine') expect(chunks.length).toBe(chunkCount(b) * 4);
+      // Every box of the building is accounted for exactly once: the pieces fill it with no overlap.
+      const volume = chunks.reduce((v, c) => v + c.boxes.reduce((k, x) => k + 8 * x.hx * x.hy * x.hz, 0), 0);
+      const solid = b.tiers.reduce((v, t) => v + t.w * t.d * t.floors * cfg.floorHeight, 0);
+      expect(volume).toBeCloseTo(solid, 3);
       for (const c of chunks) {
-        if (c.floor === 0) expect(c.supports.length).toBe(0);
+        const ground = c.boxes.some((x) => x.y - x.hy < 0.01);
+        if (ground) expect(c.floor).toBe(0);
         else {
           expect(c.supports.length).toBeGreaterThan(0);
-          const area = c.supports.reduce((a, s) => a + s.area, 0);
-          expect(area).toBeLessThanOrEqual(4 * c.hx * c.hz + 1e-6);
-          for (const s of c.supports) expect(chunks[s.chunk].floor).toBe(c.floor - 1);
+          for (const s of c.supports) expect(chunks[s.chunk].floor).toBeLessThanOrEqual(c.floor + 1);
         }
+        const area = c.supports.reduce((a, s) => a + s.area, 0);
+        const footprint = c.boxes.reduce((a, x) => a + 4 * x.hx * x.hz, 0);
+        expect(area).toBeLessThanOrEqual(footprint + 1e-6);
+        // And nothing rests on itself.
+        expect(c.supports.every((s) => chunks[s.chunk] !== c)).toBe(true);
       }
     }
+    // The city really is a mix.
+    expect([...styles].sort()).toEqual(['brick', 'fine', 'grid', 'puzzle']);
+    const puzzle = layout.buildings.find((b) => b.style === 'puzzle')!;
+    const pieces = buildingChunks(puzzle, cfg.floorHeight);
+    expect(pieces.some((c) => c.boxes.length === 2)).toBe(true); // L-shapes
+    expect(pieces.some((c) => c.hy > cfg.floorHeight * 0.9)).toBe(true); // two-floor columns
   });
 });
 
@@ -167,6 +185,53 @@ describe('M1 destruction', () => {
     );
   });
 
+  it('brittle pieces crumble to dust and rubble when they land; sturdy ones stay as lumps', async () => {
+    const g = await makeGame('yard');
+    // Bring the slim tower down.
+    const tower = g.chunks.buildings[1];
+    const all = g.chunks.chunks.slice(tower.first, tower.first + tower.count);
+    for (let i = tower.first; i < tower.first + 4; i++) g.chunks.loosen(i, null);
+    let dust = 0;
+    g.sim.on('chunkCrumble', () => dust++);
+    g.sim.run(60 * 8);
+    const gone = all.filter((c) => c.state === ChunkState.Gone);
+    const left = all.filter((c) => c.state === ChunkState.Loose);
+    expect(gone.length).toBeGreaterThan(5);
+    expect(left.length).toBeGreaterThan(5);
+    expect(g.chunks.crumbled).toBeGreaterThanOrEqual(gone.length); // the skybridge's pieces count too
+    expect(dust).toBeGreaterThanOrEqual(gone.length);
+    // Sturdy pieces never crumble; what crumbled left small rubble behind.
+    expect(all.filter((c) => c.sturdy).every((c) => c.state === ChunkState.Loose)).toBe(true);
+    expect(gone.every((c) => !c.sturdy)).toBe(true);
+    expect(g.chunks.rubble.count).toBeGreaterThan(3);
+  });
+
+  it('a foot landing on rubble crushes the weak bits and stands on the sturdy lumps', async () => {
+    const g = await makeGame('yard', { city: { propDensity: 0 } });
+    const tower = g.chunks.buildings[1];
+    for (let i = tower.first; i < tower.first + 4; i++) g.chunks.loosen(i, null);
+    g.sim.run(60 * 8);
+    const sturdyLeft = g.chunks.chunks.slice(tower.first, tower.first + tower.count).filter((c) => c.state === ChunkState.Loose && c.sturdy).length;
+    expect(sturdyLeft).toBeGreaterThan(2);
+    const crumbledBefore = g.chunks.crumbled;
+    // Walk the kaiju straight through the pile.
+    const k = g.kaiju;
+    for (const b of [k.body, ...k.tail.segments]) {
+      const t = b.translation();
+      b.setTranslation({ x: t.x, y: t.y, z: t.z - 80 }, true);
+    }
+    g.sim.players[0].thrust = 0.35;
+    let highest = 0;
+    for (let i = 0; i < 60 * 12; i++) {
+      g.sim.step();
+      for (const f of k.legs.feet) if (!f.swinging) highest = Math.max(highest, f.pos.y);
+    }
+    // It stepped up onto something, and ground some of the small stuff to nothing.
+    expect(highest).toBeGreaterThan(1.5);
+    expect(g.chunks.rubble.crushed + g.chunks.crumbled - crumbledBefore).toBeGreaterThan(0);
+    expect(k.falls).toBe(0);
+  });
+
   it('lets wreckage settle back to sleep', async () => {
     const g = await makeGame('yard');
     const tower = g.chunks.buildings[1];
@@ -174,9 +239,10 @@ describe('M1 destruction', () => {
     g.chunks.loosen(tower.first + 1, null);
     g.chunks.loosen(tower.first + 2, null);
     g.sim.run(60 * 20);
-    // The tower's 32 chunks, plus the skybridge it was holding up.
-    expect(g.chunks.looseCount).toBeGreaterThanOrEqual(32);
-    expect(g.chunks.looseCount).toBeLessThanOrEqual(36);
+    // The tower's 32 chunks and the skybridge it was holding up, less whatever crumbled.
+    expect(g.chunks.looseCount + g.chunks.crumbled).toBeGreaterThanOrEqual(32);
+    expect(g.chunks.looseCount + g.chunks.crumbled).toBeLessThanOrEqual(36);
+    expect(g.chunks.looseCount).toBeGreaterThan(8);
     expect(g.awakeOthers()).toBeLessThan(4);
   });
 

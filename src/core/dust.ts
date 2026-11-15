@@ -32,6 +32,10 @@ export class Dust implements System {
       this.puff(e.x, e.y, e.z, e.size * 0.55, 2.5);
       this.puff(e.x, Math.max(1, e.y - e.size * 0.4), e.z, e.size * 0.4, 1.5);
     });
+    sim.on('chunkCrumble', (e) => {
+      // A piece going to dust: a bigger, thicker cloud than a plain break.
+      for (let i = 0; i < 3; i++) this.puff(e.x, e.y, e.z, e.size * 0.6, 4);
+    });
     sim.on('footfall', (e) => {
       // In the river a step throws up spray instead.
       if (e.wet) for (let i = 0; i < 5; i++) this.puff(e.x, -0.6, e.z, 2.2 * e.strength, 7, 5);

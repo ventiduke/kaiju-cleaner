@@ -403,7 +403,7 @@ export class Kaiju implements System {
         const zeta = this.state === 'getup' ? Math.max(k.hoverDamping, 1) : k.hoverDamping;
         // The more it tips, the lower it sinks: a toppling kaiju goes down, not just over.
         const dip = (1 - Math.cos(Math.min(this.tilt, 1.4))) * k.legLength * 0.9;
-        const standingHeight = this.rideHeight + this.stanceOffset - dip;
+        const standingHeight = this.rideHeight + this.stanceOffset - dip + this.legs.lift * 0.6;
         const crawlHeight = k.bodyRadius + m.crawlClearance;
         const error = standingHeight + (crawlHeight - standingHeight) * crawl - hit.timeOfImpact;
         // A spring-damper near ride height. Far from it, approach no faster than the legs

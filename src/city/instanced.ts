@@ -4,26 +4,43 @@ import type { BodyField, Sim } from '../sim';
 
 const m = new THREE.Matrix4();
 const p = new THREE.Vector3();
+const o = new THREE.Vector3();
 const q = new THREE.Quaternion();
 const q2 = new THREE.Quaternion();
 const s = new THREE.Vector3();
 const c = new THREE.Color();
 
+/** One drawn box of a body, placed relative to the body's own origin. */
+export interface Part {
+  ox: number;
+  oy: number;
+  oz: number;
+  sx: number;
+  sy: number;
+  sz: number;
+  color: number;
+}
+
 /**
- * Many rigid bodies drawn as one InstancedMesh.
- * Only bodies the physics engine reports as awake are read back and redrawn,
- * so a sleeping city costs nothing per frame.
+ * Many rigid bodies drawn as one InstancedMesh. A body may be several boxes (an L-shaped
+ * chunk, say); they share its transform. Only bodies the physics engine reports as awake
+ * are read back and redrawn, so a sleeping city costs nothing per frame.
  */
 export class InstancedBodies implements BodyField {
   readonly mesh: THREE.InstancedMesh;
   readonly bodies: (RigidBody | null)[] = [];
+  /** Number of bodies (items), and of drawn instances (parts). */
   count = 0;
+  parts = 0;
 
+  private partStart: number[] = [];
+  private partCount: number[] = [];
+  private offset: Float32Array;
   private scale: Float32Array;
-  private shrink: Float32Array;
-  private prev: Float32Array;
-  private curr: Float32Array;
-  private isActive: Uint8Array;
+  private shrink: number[] = [];
+  private prev: number[] = [];
+  private curr: number[] = [];
+  private isActive: number[] = [];
   private active: number[] = [];
   private dirty: number[] = [];
 
@@ -31,6 +48,7 @@ export class InstancedBodies implements BodyField {
     private sim: Sim,
     geometry: THREE.BufferGeometry,
     material: THREE.Material,
+    /** Most instances (parts) it will ever draw. */
     readonly capacity: number,
   ) {
     this.mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, capacity));
@@ -38,24 +56,37 @@ export class InstancedBodies implements BodyField {
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
     this.mesh.frustumCulled = false;
-    this.scale = new Float32Array(capacity * 3);
-    this.shrink = new Float32Array(capacity).fill(1);
-    this.prev = new Float32Array(capacity * 7);
-    this.curr = new Float32Array(capacity * 7);
-    this.isActive = new Uint8Array(capacity);
+    this.offset = new Float32Array(Math.max(1, capacity) * 3);
+    this.scale = new Float32Array(Math.max(1, capacity) * 3);
     sim.scene.add(this.mesh);
   }
 
+  /** A body drawn as a single instance at its own origin. */
   add(body: RigidBody, sx: number, sy: number, sz: number, color: number): number {
+    return this.addCompound(body, [{ ox: 0, oy: 0, oz: 0, sx, sy, sz, color }]);
+  }
+
+  /** A body drawn as several instances. Returns the body's index in this field. */
+  addCompound(body: RigidBody, parts: Part[]): number {
     const i = this.count++;
-    if (i >= this.capacity) throw new Error('InstancedBodies capacity exceeded');
+    if (this.parts + parts.length > this.capacity) throw new Error('InstancedBodies capacity exceeded');
     this.bodies[i] = body;
-    this.scale.set([sx, sy, sz], i * 3);
+    this.partStart[i] = this.parts;
+    this.partCount[i] = parts.length;
+    this.shrink[i] = 1;
+    this.isActive[i] = 0;
+    for (const part of parts) {
+      const k = this.parts++;
+      this.offset.set([part.ox, part.oy, part.oz], k * 3);
+      this.scale.set([part.sx, part.sy, part.sz], k * 3);
+      this.mesh.setColorAt(k, c.setHex(part.color));
+    }
+    this.mesh.count = this.parts;
     this.read(i);
-    this.prev.set(this.curr.subarray(i * 7, i * 7 + 7), i * 7);
-    this.mesh.count = this.count;
-    this.mesh.setColorAt(i, c.setHex(color));
+    for (let k = 0; k < 7; k++) this.prev[i * 7 + k] = this.curr[i * 7 + k];
     this.write(i, 1);
+    this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
     this.sim.own(body, this, i);
     return i;
   }
@@ -77,7 +108,7 @@ export class InstancedBodies implements BodyField {
         this.isActive[i] = 0;
         continue;
       }
-      this.prev.set(this.curr.subarray(i * 7, i * 7 + 7), i * 7);
+      for (let n = 0; n < 7; n++) this.prev[i * 7 + n] = this.curr[i * 7 + n];
       this.read(i);
       if (body.isSleeping() || !body.isDynamic()) {
         this.isActive[i] = 0;
@@ -103,11 +134,25 @@ export class InstancedBodies implements BodyField {
     this.dirty.push(i);
   }
 
-  /** Forgets the body and stops drawing the instance. */
+  /** Forgets the body and stops drawing it. */
   release(i: number): void {
     this.bodies[i] = null;
     this.shrink[i] = 0;
     this.dirty.push(i);
+  }
+
+  /** Puts a different body (and look) in an existing single-part slot. For recycled rubble. */
+  reuse(i: number, body: RigidBody, sx: number, sy: number, sz: number, color: number): void {
+    const k = this.partStart[i];
+    this.bodies[i] = body;
+    this.shrink[i] = 1;
+    this.scale.set([sx, sy, sz], k * 3);
+    this.mesh.setColorAt(k, c.setHex(color));
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    this.read(i);
+    for (let n = 0; n < 7; n++) this.prev[i * 7 + n] = this.curr[i * 7 + n];
+    this.dirty.push(i);
+    this.sim.own(body, this, i);
   }
 
   activeCount(): number {
@@ -123,19 +168,30 @@ export class InstancedBodies implements BodyField {
     const body = this.bodies[i]!;
     const t = body.translation();
     const r = body.rotation();
-    this.curr.set([t.x, t.y, t.z, r.x, r.y, r.z, r.w], i * 7);
+    const n = i * 7;
+    this.curr[n] = t.x;
+    this.curr[n + 1] = t.y;
+    this.curr[n + 2] = t.z;
+    this.curr[n + 3] = r.x;
+    this.curr[n + 4] = r.y;
+    this.curr[n + 5] = r.z;
+    this.curr[n + 6] = r.w;
   }
 
   private write(i: number, alpha: number): void {
     const a = this.prev;
     const b = this.curr;
-    const o = i * 7;
-    p.set(a[o] + (b[o] - a[o]) * alpha, a[o + 1] + (b[o + 1] - a[o + 1]) * alpha, a[o + 2] + (b[o + 2] - a[o + 2]) * alpha);
-    q.set(a[o + 3], a[o + 4], a[o + 5], a[o + 6]);
-    if (alpha >= 1) q.set(b[o + 3], b[o + 4], b[o + 5], b[o + 6]);
-    else if (alpha > 0) q.slerp(q2.set(b[o + 3], b[o + 4], b[o + 5], b[o + 6]), alpha);
+    const n = i * 7;
+    p.set(a[n] + (b[n] - a[n]) * alpha, a[n + 1] + (b[n + 1] - a[n + 1]) * alpha, a[n + 2] + (b[n + 2] - a[n + 2]) * alpha);
+    q.set(a[n + 3], a[n + 4], a[n + 5], a[n + 6]);
+    if (alpha >= 1) q.set(b[n + 3], b[n + 4], b[n + 5], b[n + 6]);
+    else if (alpha > 0) q.slerp(q2.set(b[n + 3], b[n + 4], b[n + 5], b[n + 6]), alpha);
     const k = this.shrink[i];
-    s.set(this.scale[i * 3] * k, this.scale[i * 3 + 1] * k, this.scale[i * 3 + 2] * k);
-    this.mesh.setMatrixAt(i, m.compose(p, q, s));
+    const start = this.partStart[i];
+    for (let j = start; j < start + this.partCount[i]; j++) {
+      o.set(this.offset[j * 3] * k, this.offset[j * 3 + 1] * k, this.offset[j * 3 + 2] * k).applyQuaternion(q).add(p);
+      s.set(this.scale[j * 3] * k, this.scale[j * 3 + 1] * k, this.scale[j * 3 + 2] * k);
+      this.mesh.setMatrixAt(j, m.compose(o, q, s));
+    }
   }
 }

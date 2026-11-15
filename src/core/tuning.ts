@@ -89,6 +89,16 @@ export const codeDefaults = {
     debrisAngularDamping: 0.6,
     /** Seconds after which loose debris gets heavily damped so piles stop jittering and sleep. */
     settleAfter: 3,
+    /**
+     * Crumbling. This share of loose pieces are brittle: the first knock harder than
+     * `crumbleSpeed` (m/s, for a same-mass hit) turns them to dust and a few bits of rubble.
+     * The sturdy rest stay as rubble big enough to stand on.
+     */
+    crumbleChance: 0.75,
+    crumbleSpeed: 2.5,
+    /** Bits of small rubble left by each piece that crumbles, on average, and the most kept at once. */
+    rubbleBits: 1.3,
+    rubbleCap: 240,
   },
   kaiju: {
     // Shape (needs restart)
@@ -332,6 +342,10 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     debrisLinearDamping: [0, 2, 0.05],
     debrisAngularDamping: [0, 4, 0.05],
     settleAfter: [0.5, 15, 0.5],
+    crumbleChance: [0, 1, 0.05],
+    crumbleSpeed: [0.5, 30, 0.5],
+    rubbleBits: [0, 4, 0.1],
+    rubbleCap: [0, 600, 10],
   },
   kaiju: {
     bodyRadius: [2, 12, 0.1],

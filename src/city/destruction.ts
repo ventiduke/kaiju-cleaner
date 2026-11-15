@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { ALL_GROUPS, FIXED_DT, Group, groups, type RigidBody } from '../core/physics';
 import type { Sim, System } from '../sim';
-import { buildingChunks } from './building';
-import { chunkCount, totalFloors, type BridgeSpec, type BuildingSpec } from './cityGen';
+import { buildingChunks, type BoxSpec, type ChunkSpec } from './building';
+import { totalFloors, type BridgeSpec, type BuildingSpec } from './cityGen';
 import type { Damage } from './damage';
-import { InstancedBodies } from './instanced';
+import { InstancedBodies, type Part } from './instanced';
 
 export const enum ChunkState {
   Fixed,
@@ -18,10 +18,21 @@ export interface Chunk {
   x: number;
   y: number;
   z: number;
-  /** Bounding radius, for cheap "is it near" tests. */
+  /** Bounding radius and half-size, for cheap "is it near" and "how tall" tests. */
   radius: number;
+  hx: number;
+  hy: number;
+  hz: number;
   body: RigidBody;
-  collider: number;
+  /** Collider handles: one per box. */
+  colliders: number[];
+  /** Sturdy pieces never crumble: they end up as rubble a kaiju can stand on. */
+  sturdy: boolean;
+  /** Brittle pieces turn to dust at their first hard knock once loose. */
+  brittle: boolean;
+  /** Where it sits in the list of loose chunks, and when it came loose. */
+  slot: number;
+  looseAt: number;
   mass: number;
   state: ChunkState;
   supports: { chunk: number; area: number }[];
@@ -91,6 +102,10 @@ export class ChunkField implements System {
   looseCount = 0;
 
   private field: InstancedBodies;
+  readonly rubble: Rubble;
+  /** Chunks that have crumbled to dust, for the HUD and tests. */
+  crumbled = 0;
+  private pendingCrumble: number[] = [];
   private byCollider = new Map<number, number>();
   private hitters = new Map<number, Hitter>();
   private pendingBreaks: PendingBreak[] = [];
@@ -113,8 +128,9 @@ export class ChunkField implements System {
     bridges: BridgeSpec[] = [],
   ) {
     const bridgePieces = (b: BridgeSpec) => Math.max(2, Math.round((b.to - b.from) / sim.tuning.city.chunkSize));
+    const built = specs.map((spec) => buildingChunks(spec, sim.tuning.city.floorHeight));
     const capacity =
-      specs.reduce((n, b) => n + chunkCount(b), 0) +
+      built.reduce((n, chunks) => n + chunks.reduce((k, c) => k + c.boxes.length, 0), 0) +
       bridges.reduce((n, b) => n + bridgePieces(b) * (b.pierDepth ? 2 : 1), 0);
     this.field = new InstancedBodies(
       sim,
@@ -122,49 +138,69 @@ export class ChunkField implements System {
       new THREE.MeshLambertMaterial({ color: 0xffffff }),
       capacity,
     );
-    for (const spec of specs) this.addBuilding(spec);
+    this.rubble = new Rubble(sim);
+    specs.forEach((spec, i) => this.addBuilding(spec, built[i]));
     for (const bridge of bridges) this.addBridge(bridge, bridgePieces(bridge));
     sim.onContactForce((a, b, force) => this.onForce(a, b, force));
   }
 
+  /** Adds one chunk: a fixed body with a collider and a drawn box for each of its boxes. */
   private createChunk(
     building: number,
-    floor: number,
-    x: number,
-    y: number,
-    z: number,
-    hx: number,
-    hy: number,
-    hz: number,
-    color: number,
+    spec: Pick<ChunkSpec, 'floor' | 'x' | 'y' | 'z' | 'hx' | 'hy' | 'hz' | 'boxes' | 'color' | 'sturdy'>,
     supports: Chunk['supports'],
     needs?: number,
   ): number {
     const { R, world, tuning } = this.sim;
     const d = tuning.destruction;
-    const mass = 8 * hx * hy * hz * d.chunkDensity;
-    const body = world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(x, y, z));
-    const collider = world.createCollider(
-      R.ColliderDesc.cuboid(hx - 0.03, hy - 0.03, hz - 0.03)
-        .setDensity(d.chunkDensity)
-        .setFriction(d.friction)
-        .setRestitution(0)
-        .setCollisionGroups(groups(Group.CHUNK, ALL_GROUPS))
-        .setActiveEvents(R.ActiveEvents.CONTACT_FORCE_EVENTS)
-        .setContactForceEventThreshold((mass * EVENT_SPEED) / FIXED_DT),
-      body,
-    );
+    let volume = 0;
+    for (const b of spec.boxes) volume += 8 * b.hx * b.hy * b.hz;
+    const mass = volume * d.chunkDensity;
+    const body = world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(spec.x, spec.y, spec.z));
     const index = this.chunks.length;
+    const colliders: number[] = [];
+    const parts: Part[] = [];
+    for (const b of spec.boxes) {
+      const collider = world.createCollider(
+        R.ColliderDesc.cuboid(b.hx - 0.03, b.hy - 0.03, b.hz - 0.03)
+          .setTranslation(b.x - spec.x, b.y - spec.y, b.z - spec.z)
+          .setDensity(d.chunkDensity)
+          .setFriction(d.friction)
+          .setRestitution(0)
+          .setCollisionGroups(groups(Group.CHUNK, ALL_GROUPS))
+          .setActiveEvents(R.ActiveEvents.CONTACT_FORCE_EVENTS)
+          .setContactForceEventThreshold((mass * EVENT_SPEED) / FIXED_DT),
+        body,
+      );
+      colliders.push(collider.handle);
+      this.byCollider.set(collider.handle, index);
+      parts.push({
+        ox: b.x - spec.x,
+        oy: b.y - spec.y,
+        oz: b.z - spec.z,
+        sx: b.hx * 2 - GROOVE,
+        sy: b.hy * 2 - GROOVE,
+        sz: b.hz * 2 - GROOVE,
+        color: spec.color,
+      });
+    }
     for (const s of supports) this.chunks[s.chunk].dependents.push(index);
     this.chunks.push({
       building,
-      floor,
-      x,
-      y,
-      z,
-      radius: Math.hypot(hx, hy, hz),
+      floor: spec.floor,
+      x: spec.x,
+      y: spec.y,
+      z: spec.z,
+      radius: Math.hypot(spec.hx, spec.hy, spec.hz),
+      hx: spec.hx,
+      hy: spec.hy,
+      hz: spec.hz,
       body,
-      collider: collider.handle,
+      colliders,
+      sturdy: spec.sturdy,
+      brittle: false,
+      slot: -1,
+      looseAt: 0,
       mass,
       state: ChunkState.Fixed,
       supports,
@@ -175,17 +211,21 @@ export class ChunkField implements System {
       stress: 0,
       stressTick: 0,
     });
-    this.byCollider.set(collider.handle, index);
-    this.field.add(body, hx * 2 - GROOVE, hy * 2 - GROOVE, hz * 2 - GROOVE, color);
+    this.field.addCompound(body, parts);
     const record = this.buildings[building];
-    record.floorTotal[floor]++;
-    record.floorFixed[floor]++;
+    record.floorTotal[spec.floor]++;
+    record.floorFixed[spec.floor]++;
     record.count++;
     this.fixedCount++;
     return index;
   }
 
-  private addBuilding(spec: BuildingSpec): void {
+  /** A single-box chunk (bridges, piers). */
+  private createBox(building: number, floor: number, box: BoxSpec, color: number, supports: Chunk['supports'], needs?: number): number {
+    return this.createChunk(building, { floor, ...box, boxes: [box], color, sturdy: false }, supports, needs);
+  }
+
+  private addBuilding(spec: BuildingSpec, chunks: ChunkSpec[]): void {
     const first = this.chunks.length;
     const floors = totalFloors(spec);
     const building = this.buildings.length;
@@ -197,9 +237,9 @@ export class ChunkField implements System {
       failedFrom: Infinity,
       fellFloors: [],
     });
-    for (const c of buildingChunks(spec, this.sim.tuning.city.floorHeight)) {
+    for (const c of chunks) {
       const supports = c.supports.map((s) => ({ chunk: first + s.chunk, area: s.area }));
-      this.createChunk(building, c.floor, c.x, c.y, c.z, c.hx, c.hy, c.hz, c.color, supports);
+      this.createChunk(building, c, supports);
     }
   }
 
@@ -257,7 +297,7 @@ export class ChunkField implements System {
       const [x, z, hx, hz] = place(spec.from + slack + length * (i + 0.5), length / 2, spec.width / 2);
       const before = i === 0 ? start : deck[i - 1];
       const supports = before >= 0 ? [{ chunk: before, area: 0.5 }] : [];
-      const index = this.createChunk(building, spec.floor, x, y, z, hx, hy, hz, spec.color, supports, 1);
+      const index = this.createBox(building, spec.floor, { x, y, z, hx, hy, hz }, spec.color, supports, 1);
       deck.push(index);
       // Link forward as well, once the next piece (or the far building) is known.
       if (i > 0 && deck[i - 1] >= 0) this.link(deck[i - 1], index);
@@ -269,7 +309,7 @@ export class ChunkField implements System {
       const pierHalf = (top + spec.pierDepth) / 2;
       for (let i = 1; i < pieces; i++) {
         const [x, z, hx, hz] = place(spec.from + slack + length * i, 1.6, spec.width * 0.36);
-        const pier = this.createChunk(building, 0, x, top - pierHalf, z, hx, pierHalf, hz, spec.color, []);
+        const pier = this.createBox(building, 0, { x, y: top - pierHalf, z, hx, hy: pierHalf, hz }, spec.color, []);
         if (deck[i - 1] >= 0) this.link(deck[i - 1], pier);
         if (deck[i] >= 0) this.link(deck[i], pier);
       }
@@ -339,18 +379,33 @@ export class ChunkField implements System {
   private onForce(a: number, b: number, force: number): void {
     const ia = this.byCollider.get(a);
     const ib = this.byCollider.get(b);
+    // A brittle piece that is already loose goes to dust the first time it is knocked hard:
+    // landing after a fall, say, or being ploughed into.
+    for (const i of [ia, ib]) {
+      if (i === undefined) continue;
+      const c = this.chunks[i];
+      if (c.state !== ChunkState.Loose || !c.brittle) continue;
+      if (this.sim.time - c.looseAt < 0.2) continue;
+      if (force * FIXED_DT > c.mass * this.sim.tuning.destruction.crumbleSpeed) this.pendingCrumble.push(i);
+    }
     if (ia !== undefined && this.chunks[ia].state === ChunkState.Fixed) this.pendingBreaks.push({ chunk: ia, other: b, force });
     if (ib !== undefined && this.chunks[ib].state === ChunkState.Fixed) this.pendingBreaks.push({ chunk: ib, other: a, force });
   }
 
   postStep(dt: number): void {
     this.resolveBreaks(dt);
+    if (this.pendingCrumble.length) {
+      for (const i of this.pendingCrumble) this.crumble(i);
+      this.pendingCrumble.length = 0;
+    }
     this.field.capture();
+    this.rubble.postStep();
     this.enforceBudget(dt);
   }
 
   render(alpha: number): void {
     this.field.apply(alpha);
+    this.rubble.render(alpha);
   }
 
   // --- Breaking ---
@@ -425,9 +480,11 @@ export class ChunkField implements System {
   }
 
   /**
-   * A foot coming through: breaks every fixed chunk the shape overlaps, and boots loose
-   * ones out of the way (feet don't collide with chunks physically). On landing, loose
-   * debris is squeezed out sideways instead. Returns how many chunks broke.
+   * A foot (or a carried load) coming through: breaks every fixed chunk the shape overlaps
+   * and boots loose ones out of the way (feet don't collide with chunks physically).
+   * A foot coming down to land crushes what it lands on instead: brittle pieces and small
+   * rubble go to dust, and only the sturdy lumps are left to stand on.
+   * Returns how many fixed chunks broke.
    */
   stomp(
     shape: InstanceType<Sim['R']['Cuboid']>,
@@ -438,16 +495,21 @@ export class ChunkField implements System {
   ): number {
     const fixed: number[] = [];
     const loose: number[] = [];
+    const bits: number[] = [];
     this.sim.world.intersectionsWithShape(
       position,
       rotation,
       shape,
       (collider) => {
         const i = this.byCollider.get(collider.handle);
-        if (i === undefined) return true;
+        if (i === undefined) {
+          const bit = this.rubble.at(collider.handle);
+          if (bit >= 0) bits.push(bit);
+          return true;
+        }
         const state = this.chunks[i].state;
         if (state === ChunkState.Fixed) fixed.push(i);
-        else if (state === ChunkState.Loose) loose.push(i);
+        else if (state === ChunkState.Loose && !loose.includes(i)) loose.push(i);
         return true;
       },
       undefined,
@@ -456,24 +518,94 @@ export class ChunkField implements System {
     const handoff = this.sim.tuning.destruction.handoff;
     v3.copy(velocity).multiplyScalar(handoff).clampLength(0, MAX_KICK);
     for (const i of fixed) this.loosen(i, v3);
+    for (const bit of bits) {
+      if (landing) this.rubble.crush(bit);
+      else this.rubble.kick(bit, v3);
+    }
     for (const i of loose) {
-      const body = this.chunks[i].body;
-      const p = body.translation();
+      const c = this.chunks[i];
+      if (c.state !== ChunkState.Loose) continue;
       if (landing) {
-        // Squirt out from under the foot.
-        v1.set(p.x - position.x, 0, p.z - position.z);
-        if (v1.lengthSq() < 0.01) v1.set(pseudo(i), 0, pseudo(i + 7));
-        v1.normalize().multiplyScalar(7);
-        v1.y = 3;
-      } else {
-        v1.copy(v3);
-        v1.y = Math.max(v1.y, 2);
+        // Underfoot: anything that isn't sturdy is ground to dust.
+        if (!c.sturdy) this.crumble(i);
+        continue;
       }
+      // Sturdy lumps stay where they are, to be stepped on; the rest is booted along.
+      if (c.sturdy) continue;
+      const body = c.body;
+      v1.copy(v3);
+      v1.y = Math.max(v1.y, 2);
       const v = body.linvel();
       // Only ever speed a piece up; a chunk already flying faster is left alone.
       if (v1.lengthSq() > v.x * v.x + v.y * v.y + v.z * v.z) body.setLinvel(v1, true);
     }
     return fixed.length;
+  }
+
+  /**
+   * The top of the highest sturdy lump of rubble under a shape, or -Infinity if there is none.
+   * It is what a landing foot ends up standing on.
+   */
+  footing(shape: InstanceType<Sim['R']['Cuboid']>, position: THREE.Vector3, rotation: THREE.Quaternion): number {
+    let top = -Infinity;
+    this.sim.world.intersectionsWithShape(
+      position,
+      rotation,
+      shape,
+      (collider) => {
+        const i = this.byCollider.get(collider.handle);
+        if (i === undefined) return true;
+        const c = this.chunks[i];
+        if (c.state !== ChunkState.Loose || !c.sturdy) return true;
+        // Only rubble that has come to rest counts as ground.
+        const v = c.body.linvel();
+        if (v.x * v.x + v.y * v.y + v.z * v.z > 12) return true;
+        // Height of its bounding box however it has ended up lying.
+        const r = c.body.rotation();
+        const yx = 2 * (r.x * r.y + r.w * r.z);
+        const yy = 1 - 2 * (r.x * r.x + r.z * r.z);
+        const yz = 2 * (r.y * r.z - r.w * r.x);
+        const half = Math.abs(yx) * c.hx + Math.abs(yy) * c.hy + Math.abs(yz) * c.hz;
+        top = Math.max(top, c.body.translation().y + half);
+        return true;
+      },
+      undefined,
+      groups(ALL_GROUPS, Group.CHUNK),
+    );
+    return top;
+  }
+
+  /**
+   * A blast of air from a point (a sneeze): fixed chunks close in front break, and anything
+   * loose within range is thrown along with it.
+   */
+  blast(origin: THREE.Vector3, dir: THREE.Vector3, range: number, spread: number, power: number): number {
+    let broke = 0;
+    for (let i = 0; i < this.chunks.length; i++) {
+      const c = this.chunks[i];
+      if (c.state === ChunkState.Gone) continue;
+      const p = c.state === ChunkState.Fixed ? c : c.body.translation();
+      v1.set(p.x - origin.x, p.y - origin.y, p.z - origin.z);
+      const dist = v1.length();
+      if (dist > range || dist < 0.01) continue;
+      const along = (v1.x * dir.x + v1.z * dir.z) / dist;
+      if (along < spread) continue;
+      const fall = 1 - dist / range;
+      v2.copy(dir).multiplyScalar(power * fall);
+      v2.y = power * 0.35 * fall;
+      if (c.state === ChunkState.Fixed) {
+        // Only the nearest wall goes; the gale behind it shakes the rest.
+        if (dist < range * 0.45) {
+          this.loosen(i, v2);
+          broke++;
+        }
+      } else {
+        const v = c.body.linvel();
+        c.body.setLinvel({ x: v.x + v2.x, y: v.y + v2.y, z: v.z + v2.z }, true);
+      }
+    }
+    this.rubble.blast(origin, dir, range, spread, power);
+    return broke;
   }
 
   /** Turns a fixed chunk dynamic and lets the collapse rules react. */
@@ -496,6 +628,10 @@ export class ChunkField implements System {
     );
     this.fixedCount--;
     this.looseCount++;
+    c.slot = this.looseOrder.length;
+    c.looseAt = time;
+    // Which pieces are brittle is fixed by the piece, not by chance on the day.
+    c.brittle = !c.sturdy && (pseudo(index * 7 + 5) + 1) / 2 < d.crumbleChance;
     this.looseOrder.push(index);
     this.looseAt.push(time);
     this.brokeThisStep.push(index);
@@ -545,11 +681,42 @@ export class ChunkField implements System {
     const c = this.chunks[index];
     if (c.state !== ChunkState.Loose) return;
     this.sim.disown(c.body);
-    this.byCollider.delete(c.collider);
+    for (const h of c.colliders) this.byCollider.delete(h);
     this.sim.world.removeRigidBody(c.body);
     this.field.release(index);
     c.state = ChunkState.Gone;
     this.looseCount--;
+    if (c.slot >= 0) this.looseOrder[c.slot] = -1;
+  }
+
+  /**
+   * A loose chunk goes to dust, leaving a little rubble behind (or none, if `clean`).
+   * Does nothing to fixed chunks or sturdy ones.
+   */
+  crumble(index: number, clean = false): void {
+    const c = this.chunks[index];
+    if (c.state !== ChunkState.Loose || c.sturdy) return;
+    const p = c.body.translation();
+    const v = c.body.linvel();
+    this.sim.emit('chunkCrumble', { x: p.x, y: p.y, z: p.z, size: c.radius });
+    if (!clean) {
+      const d = this.sim.tuning.destruction;
+      const bits = Math.floor(d.rubbleBits + (pseudo(index * 13 + 1) + 1) / 2);
+      for (let k = 0; k < bits; k++) {
+        const size = Math.min(c.hx, c.hy, c.hz) * (0.35 + 0.3 * ((pseudo(index * 5 + k) + 1) / 2));
+        this.rubble.spawn(
+          p.x + pseudo(index + k * 3) * c.hx * 0.6,
+          p.y + pseudo(index + k * 7) * c.hy * 0.4,
+          p.z + pseudo(index + k * 11) * c.hz * 0.6,
+          size,
+          v.x * 0.5 + pseudo(index * 3 + k) * 3,
+          v.y * 0.5 + 2,
+          v.z * 0.5 + pseudo(index * 9 + k) * 3,
+        );
+      }
+    }
+    this.retire(index);
+    this.crumbled++;
   }
 
   /**
@@ -627,4 +794,115 @@ export class ChunkField implements System {
 function pseudo(n: number): number {
   const x = Math.sin(n * 12.9898) * 43758.5453;
   return (x - Math.floor(x)) * 2 - 1;
+}
+
+const RUBBLE_COLORS = [0x8f8a80, 0x9c968a, 0x7d786f, 0xa6a094];
+
+/**
+ * Small rubble: the bits left when a chunk crumbles. Light, quick to settle, kicked about
+ * by feet in passing and ground to nothing by a foot landing on them. There is a fixed
+ * pool; when it is full the oldest bit is recycled.
+ */
+class Rubble {
+  private field: InstancedBodies;
+  private bodies: (RigidBody | null)[] = [];
+  private byCollider = new Map<number, number>();
+  private next = 0;
+  private capacity: number;
+  count = 0;
+  crushed = 0;
+
+  constructor(private sim: Sim) {
+    this.capacity = Math.max(1, Math.round(sim.tuning.destruction.rubbleCap));
+    this.field = new InstancedBodies(
+      sim,
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshLambertMaterial({ color: 0xffffff }),
+      this.capacity,
+    );
+  }
+
+  /** The rubble bit a collider belongs to, or -1. */
+  at(collider: number): number {
+    return this.byCollider.get(collider) ?? -1;
+  }
+
+  spawn(x: number, y: number, z: number, size: number, vx: number, vy: number, vz: number): void {
+    if (this.sim.tuning.destruction.rubbleCap < 1) return;
+    const { R, world } = this.sim;
+    const slot = this.next;
+    this.next = (this.next + 1) % this.capacity;
+    this.remove(slot);
+    const s = Math.max(0.6, size);
+    const body = world.createRigidBody(
+      R.RigidBodyDesc.dynamic()
+        .setTranslation(x, Math.max(y, s), z)
+        .setLinvel(vx, vy, vz)
+        .setAngvel({ x: pseudo(slot * 3 + this.crushed) * 3, y: pseudo(slot * 5) * 3, z: pseudo(slot * 7) * 3 })
+        .setLinearDamping(0.6)
+        .setAngularDamping(1.5),
+    );
+    const collider = world.createCollider(
+      R.ColliderDesc.cuboid(s, s * 0.7, s * 0.85)
+        .setDensity(this.sim.tuning.destruction.chunkDensity)
+        .setFriction(0.9)
+        .setRestitution(0)
+        .setCollisionGroups(groups(Group.CHUNK, ALL_GROUPS & ~Group.FOOT)),
+      body,
+    );
+    this.byCollider.set(collider.handle, slot);
+    const color = RUBBLE_COLORS[slot % RUBBLE_COLORS.length];
+    if (slot < this.field.count) this.field.reuse(slot, body, s * 2, s * 1.4, s * 1.7, color);
+    else this.field.add(body, s * 2, s * 1.4, s * 1.7, color);
+    this.bodies[slot] = body;
+    this.count++;
+  }
+
+  private remove(slot: number): void {
+    const body = this.bodies[slot];
+    if (!body) return;
+    this.byCollider.delete(body.collider(0).handle);
+    this.sim.disown(body);
+    this.sim.world.removeRigidBody(body);
+    this.field.release(slot);
+    this.bodies[slot] = null;
+    this.count--;
+  }
+
+  /** Ground to dust underfoot. */
+  crush(slot: number): void {
+    const body = this.bodies[slot];
+    if (!body) return;
+    const p = body.translation();
+    this.sim.emit('chunkCrumble', { x: p.x, y: p.y, z: p.z, size: 2 });
+    this.remove(slot);
+    this.crushed++;
+  }
+
+  kick(slot: number, velocity: THREE.Vector3): void {
+    const body = this.bodies[slot];
+    if (!body) return;
+    body.setLinvel({ x: velocity.x, y: Math.max(velocity.y, 3), z: velocity.z }, true);
+  }
+
+  blast(origin: THREE.Vector3, dir: THREE.Vector3, range: number, spread: number, power: number): void {
+    for (const body of this.bodies) {
+      if (!body) continue;
+      const p = body.translation();
+      const dx = p.x - origin.x;
+      const dz = p.z - origin.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > range || dist < 0.01 || (dx * dir.x + dz * dir.z) / dist < spread) continue;
+      const fall = power * (1 - dist / range);
+      body.setLinvel({ x: dir.x * fall, y: fall * 0.4, z: dir.z * fall }, true);
+    }
+  }
+
+  postStep(): void {
+    this.field.capture();
+  }
+
+  render(alpha: number): void {
+    this.field.apply(alpha);
+  }
 }

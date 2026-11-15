@@ -81,6 +81,8 @@ export class Legs {
   private readonly shinHeight: number;
   private stanceScale = 1;
   private wasStanding = true;
+  /** How far, on average, the planted feet are standing above the ground (on rubble). */
+  lift = 0;
   private lastSide = -1;
   private readonly hipHeight: number;
   private readonly boneLength: number;
@@ -227,6 +229,10 @@ export class Legs {
       }
     }
 
+    // Standing on rubble lifts the whole kaiju a little.
+    let raised = 0;
+    for (const f of this.feet) if (!f.swinging) raised += Math.max(0, f.pos.y - ground(f.pos.x, f.pos.z));
+    this.lift = raised / this.feet.length;
     let landed: Foot | null = null;
     for (const f of this.feet) {
       f.prev.copy(f.pos);
@@ -260,7 +266,13 @@ export class Legs {
       if (this.chunks && (f.swinging || landed === f)) {
         c.subVectors(f.pos, f.prev).divideScalar(dt);
         b.y = f.pos.y + this.shinHeight / 2;
-        this.chunks.stomp(ctx.footScale < 0.99 ? this.tipShape : this.shape, b, q, c, landed === f);
+        const shape = ctx.footScale < 0.99 ? this.tipShape : this.shape;
+        this.chunks.stomp(shape, b, q, c, landed === f);
+        if (landed === f) {
+          // Whatever sturdy rubble survived that is what the foot is standing on now.
+          const top = this.chunks.footing(shape, b, q);
+          if (top > f.pos.y + 0.5) f.pos.y = Math.min(top, f.pos.y + 9);
+        }
       }
     }
   }
