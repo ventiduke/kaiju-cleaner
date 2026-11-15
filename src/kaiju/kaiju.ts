@@ -535,8 +535,8 @@ export class Kaiju implements System {
       tmp.x += dev.x * k.stagger * (1 - crawl);
       tmp.z += dev.z * k.stagger * (1 - crawl);
       // Standing in the river, the current leans on its legs.
-      // (With its feet planted for a lift it braces against the current, and barely drifts.)
-      if (this.wading > 0) tmp.x += (this.sim.current(pos.x, pos.z) * (this.planted ? 0.15 : 1) - vel.x) * 1.1 * this.wading;
+      // (Carrying something, it leans into the current and is pushed half as hard; with its feet planted it barely drifts.)
+      if (this.wading > 0) tmp.x += (this.sim.current(pos.x, pos.z) * (this.planted ? 0.15 : this.carrying ? 0.45 : 1) - vel.x) * 1.1 * this.wading;
       body.applyImpulse({ x: tmp.x * mass * dt, y: 0, z: tmp.z * mass * dt }, true);
       this.load = Math.hypot(tmp.x, tmp.z);
     } else this.load = 0;

@@ -271,7 +271,10 @@ export class PlayBot {
       const gentle = this.style === 'reckless' ? 1 : 0.55;
       const dist = this.drive(this.path[0], gentle);
       if (this.path.length > 1 && dist < 12) this.path.shift();
-      else if (this.path.length === 1 && dist < (this.style === 'reckless' ? 7 : 2.5)) this.phase = 'square';
+      // (In the river "there" is looser: the current will not let it stand on a spot until its feet are planted.)
+      else if (this.path.length === 1 && dist < (this.style === 'reckless' ? 7 : this.kaiju.wading > 0.05 ? 6 : 2.5)) this.phase = 'square';
+      // Never so gentle that the current wins.
+      if (this.kaiju.wading > 0.05 && dist > 3) this.sim.players[0].thrust = Math.max(this.sim.players[0].thrust, 0.3);
     } else if (this.phase === 'square') {
       if (!held) {
         this.take(this.current);
@@ -286,8 +289,8 @@ export class PlayBot {
       const miss = Math.hypot(s.x - v.x, s.z - v.z);
       if (off < 0.3) this.sim.players[0].thrust = THREE.MathUtils.clamp(short * 0.12, -0.35, 0.35);
       // In the river, once it is roughly there, plant the feet so the current cannot carry it off the mark.
-      if (this.kaiju.wading > 0.05 && off < 0.12 && miss < 2.5) this.sim.players[0].crouch = true;
-      const ready = off < (fussy ? 0.1 : 0.5) && this.kaiju.speed < 2 && (!fussy || (pieces.prompt === 0 && miss < (this.kaiju.wading > 0.05 ? 1.9 : 1.4)));
+      if (this.kaiju.wading > 0.05 && off < 0.12 && miss < 3) this.sim.players[0].crouch = true;
+      const ready = off < (fussy ? 0.1 : 0.5) && this.kaiju.speed < 2 && (!fussy || (pieces.prompt === 0 && miss < (this.kaiju.wading > 0.05 ? 3 : 1.4)));
       if (ready || this.sim.time - this.phaseSince > 20) {
         this.click();
         this.phase = 'set';

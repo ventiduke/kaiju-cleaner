@@ -1,0 +1,7 @@
+[
+  { "out": "look-city-afternoon", "scene": "city", "state": "walking" },
+  { "out": "look-city-night", "scene": "city", "state": "walking", "code": "h.hour(22)" },
+  { "out": "hud-carrying-prompt", "scene": "yard", "state": "carrying-prompt", "code": "h.view(0.9, 0, 1)" },
+  { "out": "kaiju-toppled", "scene": "yard", "state": "toppled", "code": "h.view(2.4, -0.2, 0.7)" },
+  { "out": "job-done", "scene": "yard", "state": "carrying", "code": "const P=g.sim.parts.pieces, s=P.held.job.socket; h.handsOver?.(s.x,s.z); const k=g.kaiju, d=g.tuning.kaiju.bodyRadius+g.tuning.carry.holdForward; h.face(Math.PI); h.moveTo(s.x, s.z+d); g.sim.players[0].grab=true; g.sim.step(); g.sim.players[0].grab=false; h.run(0.5); h.view(0.7,0,1); return P.pieces[0].state", "wait": 400 }
+]

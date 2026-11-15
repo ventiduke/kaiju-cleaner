@@ -1,3 +1,4 @@
+import { Confetti } from '../gfx/confetti';
 import { Smoke } from '../gfx/smoke';
 import { Sweeps } from '../city/sweeps';
 import { addOutskirts } from '../gfx/backdrop';
@@ -223,6 +224,7 @@ export function populate(sim: Sim, layout: CityLayout): void {
     sim.parts.river = flow;
   }
   sim.add(new Dust(sim));
+  sim.add(new Confetti(sim));
   // Smoke from every tower that is still missing its top.
   sim.add(
     new Smoke(sim, () =>

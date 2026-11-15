@@ -272,6 +272,8 @@ export const codeDefaults = {
     clouds: 0.55,
     /** 1: antialiased float buffer, bloom and grading. 0: straight to the screen, for slow machines. */
     post: 1,
+    /** The split-second hold on a big impact (1 on, 0 off). The camera shake has its own dial under camera. */
+    hitStop: 1,
   },
   camera: {
     distance: 100,
@@ -497,6 +499,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     bloom: [0, 1.5, 0.02],
     clouds: [0, 1, 0.05],
     post: [0, 1, 1],
+    hitStop: [0, 1, 1],
   },
   camera: {
     distance: [15, 220, 1],

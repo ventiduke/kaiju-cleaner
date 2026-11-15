@@ -95,11 +95,8 @@ try {
     await page.waitForTimeout(shot.wait ?? 900);
     const png = await page.screenshot({ path: `scripts/out/${shot.out}.png` });
     // What the game says is going on, beside the picture: read this first.
-    const info = await page.evaluate(() => {
-      const gl = document.querySelector('canvas')?.getContext('webgl2');
-      const ext = gl?.getExtension('WEBGL_debug_renderer_info');
-      return { ...window.__game.state(), renderer: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'unknown' };
-    });
+    const info = await page.evaluate(() => window.__game.state());
+    info.renderer = info.gpu;
     // And a crude look at the picture itself, so that a black or washed-out frame fails without anyone opening it.
     const stats = await page.evaluate(async (b64) => {
       const img = new Image();

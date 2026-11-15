@@ -133,6 +133,23 @@ npm run feel -- feedback/session.json # your notes, your run, your settings vs t
 The handling numbers come from fixed scripted maneuvers (`test/feel/maneuvers.ts`): time to top speed, lean,
 and whether a set of turns at different speeds ends steady, in a stumble, or in a fall.
 
+## Working on it with an agent
+
+`CLAUDE.md` has the rules of the code and the commands. Five skills in `.claude/skills/` hold the working
+practice:
+
+- **playtest-intake**: turns a playtester's notes into a triaged table, restates "it feels..." as a number
+  to hit, and pins what they liked (`feedback/pins.json`, guarded by `test/pins.test.ts`).
+- **playtest-bot**: `npm run playbot` plays whole shifts with a scripted player (careful, reckless, idle) and
+  reports times, stalls, damage and score.
+- **verify-change**: read the game's state before looking at a picture; screenshots come from named states
+  (`src/core/states.ts`) and each saves a state dump and fails if blank.
+- **juice-pass**: feedback by event size (`src/core/juice.ts`), with the rules that keep it from becoming noise.
+- **ship-it**: the release checklist, ending with `npm run verify:live`.
+
+They were written from a survey of what people building games with coding agents report works
+(`research/gamedev-survey/`).
+
 ## Status
 
 M0 (scaffold), M1 (destructible city), M2 (kaiju movement), M3 (kaiju in the city) and M4 (movement modes)

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { SweepSpec } from './cityGen';
 import type { PropField } from './props';
 import type { RigidBody } from '../core/physics';
@@ -38,23 +39,26 @@ export class Sweeps implements System {
         const p = b.translation();
         return Math.abs(p.x - spec.x) <= spec.hx && Math.abs(p.z - spec.z) <= spec.hz;
       });
-      // Hazard tape round the stretch: a striped line on the road along each edge.
+      // Hazard tape round the stretch: a striped line on the road along each edge. All the dashes of
+      // one colour are merged into a single mesh, so the tape costs two draws however long it is.
       const tape = new THREE.Group();
       const yellow = new THREE.MeshBasicMaterial({ color: spec.color });
       const black = new THREE.MeshBasicMaterial({ color: 0x1c1f24 });
+      const dashes: THREE.BufferGeometry[][] = [[], []];
       const edge = (x: number, z: number, lx: number, lz: number) => {
         const n = Math.max(2, Math.round(Math.max(lx, lz) / 1.6));
         for (let i = 0; i < n; i++) {
           const t = (i + 0.5) / n - 0.5;
-          const dash = new THREE.Mesh(new THREE.BoxGeometry(lx > lz ? lx / n : 0.7, 0.12, lx > lz ? 0.7 : lz / n), i % 2 ? black : yellow);
-          dash.position.set(x + (lx > lz ? t * lx : 0), 0.1, z + (lx > lz ? 0 : t * lz));
-          tape.add(dash);
+          const dash = new THREE.BoxGeometry(lx > lz ? lx / n : 0.7, 0.12, lx > lz ? 0.7 : lz / n);
+          dash.translate(x + (lx > lz ? t * lx : 0), 0.1, z + (lx > lz ? 0 : t * lz));
+          dashes[i % 2].push(dash);
         }
       };
       edge(spec.x, spec.z - spec.hz, spec.hx * 2, 0);
       edge(spec.x, spec.z + spec.hz, spec.hx * 2, 0);
       edge(spec.x - spec.hx, spec.z, 0, spec.hz * 2);
       edge(spec.x + spec.hx, spec.z, 0, spec.hz * 2);
+      tape.add(new THREE.Mesh(mergeGeometries(dashes[0]), yellow), new THREE.Mesh(mergeGeometries(dashes[1]), black));
       const marker = new THREE.Mesh(new THREE.OctahedronGeometry(2.2), yellow);
       marker.position.set(spec.x, 16, spec.z);
       sim.scene.add(tape, marker);

@@ -1,3 +1,4 @@
+import { vary, type Tier } from './juice';
 import type { Kaiju } from '../kaiju/kaiju';
 import type { Sim } from '../sim';
 
@@ -22,10 +23,10 @@ export class GameAudio {
 
     sim.on('footfall', (e) => {
       const g = this.near(e) * e.strength;
-      if (e.wet) this.burst({ gain: 0.5 * g, time: 0.45, from: 1800, to: 500, q: 0.7 });
+      if (e.wet) this.burst({ gain: 0.5 * g, time: 0.45, from: 1800, to: 500, q: 0.7, vary: 'small' });
       else {
-        this.tone({ gain: 0.9 * g, time: 0.28, from: 95, to: 38, type: 'sine' });
-        this.burst({ gain: 0.25 * g, time: 0.12, from: 420, to: 160, q: 0.8 });
+        this.tone({ gain: 0.9 * g, time: 0.28, from: 95, to: 38, type: 'sine', vary: 'small' });
+        this.burst({ gain: 0.25 * g, time: 0.12, from: 420, to: 160, q: 0.8, vary: 'small' });
       }
     });
     sim.on('chunkBreak', (e) => {
@@ -90,6 +91,10 @@ export class GameAudio {
       this.tone({ gain: 0.8 * this.near(e), time: 0.5, from: 90, to: 40, type: 'sine' });
       this.burst({ gain: 0.8 * this.near(e), time: 2.5, from: 5000, to: 1800, q: 0.3 });
     });
+    sim.on('sweepDone', () => {
+      this.tone({ gain: 0.3, time: 0.2, from: 392, to: 392, type: 'triangle' });
+      this.tone({ gain: 0.3, time: 0.4, from: 587, to: 587, type: 'triangle', delay: 0.16 });
+    });
     sim.on('kaijuBow', () => {
       this.tone({ gain: 0.3, time: 0.35, from: 330, to: 262, type: 'triangle' });
       this.tone({ gain: 0.3, time: 0.5, from: 262, to: 196, type: 'triangle', delay: 0.3 });
@@ -97,7 +102,7 @@ export class GameAudio {
     sim.on('repairsDone', () => {
       [523, 659, 784, 1047].forEach((f, i) => this.tone({ gain: 0.4, time: i === 3 ? 0.9 : 0.22, from: f, to: f, type: 'triangle', delay: 0.6 + i * 0.2 }));
     });
-    sim.on('citizenSquish', (e) => this.tone({ gain: 0.35 * this.near(e), time: 0.16, from: 1500, to: 520, type: 'square' }));
+    sim.on('citizenSquish', (e) => this.tone({ gain: 0.35 * this.near(e), time: 0.16, from: 1500, to: 520, type: 'square', vary: 'small' }));
     sim.on('citizenScare', (e) => {
       const now = performance.now();
       if (now - this.lastScream < 260) return;
@@ -148,7 +153,12 @@ export class GameAudio {
   }
 
   /** A pitched blip that glides from one frequency to another. */
-  private tone(o: { gain: number; time: number; from: number; to: number; type: OscillatorType; delay?: number }): void {
+  private tone(o: { gain: number; time: number; from: number; to: number; type: OscillatorType; delay?: number; vary?: Tier }): void {
+    // Sounds that repeat (footsteps, crunches) wander a little in pitch, so they do not sound like one recording.
+    if (o.vary) {
+      const k = vary(o.vary, Math.random());
+      o = { ...o, from: o.from * k, to: o.to * k };
+    }
     const env = this.envelope(o.gain, o.time, o.delay ?? 0);
     if (!env || !this.ctx) return;
     const t = this.ctx.currentTime + (o.delay ?? 0);
@@ -162,7 +172,11 @@ export class GameAudio {
   }
 
   /** A burst of filtered noise, its tone sweeping from one frequency to another. */
-  private burst(o: { gain: number; time: number; from: number; to: number; q: number }): void {
+  private burst(o: { gain: number; time: number; from: number; to: number; q: number; vary?: Tier }): void {
+    if (o.vary) {
+      const k = vary(o.vary, Math.random());
+      o = { ...o, from: o.from * k, to: o.to * k };
+    }
     const env = this.envelope(o.gain, o.time, 0);
     if (!env || !this.ctx || !this.noise) return;
     const t = this.ctx.currentTime;

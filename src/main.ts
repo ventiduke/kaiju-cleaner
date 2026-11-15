@@ -9,6 +9,7 @@ import type { Pieces } from './city/pieces';
 import { GameAudio } from './core/audio';
 import { FreeCamera } from './core/freeCamera';
 import { InputManager } from './core/input';
+import { FEEDBACK, TIERS } from './core/juice';
 import { Loop } from './core/loop';
 import { snapshot } from './core/snapshot';
 import { setState } from './core/states';
@@ -42,6 +43,10 @@ async function boot(): Promise<void> {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.info.autoReset = false;
+  // Which graphics chip is drawing this: a headless run draws in software, and its frame rate means nothing.
+  const gpuInfo = renderer.getContext().getExtension('WEBGL_debug_renderer_info');
+  const gpu: string = gpuInfo ? renderer.getContext().getParameter(gpuInfo.UNMASKED_RENDERER_WEBGL) : 'unknown';
   document.body.appendChild(renderer.domElement);
 
   const camera = new THREE.PerspectiveCamera(tuning.camera.fov, 1, 1, 9000);
@@ -305,8 +310,10 @@ async function boot(): Promise<void> {
       }
       if (tuning.gfx.post && quality < 2) post.render(tuning.gfx.bloom * (0.6 + 0.9 * look.uniforms.uLit.value));
       else renderer.render(sim.scene, camera);
+      // (Counted over the whole frame, finishing passes included, then cleared for the next.)
       lastDraw.calls = renderer.info.render.calls;
       lastDraw.triangles = renderer.info.render.triangles;
+      renderer.info.reset();
       hud.frame(sim.lastStepMs);
       hud.update(() => {
         const c = sim.counts();
@@ -336,6 +343,13 @@ async function boot(): Promise<void> {
       });
     },
   });
+  // Big impacts hold the game still for a few hundredths of a second (never while a card is up).
+  for (const name of Object.keys(FEEDBACK) as (keyof typeof FEEDBACK)[]) {
+    const f = FEEDBACK[name]!;
+    const seconds = f.stop === false ? 0 : TIERS[f.tier].stop;
+    if (seconds > 0) sim.on(name, () => tuning.gfx.hitStop && loop.hitStop.hit(seconds));
+  }
+
   // The game's own HUD: briefing, jobs, map, arrows, verdicts, report card.
   const automated = navigator.webdriver || params.has('nointro');
   gameHud =
@@ -382,7 +396,7 @@ async function boot(): Promise<void> {
     recorder,
     hud: gameHud,
     /** What is going on, as plain data (plus what the renderer drew last frame). */
-    state: () => ({ ...snapshot(sim), drawn: { calls: lastDraw.calls, triangles: lastDraw.triangles }, quality }),
+    state: () => ({ ...snapshot(sim), drawn: { calls: lastDraw.calls, triangles: lastDraw.triangles }, quality, gpu }),
     setState: (name: string) => setState(sim, name),
     THREE,
     ready: true,

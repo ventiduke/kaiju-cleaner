@@ -1,3 +1,4 @@
+import { FEEDBACK, TIERS } from '../core/juice';
 import * as THREE from 'three';
 import type { Sim } from '../sim';
 import type { Kaiju } from './kaiju';
@@ -32,12 +33,14 @@ export class FollowCamera {
   ) {
     this.yaw = kaiju.yaw;
     this.focus.copy(kaiju.visual.position);
-    sim.on('footfall', (e) => this.shake(0.1 * e.strength, e));
-    sim.on('chunkBreak', (e) => this.shake(0.05, e));
-    sim.on('kaijuFall', (e) => this.shake(0.6, e));
-    sim.on('kaijuSave', (e) => this.shake(0.2, e));
-    sim.on('sneeze', (e) => this.shake(0.8, e));
-    sim.on('groundCollapse', (e) => this.shake(0.7, e));
+    // Every event with feedback shakes the camera by its size (see core/juice.ts).
+    for (const name of Object.keys(FEEDBACK) as (keyof typeof FEEDBACK)[]) {
+      const f = FEEDBACK[name]!;
+      sim.on(name, (e) => {
+        const strength = name === 'footfall' ? (e as { strength: number }).strength : 1;
+        this.shake(TIERS[f.tier].trauma * (f.scale ?? 1) * strength, e);
+      });
+    }
   }
 
   /** Mouse drag: swing round the kaiju and raise or lower the view. */

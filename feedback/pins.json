@@ -1,0 +1,30 @@
+{
+  "about": "Things the playtester has said they like (keep) or dislike (avoid), in their words, with the settings behind them. test/pins.test.ts fails if a pinned value moves: that is the cue to ask before changing it, then update the pin with the new quote.",
+  "keep": [
+    {
+      "said": "these settings are feeling a little better",
+      "when": "playtest 2, 14 Nov 2026",
+      "values": { "feel.speed": 32, "feel.pickup": 2.1, "feel.turning": 2, "feel.grip": 35.5, "feel.wobble": 0.77, "feel.balance": 0.75 }
+    },
+    {
+      "said": "falling is fun",
+      "when": "playtest 2, 14 Nov 2026",
+      "outcome": "hard-turn-at-speed-falls"
+    },
+    {
+      "said": "we still want that Hard to Control but Fun feel",
+      "when": "playtest 1, 14 Nov 2026",
+      "outcome": "tapped-turn-stays-up"
+    },
+    {
+      "said": "Sneeze meter needs to fill up faster (then: no complaint about the faster one)",
+      "when": "playtest 4, 15 Nov 2026",
+      "values": { "sneeze.dust": 0.03 }
+    }
+  ],
+  "avoid": [
+    { "said": "The skill check on carrying is still too distracting - by trying to focus on the circle, it's hard to see where to go", "when": "playtest 4", "means": "Nothing that needs watching away from the kaiju while carrying. Prompts sit at the side and say one thing." },
+    { "said": "Having to hold with E makes it tough to walk", "when": "playtest 3", "means": "No held buttons for carrying: click to take hold, click to let go." },
+    { "said": "the settings were a lot, and hard to really see how they worked together", "when": "playtest 1", "means": "The panel opens on the six feel dials. New knobs go under Advanced." }
+  ]
+}

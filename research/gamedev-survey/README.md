@@ -14,6 +14,9 @@ write-ups and documentation, and the GitHub repositories themselves, cloned and 
 - `skills-and-workflows.md`: Claude Code skills and agent workflows for making games.
 - `asset-pipelines.md`: generating 3D models, textures and sound with AI, for a browser game.
 - `engines-and-practice.md`: engine tooling (Godot, three.js) and what people report works.
-- `repos.md`: every repository found, with a verdict.
+- `repos.md`: an index of the 91 repositories found; each is reviewed in one of the three files above.
+
+What came of it: five skills in `.claude/skills/`, and the changes made by applying each to the game
+(listed in `feedback/feel-log.md` and in the plan document's "Pass 7").
 
 If you can paste the Reddit posts, or just the repository links from them, they can be folded in.
