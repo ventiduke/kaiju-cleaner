@@ -488,6 +488,47 @@ describe('repair pieces', () => {
     expect(piece.fit).toBe('crooked');
   });
 
+  it('set right inside its time, it is quick work; dawdled over, or put in crooked, it is not', async () => {
+    const g = await yard();
+    const piece = g.pieces.pieces[0];
+    const s = piece.job.socket;
+    // The time allowed is a few seconds plus the walk from where it lies to where it goes.
+    const far = Math.hypot(s.x - piece.job.start.x, s.z - piece.job.start.z);
+    expect(piece.par).toBeGreaterThan(8);
+    expect(piece.par).toBeLessThan(8 + far / 4);
+    handsOver(g, s.x, s.z);
+    g.pieces.grab(piece);
+    g.sim.run(45);
+    expect(g.pieces.parLeft).toBeCloseTo(piece.par - 0.75, 1);
+    let said: { quick: boolean } | null = null;
+    g.sim.on('piecePlace', (e) => (said = e));
+    press(g);
+    g.sim.run(5);
+    expect(piece.fit).toBe('perfect');
+    expect(piece.quick).toBe(true);
+    expect(said!.quick).toBe(true);
+    expect(g.pieces.quick).toBe(1);
+    // Taken off again, that is undone; and this time, hold it until the time has gone.
+    g.pieces.grab(piece);
+    expect(g.pieces.quick).toBe(0);
+    carry(g, piece.par + 1, true);
+    expect(g.pieces.held).toBe(piece);
+    expect(g.pieces.parLeft).toBe(0);
+    press(g);
+    g.sim.run(5);
+    expect(piece.state).toBe('placed');
+    expect(piece.quick).toBe(false);
+    expect(g.pieces.quick).toBe(0);
+    // Fast but crooked is only crooked.
+    handsOver(g, s.x + 4, s.z);
+    g.pieces.grab(piece);
+    g.sim.run(45);
+    press(g);
+    g.sim.run(5);
+    expect(piece.fit).toBe('crooked');
+    expect(piece.quick).toBe(false);
+  });
+
   it('still counts when let go a few metres off, but sits crooked', async () => {
     const g = await yard();
     const piece = g.pieces.pieces[0];

@@ -157,8 +157,11 @@ export class GameHud {
       const grid = el('div', 'gh-stats');
       const rows: [string, string | number][] = [
         ['Time', clock(approval.finished?.seconds ?? this.d.sim.time)],
-        ['Repairs straight', pieces ? pieces.placed - pieces.crooked : 0],
+        ['Perfect fits', pieces?.perfect ?? 0],
+        ['Repairs straight', pieces ? pieces.placed - pieces.crooked - pieces.perfect : 0],
         ['Repairs crooked', pieces?.crooked ?? 0],
+        ['Quick work', pieces?.quick ?? 0],
+        ['Caught on the bar / fumbled / dropped', pieces ? `${pieces.catches} / ${pieces.fumbles} / ${pieces.drops}` : 0],
         ['Buildings knocked about', damage.buildingsDamaged],
         ['People squashed', damage.citizensSquished],
         ['Apologies', kaiju.bows],
@@ -386,15 +389,16 @@ export class GameHud {
     const { sim, kaiju, pieces, nose, citizens, board } = this.d;
     if (!board.total) return;
     const held = pieces?.held;
-    if (sim.time > 1.5 && this.say('move', 'W / S to walk, A / D to turn. The arrows point at your jobs. Mind the buildings.')) return;
+    const runner = this.d.tuning.move.controller === 1;
+    if (sim.time > 1.5 && this.say('move', runner ? 'W A S D run that way on the screen; click the game and the mouse looks. The arrows point at your jobs. Mind the buildings.' : 'W / S to walk, A / D to turn. The arrows point at your jobs. Mind the buildings.')) return;
     if (held?.state === 'raising' && this.say('raise', 'Heave! Press SPACE each time the marker crosses the green. Dead centre heaves hardest.')) return;
     if (held && held.state !== 'raising' && this.say('carry', 'Got it. Carry it to the matching marker and click to set it down. It works loose as you go: when the bar comes up, SPACE as the marker crosses the green.')) return;
     if (!held && pieces?.nearest() && this.say('grab', 'Click (or E) to take hold of it.')) return;
-    if (kaiju.stumbles > 0 && this.say('stumble', 'Wobbling? Ease off the turn. Going over? Steer into the fall to save it.')) return;
+    if (!runner && kaiju.stumbles > 0 && this.say('stumble', 'Wobbling? Ease off the turn. Going over? Steer into the fall to save it.')) return;
     if (nose && nose.tickle > 0.45 && this.say('dust', 'Dust up the nose: a sneeze is coming. Point it somewhere harmless (or at a blocked road).')) return;
     if (citizens && citizens.scared > 5 && this.say('bow', 'You are frightening people. Stop and press V to bow.')) return;
-    if (this.d.approval.value < 38 && this.say('careful', 'The city is losing patience. Shift tiptoes; Space crawls under things.')) return;
-    if (sim.time > 40 && this.say('modes', 'Shift: tiptoe past delicate things. Space: crawl under skybridges. T: change the time of day.')) return;
+    if (this.d.approval.value < 38 && this.say('careful', runner ? 'The city is losing patience. Slow down near buildings: a turn at a sprint runs wide.' : 'The city is losing patience. Shift tiptoes; Space crawls under things.')) return;
+    if (sim.time > 40 && this.say('modes', runner ? 'Shift: sprint. C: crouch under skybridges (on the move, slide under them). T: change the time of day.' : 'Shift: tiptoe past delicate things. Space: crawl under skybridges. T: change the time of day.')) return;
   }
 
   /** Once per drawn frame. */

@@ -203,7 +203,7 @@ describe('townsfolk splats', () => {
     let cheers = 0;
     g.sim.on('citizenCheer', () => cheers++);
     const b = g.layout.blocks[0];
-    g.sim.emit('piecePlace', { x: b.x, y: 20, z: b.z, straight: true, perfect: false });
+    g.sim.emit('piecePlace', { x: b.x, y: 20, z: b.z, straight: true, perfect: false, quick: false });
     g.sim.run(5);
     expect(cheers).toBe(1);
     expect(people.cheering()).toBeGreaterThan(5);

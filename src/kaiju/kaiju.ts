@@ -865,13 +865,30 @@ export class Kaiju implements System {
     let vy = v.y;
     const speed = Math.hypot(vx, vz);
 
+    // --- A bow of apology: it stops, bends from the hips, holds it, and straightens up. (The same
+    // bow as the balancing kaiju's; it has to stand still to mean it.)
+    const bowPressed = input.bow && !this.bowHeld;
+    this.bowHeld = input.bow;
+    if (bowPressed && this.bowTime <= 0 && this.bow === 0 && !this.airborne && this.sliding <= 0 && !this.carrying && this.crawl === 0) {
+      this.bowTime = BOW_SECONDS;
+      this.bowed = false;
+    }
+    if (this.bowTime > 0) this.bowTime -= dt;
+    this.bow = THREE.MathUtils.clamp(this.bow + (this.bowTime > 0.45 ? dt : -dt) * 2.4, 0, 1);
+    if (this.bow >= 1 && !this.bowed) {
+      this.bowed = true;
+      this.bows++;
+      this.sim.emit('kaijuBow', { x: p.x, y: p.y, z: p.z });
+    }
+    const bowing = this.bowTime > 0 || this.bow > 0;
+
     // --- What is being asked for: a direction on the ground, by the screen, and how hard.
-    let push = this.planted ? 0 : Math.min(1, Math.hypot(input.thrust, input.strafe));
+    let push = this.planted || bowing ? 0 : Math.min(1, Math.hypot(input.thrust, input.strafe));
     let wish = input.look + Math.atan2(input.strafe, input.thrust);
     if (input.turn) {
       // (Steered by hand, by a script or a pad with no view stick: left and right of where it is facing.)
       wish = this.yaw + input.turn * 0.9;
-      push = this.planted ? 0 : Math.min(1, Math.abs(input.thrust));
+      push = this.planted || bowing ? 0 : Math.min(1, Math.abs(input.thrust));
     }
 
     // --- A slide: crouching on the move throws it flat, and it rides its speed down.
@@ -995,7 +1012,7 @@ export class Kaiju implements System {
     const jumpPressed = input.jump && !this.jumpHeld;
     this.jumpHeld = input.jump;
     this.jumpBuffer = jumpPressed ? 0.14 : Math.max(0, this.jumpBuffer - dt);
-    if (this.jumpBuffer > 0 && !this.airborne && this.wading < 0.3 && !this.carrying && r.jump > 0) {
+    if (this.jumpBuffer > 0 && !this.airborne && this.wading < 0.3 && !this.carrying && !bowing && r.jump > 0) {
       vy = Math.sqrt(2 * g * r.gravity * r.jump);
       this.airborne = true;
       this.airTime = 0;
@@ -1067,7 +1084,7 @@ export class Kaiju implements System {
     this.tilt = Math.abs(this.bank);
 
     // Facing where it faces; pitched by the crouch, the slide and the lean; rolled about its line of travel.
-    const pitch = crawl * m.crawlPitch + prone * (SLIDE_PITCH - m.crawlPitch) + this.nod * (1 - prone);
+    const pitch = crawl * m.crawlPitch + prone * (SLIDE_PITCH - m.crawlPitch) + this.nod * (1 - prone) + smooth(this.bow) * BOW_PITCH;
     quat
       .setFromAxisAngle(UP, this.yaw)
       .multiply(tmpQuat.setFromAxisAngle(AXIS_Z, -this.bank * (1 - 0.5 * crawl)))
@@ -1193,6 +1210,7 @@ export class Kaiju implements System {
       look = Math.abs(view) < 1.9 ? clamp(view, -1.1, 1.1) * 0.7 : 0;
     }
     this.gaze = ease(this.gaze, look, 7);
+    // (Not in a bow: the head goes down with the rest of it.)
     const pitch = crawl * m.crawlPitch + prone * (SLIDE_PITCH - m.crawlPitch) + this.nod * (1 - prone);
     const level = -pitch * (0.8 + 0.1 * prone);
     const bobble = striding ? Math.sin(2 * stride) * 0.035 * Math.min(1, pace) : 0;

@@ -189,6 +189,13 @@ export class Tail {
     const n = this.segments.length;
     const len = this.sim.tuning.tail.length / n;
     const ground = this.sim.ground;
+    // Picked up and put down somewhere else (by a script, a test, a named state): start again from
+    // where its parts are now. Chasing the old shape across the map hauled the body after it.
+    // (Or turned about on the spot, which no kaiju can do in a sixtieth of a second.)
+    const spun = Math.abs(Math.atan2(Math.sin(yaw - this.lastYaw), Math.cos(yaw - this.lastYaw)));
+    if (this.led && (root.distanceToSquared(this.lastRoot) > 9 || spun > 0.6)) this.led = false;
+    this.lastRoot.copy(root);
+    this.lastYaw = yaw;
     if (!this.led) {
       // Taking over from the loose tail: start from wherever it is, and stop its motors pulling.
       this.led = true;
@@ -239,7 +246,9 @@ export class Tail {
       const cx = (prev.x + node.x) / 2;
       const cy = (prev.y + node.y) / 2;
       const cz = (prev.z + node.z) / 2;
-      seg.setLinvel({ x: (cx - at.x) / dt, y: (cy - at.y) / dt, z: (cz - at.z) / dt }, true);
+      // (Never faster than a tail could go, whatever has happened to it.)
+      v.set((cx - at.x) / dt, (cy - at.y) / dt, (cz - at.z) / dt).clampLength(0, 250);
+      seg.setLinvel({ x: v.x, y: v.y, z: v.z }, true);
       // (Its own +z points back up the tail, toward the body.)
       z.subVectors(prev, node).normalize();
       x.crossVectors(UP, z);
@@ -255,6 +264,8 @@ export class Tail {
 
   /** Whether the tail is being led (the runner's) or left to swing (the balancing kaiju's). */
   private led = false;
+  private lastRoot = new THREE.Vector3();
+  private lastYaw = 0;
   private nodes: THREE.Vector3[] = [];
   private nodeVel: THREE.Vector3[] = [];
 

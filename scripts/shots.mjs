@@ -77,7 +77,13 @@ try {
               const dz = t.z - c.z;
               b.setTranslation({ x: c.x + dx * cos + dz * sin, y: t.y, z: c.z - dx * sin + dz * cos }, true);
               b.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
+              b.setLinvel({ x: 0, y: 0, z: 0 }, true);
             }
+            // (The Runner keeps its own heading rather than reading it off its body, and its view goes with it.)
+            k.yaw = yaw;
+            k.forward.set(Math.sin(yaw), 0, Math.cos(yaw));
+            k.left.set(k.forward.z, 0, -k.forward.x);
+            input.look = yaw;
             g.sim.run(30);
           },
           hold: (field, value = true) => Object.defineProperty(input, field, { get: () => value, set: () => {}, configurable: true }),

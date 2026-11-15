@@ -77,7 +77,7 @@ pinned value moves or a pinned outcome stops being true.
 ## 6. Hand back with questions, not "how does it feel?"
 
 Close with what changed against each row number, anything not done and why, and two or three specific
-things to try: "Carry a tower top round one corner at full speed: does the gauge prompt come too late to
+things to try: "Carry a tower top round one corner at full speed: does the bar come up too late to
 catch?" Specific questions get specific notes, and the next table is shorter.
 
 The table and its severities, and the keep-pin idea, follow playtest skills reviewed in

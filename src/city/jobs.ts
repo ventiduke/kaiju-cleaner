@@ -52,7 +52,7 @@ export class JobBoard {
         active: held,
         x: carried ? piece.job.socket.x : p.x,
         z: carried ? piece.job.socket.z : p.z,
-        note: piece.state === 'placed' ? (piece.fit === 'crooked' ? 'crooked' : piece.fit === 'perfect' ? 'perfect' : 'done') : piece.state === 'raising' ? 'heave!' : carried ? 'carry to its marker' : piece.job.kind === 'raise' ? 'stand it up' : 'pick it up',
+        note: piece.state === 'placed' ? (piece.fit === 'crooked' ? 'crooked' : piece.fit === 'perfect' ? 'perfect' : 'done') : piece.state === 'raising' ? 'heave!' : carried ? (this.pieces!.parLeft > 0 ? `carry to its marker  ·  ${Math.ceil(this.pieces!.parLeft)} s for quick work` : 'carry to its marker') : piece.job.kind === 'raise' ? 'stand it up' : 'pick it up',
       });
     }
     for (const sweep of this.sweeps?.sweeps ?? []) {

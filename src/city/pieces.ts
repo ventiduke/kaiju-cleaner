@@ -21,6 +21,9 @@ export interface Piece {
   /** Lean from upright, in radians, refreshed every step. */
   /** Sim time it was last set in place. */
   placedAt: number;
+  /** Seconds, from taking hold, in which setting it right counts as quick work; and whether it was. */
+  par: number;
+  quick: boolean;
   tilt: number;
   /** Half-size of a box that bounds it, for sweeping it through buildings while carried. */
   bounds: { hx: number; hy: number; hz: number };
@@ -83,6 +86,10 @@ export class Pieces implements System {
   crooked = 0;
   drops = 0;
   perfect = 0;
+  quick = 0;
+  /** Seconds left, for the piece in hand, to set it right and have it count as quick work. */
+  parLeft = 0;
+  private heldSince = 0;
   /** How much grip is left (1 firm, 0 gone), and how far a toppled piece has been raised (0..1). */
   grip = 1;
   progress = 0;
@@ -201,6 +208,8 @@ export class Pieces implements System {
         mass: volume * sim.tuning.destruction.chunkDensity,
         tilt: 0,
         placedAt: -1e9,
+        par: this.parFor(job),
+        quick: false,
         bounds: { hx: span, hy: job.height / 2, hz: span },
         marker,
         socketMarker,
@@ -229,6 +238,19 @@ export class Pieces implements System {
         if (p.y > 1 && e.y < p.y + 1 && Math.hypot(e.x - p.x, e.z - p.z) < piece.bounds.hx + 14) piece.body.wakeUp();
       }
     });
+  }
+
+  /**
+   * How long a job should take once the piece is in hand, done briskly: a few seconds to get
+   * it up and set it down, and the walk between at a carrying pace with something in reserve.
+   * (Standing a piece up has no walk in it.)
+   */
+  private parFor(job: JobSpec): number {
+    const t = this.sim.tuning;
+    if (job.kind === 'raise') return 6;
+    const top = (t.move.controller === 1 ? t.runner.speed : t.kaiju.maxSpeed) * t.carry.speed;
+    const far = Math.hypot(job.socket.x - job.start.x, job.socket.z - job.start.z);
+    return Math.round(7 + far / (top * 0.55));
   }
 
   /**
@@ -303,6 +325,8 @@ export class Pieces implements System {
     const v = this.kaiju.body.linvel();
     this.lastVel.set(v.x, 0, v.z);
     this.lastYaw = this.kaiju.yaw;
+    this.heldSince = this.sim.time;
+    this.parLeft = piece.par;
     this.sim.emit('pieceGrab', { x: p.x, y: p.y, z: p.z });
   }
 
@@ -311,6 +335,8 @@ export class Pieces implements System {
     this.placed--;
     if (piece.fit === 'crooked') this.crooked--;
     if (piece.fit === 'perfect') this.perfect--;
+    if (piece.quick) this.quick--;
+    piece.quick = false;
     piece.fit = null;
   }
 
@@ -411,7 +437,11 @@ export class Pieces implements System {
     piece.fit = fit;
     this.placed++;
     if (fit === 'perfect') this.perfect++;
-    this.sim.emit('piecePlace', { x: a.x, y: a.y, z: a.z, straight, perfect: fit === 'perfect' });
+    // Set right inside its time, it is quick work. (A crooked job done fast is only a fast crooked job.)
+    piece.quick = straight && this.sim.time - this.heldSince <= piece.par;
+    if (piece.quick) this.quick++;
+    this.parLeft = 0;
+    this.sim.emit('piecePlace', { x: a.x, y: a.y, z: a.z, straight, perfect: fit === 'perfect', quick: piece.quick });
   }
 
   /** True once every piece is back where it belongs. */
@@ -474,6 +504,7 @@ export class Pieces implements System {
       this.release('slipped');
       return;
     }
+    this.parLeft = Math.max(0, piece.par - (this.sim.time - this.heldSince));
     k.carrying = 1;
     // Holding the crawl key with its hands full plants its feet instead: no walking, no turning,
     // and a much steadier load. Standing a piece up, it is planted throughout.

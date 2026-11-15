@@ -190,9 +190,10 @@ describe('city approval', () => {
     g.sim.run(45);
     tap(g, 'grab');
     g.sim.run(5);
-    // (Dead on its mark with a firm hold: worth a little more than a plain good job.)
+    // (Dead on its mark with a firm hold, and in no time at all: worth more than a plain good job, twice over.)
     expect(top.fit).toBe('perfect');
-    expect(approval.value).toBeCloseTo(before + approval.perJob * (1 + WORTH.perfectBonus), 1);
+    expect(top.quick).toBe(true);
+    expect(approval.value).toBeCloseTo(before + approval.perJob * (1 + WORTH.perfectBonus + WORTH.quickBonus), 1);
     expect(done).toBe(null);
     // Stand the clock tower up, and that is the lot.
     const clock = pieces.pieces[1];

@@ -89,7 +89,7 @@ export interface SimEvents {
   propHit: { x: number; y: number; z: number };
   pieceGrab: { x: number; y: number; z: number };
   pieceDrop: { x: number; y: number; z: number };
-  piecePlace: { x: number; y: number; z: number; straight: boolean; perfect: boolean };
+  piecePlace: { x: number; y: number; z: number; straight: boolean; perfect: boolean; quick: boolean };
   chunkBreak: { x: number; y: number; z: number; size: number };
   kaijuFall: { x: number; y: number; z: number };
 }

@@ -46,6 +46,11 @@ export class Stage {
       b.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
       b.setAngvel({ x: 0, y: 0, z: 0 }, true);
     }
+    // (The Runner keeps its own heading rather than reading it off its body, and its view goes with it.)
+    k.yaw = yaw;
+    k.forward.set(Math.sin(yaw), 0, Math.cos(yaw));
+    k.left.set(k.forward.z, 0, -k.forward.x);
+    this.sim.players[0].look = yaw;
     this.run(settle);
   }
 

@@ -22,9 +22,16 @@ npm run playbot -- yard idle
 The city takes about a minute per run to simulate. Styles (`src/bot/playbot.ts`):
 
 - **careful**: keeps to wide streets, fords the river between bridges, eases off for corners, lines pieces
-  up, minds the gauge. This is the "competent first-timer".
-- **reckless**: straight at everything, flat out.
+  up, catches a slipping load dead centre on the bar. This is the "competent first-timer".
+- **reckless**: straight at everything, flat out; stabs at the bar, and one press in four is a fumble.
 - **idle**: never touches the controls. Nothing should finish, break or move.
+
+It drives whichever body the game ships with (the Runner now), and the report has a line for the grip bar
+(catches, fumbles, drops) and counts sneezes and perfect fits. Rough targets, from the playtester's notes:
+a careful shift finishes every job with one to three sneezes and no more than a drop or two; a reckless
+one should score far below it. If "careful" ever stops finishing a city, treat that as a blocker: twice
+now it has been a job that could not be done at all (a tower top above the kaiju's reach; a river bank
+the Runner stuck to).
 
 ## The test course: for anything about how the kaiju moves
 
@@ -91,7 +98,7 @@ is not the game's fault; fix the bot's route instead and say so.
 
 - **A new kind of job** needs a handler in `PlayBot` (`carry`, `raise` and `clear` are the patterns) and a
   line in the yard, so the fast test covers it. The bot only knows what a player can see: where the job is,
-  what is in hand, what the gauge says.
+  what is in hand, where the marker is on the bar.
 - **A changed job or hazard**: run `npm run playbot -- yard careful` (two seconds) on every change, the city
   before shipping.
 - **The tests** in `test/play.test.ts` hold the yard to: careful finishes everything without a fall or a

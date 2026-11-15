@@ -3,6 +3,7 @@ import { CourseBot, runCourse } from '../src/bot/coursebot';
 import type { Course } from '../src/city/course';
 import type { Pieces } from '../src/city/pieces';
 import { runSpec } from '../src/scenes/course';
+import { Stage } from '../src/core/states';
 import { STYLES } from '../src/core/tuning';
 import defaults from '../src/tuning/defaults.json';
 import { makeGame } from './helpers';
@@ -440,6 +441,54 @@ describe('the runner', () => {
     expect(pieces.catches).toBe(1);
     expect(k.jumps).toBe(0);
     expect(pieces.held).toBe(piece);
+  });
+
+  it('stays where it is put when a script picks it up and turns it about (its tail goes with it)', async () => {
+    // (Named states, screenshots and tests all do this. Its tail used to chase its old shape
+    // across the map and haul the body after it at a hundred metres a second.)
+    const g = await runner('yard', { city: { propDensity: 0 } });
+    const k = g.kaiju;
+    g.sim.run(30);
+    const stage = new Stage(g.sim);
+    stage.face(k.yaw + Math.PI, 0);
+    const at = k.position().clone();
+    let fastest = 0;
+    for (let i = 0; i < 90; i++) {
+      g.sim.step();
+      fastest = Math.max(fastest, k.speed);
+    }
+    expect(k.position().distanceTo(at)).toBeLessThan(0.5);
+    expect(fastest).toBeLessThan(2);
+    // Its tail is behind it, the new way round.
+    const tip = k.tail.tip();
+    expect((tip.x - k.position().x) * k.forward.x + (tip.z - k.position().z) * k.forward.z).toBeLessThan(-5);
+    stage.moveTo(at.x + 60, at.z + 40);
+    g.sim.run(60);
+    expect(Math.hypot(k.position().x - (at.x + 60), k.position().z - (at.z + 40))).toBeLessThan(0.5);
+  });
+
+  it('bows: it stops, bends over, says sorry once, and straightens up', async () => {
+    const g = await running();
+    const k = g.kaiju;
+    const inp = g.sim.players[0];
+    let sorry = 0;
+    g.sim.on('kaijuBow', () => sorry++);
+    inp.bow = true;
+    g.sim.step();
+    inp.bow = false;
+    // Still being told to run, it stops to do it.
+    g.sim.run(50);
+    expect(k.speed).toBeLessThan(2);
+    expect(k.bow).toBe(1);
+    expect(sorry).toBe(1);
+    expect(k.bows).toBe(1);
+    const down = k.body.rotation();
+    expect(Math.abs(down.x) + Math.abs(down.z)).toBeGreaterThan(0.3);
+    g.sim.run(120);
+    expect(k.bow).toBe(0);
+    expect(sorry).toBe(1);
+    // And off it goes again.
+    expect(k.speed).toBeGreaterThan(g.sim.tuning.runner.speed * 0.9);
   });
 
   it('is the same run every time', async () => {

@@ -31,18 +31,17 @@ Scenes are picked with a URL parameter:
 
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
-| Move | W A S D: by default the kaiju turns to go the way you point on screen | Left stick |
-| Switch steering: by the screen, or like a tank (A / D turn, W / S drive) | X | |
-| Movement style: Lumbering, Steady, Wild | 1 / 2 / 3 | |
-| Runner mode: a plain third-person body (see below) | 4 | |
-| Leap (Wild style) | Space | A |
-| Tiptoe: slow, quiet, light enough for thin ground, until the calves give out | Hold Shift | Right trigger |
-| Crawl on all fours: slow, can't be tipped, fits under skybridges. At a run in Wild style: a belly-slide | Hold C | B or left trigger |
+| Run: the kaiju turns to go the way you point on the screen | W A S D | Left stick |
+| Look: the mouse turns the view | Click the game (or Tab) to capture the mouse; Esc or Tab frees it | Right stick |
+| Sprint | Hold Shift | Right trigger |
+| Jump (hold for height) | Space | A |
+| Crouch, for getting under skybridges and stepping lightly. On the move: a slide | C (toggles) | B |
 | Take hold of a repair piece; let go of it | Click (or E); click again | X or right bumper |
-| Steady what you are holding, when the gauge says so | Move the mouse up or down (or I / K) | Right stick up / down |
-| Plant your feet while holding (steadier, but no walking) | Hold C | B or left trigger |
+| Catch a slipping load, or heave a toppled one, on the bar | Space, as the marker crosses the green | A |
+| Plant your feet while holding: a wider green, and the view turns you on the spot | C | B |
 | Bow (say sorry to the people you just frightened) | V | Left bumper |
-| Hold your breath (keeps dust out of the nose) | Hold F | Y |
+| The older, balancing styles (Lumbering, Steady, Wild), and back to the Runner | 1 / 2 / 3, and 4 | |
+| In the balancing styles: tiptoe; crawl; steer by the screen or like a tank | Hold Shift; hold C; X | |
 | Look around, raise or lower the view | Drag the mouse, or Q / Z | Right stick left / right |
 | Zoom | Mouse wheel | |
 | Reset the view | Double-click | |
@@ -59,45 +58,55 @@ job and how far off it is; the map (bottom right) and the arrows at the edge of 
 Whenever the city's opinion moves, the reason floats up from where it happened. When the last job is done
 there is a report card, and "next shift" builds a new city.
 
-A bar at the bottom of the screen shows what the kaiju is doing and how long it can keep it up: tiptoe
-stamina, held breath, or dust building toward a sneeze. The bar at the top is what the city thinks of it.
+A bar at the bottom of the screen shows what the kaiju is doing (crouched, sliding) and dust building toward
+a sneeze. The bar at the top is what the city thinks of it.
 
-**Staying upright.** Fast and sharp tips it over: hold a hard turn at speed and it stumbles, then starts to
+**Staying upright** (the balancing styles only; the Runner does not fall). Fast and sharp tips it over: hold a hard turn at speed and it stumbles, then starts to
 go. Let go at the stumble and it rights itself. Once it is going over there is a short window to save it by
 steering into the fall (toppling right, steer right). If it does go down, mashing a direction scrambles it
 up sooner.
 
 **Repair jobs.** Tower tops are sitting in the road, a bridge is missing a span, and the clock tower in the
 plaza has gone over. Each has a coloured marker, and a matching marker floats over where it belongs. Stand
-facing a piece and click: the kaiju takes hold, and keeps hold until you click again. Tops and the span are
-carried to their marker and let go there. The clock tower is stood up where it lies: the kaiju plants its
-feet and heaves for a few seconds.
+facing a piece and click: the kaiju takes hold, and keeps hold until you click again.
 
-While it has hold of something, a gauge appears at the left of the screen. Most of the time there is nothing
-to do. A sudden start, stop or hard turn throws the marker out of the green band, and now and then the load
-shifts by itself; the gauge turns amber and says **MOUSE UP** or **MOUSE DOWN** (with a rising or falling
-blip). Shove the mouse that way and it comes back; you cannot overdo it. Left alone, the grip (the strip
-beside the gauge) burns down and the piece slips. Drive gently and it rarely asks. A piece let go over its
-marker goes in straight if it was steady and lined up, crooked (and visibly so) if not.
+**Keeping hold.** A load works loose in the hands: slowly when it is carried gently, quickly when it is
+thrown about (hard starts and stops, sharp turns, clipping a building). A thin strip above the load shows
+the grip draining. When it starts to slip, a bar comes up there with a marker running back and forth and a
+green zone in the middle, and it ticks each time the marker crosses the green. Press **Space** in the green
+and the kaiju takes a firm hold again; dead centre is a better hold still. A press outside the green is a
+fumble and costs grip. Do nothing and the load is on the ground in about three seconds. The green is wider
+standing still, and widest with feet planted (C).
 
-Two jobs need no carrying skill at all. A **bus on a roof** is lifted down and set on the crossroads marked
-for it. A **blocked road** is a taped-off stretch buried in lumps of rubble: get them off it however you
+Carried pieces are let go over their marker. The piece squares itself up as it gets there, so only two
+things decide the fit: how close to the mark it is, and whether the hold is firm. Within a metre is a
+**perfect fit**, within about two and a half is straight, anything else in reach is crooked (and visibly
+so), and a slipping load always goes in crooked. The label above the load says which it would be before
+you click. The clock tower is stood up where it lies: the kaiju plants its feet and the same bar comes up;
+every press in the green is a heave, five good ones stand it up, and a fumble lets it sag.
+
+Each job also has a time, counted from taking hold (shown beside the job and above the load). Set right
+inside it, the job is **quick work**.
+
+A **bus on a roof** is lifted down and set on the crossroads marked for it, the same way. A **blocked road** is a taped-off stretch buried in lumps of rubble: get them off it however you
 like, by shouldering through, kicking, a sweep of the tail, or a sneeze aimed down the street.
 
-**Approval.** The city starts undecided (50%). Repairs raise it, a straight one more than a crooked one.
-Knocked-about buildings and squashed people lower it. Bowing (V) wins back people who are running from the
+**Approval.** The city starts undecided (50%). Repairs raise it: a crooked one earns 60% of a straight one, a
+perfect fit a quarter more, and quick work 15% more again. Knocked-about buildings and squashed people lower it. Bowing (V) wins back people who are running from the
 kaiju at that moment, up to a point. When the last repair goes in, the banner gives the verdict.
 
 **Hazards.**
 
-- Oil (dark, glossy patches): at a run its feet shoot out from under it. Tiptoe or crawl across.
-- Weak ground (pale, cracked patches): a heavy step brings it down, trips the kaiju and shakes loose the
-  buildings around. Tiptoe is light enough to cross.
+- Oil (dark, glossy patches): no grip. The Runner cannot turn or stop on it; the balancing styles go over.
+- Weak ground (pale, cracked patches): a heavy step brings it down and shakes loose the buildings around.
+  Crouched (or on tiptoe, in the balancing styles) it is light enough to cross.
 - Water mains (blue covers in the road): a heavy step bursts one. The geyser throws about whatever is on
   it, staggers the kaiju, and leaves the road slippery until it dries. Standing in the spray does wash
   the dust out of its nose. Tiptoe is light enough to cross.
 - Dust: every chunk that breaks nearby tickles its nose. When the bar fills it sneezes, which throws it
-  backwards and blasts everything in front of it. Hold F to hold its breath through the worst of it.
+  backwards and blasts everything in front of it. There is no holding it in: the "ah... ah..." is about a
+  second in which to point it somewhere harmless, or at a blocked road. Afterwards its nose is clear for a
+  while, so one sneeze's wreckage does not bring on the next.
 - The river: 13 m deep with a current. It pushes the kaiju downstream as it wades, and carries floating
   rubble out of the city. The road bridges stand on piers and will not take a kaiju.
 
@@ -109,15 +118,15 @@ splat if stepped on or sent flying into a wall.
 
 ## Finding the fun: styles and the test course
 
-How the kaiju should move is an open question, so there are three whole styles to switch between while
-playing (keys 1, 2, 3), each a setting of the six feel dials plus which extra moves it has:
+The game ships as the **Runner** (below). The three styles it started with are still there to switch to
+while playing (keys 1, 2, 3; 4 goes back), each a setting of the six feel dials plus which extra moves it has:
 
 - **Lumbering**: heavy, wobbly, slow to answer.
-- **Steady** (the default): moving within half a second, corners cleanly, still falls if you hold a hard turn.
+- **Steady**: moving within half a second, corners cleanly, still falls if you hold a hard turn.
 - **Wild**: fast, with a leap (Space) that comes down hard enough to shake buildings loose, and a
   belly-slide (C at a run) that goes under a skybridge without stopping.
 
-There is also a fourth, **Runner** (key 4), which is not a setting of those dials but a different body: a
+The **Runner** (key 4, and what the game opens as) is not a setting of those dials but a different body: a
 third-person animal. Click the game (or press Tab) to capture the mouse; Esc or Tab frees it, and the game
 lets go of it by itself when a run ends or the dials are opened. The mouse turns the view; W A S D mean "that way on
 the screen", and the kaiju turns to go there (left alone, the view swings round behind it, so holding A or D

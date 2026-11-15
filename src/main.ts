@@ -157,7 +157,9 @@ async function boot(): Promise<void> {
                     ? 'CLICK to set it down  ·  straight'
                     : pieces.over === 'crooked'
                       ? 'closer, for a straight fit'
-                      : '';
+                      : pieces.parLeft > 0
+                        ? `${Math.ceil(pieces.parLeft)} s for quick work`
+                        : '';
     if (said !== gripSaid) {
       gripSaid = said;
       gripText.textContent = said;
@@ -312,9 +314,12 @@ async function boot(): Promise<void> {
     if (shown !== (isRunner() && (captured() || wantsMouse())) || document.body.classList.contains('mouse-held') !== captured()) showMouse();
   };
   freeCam.onClick = (ndc) => {
-    // The runner's first click captures the mouse; after that a click is a click.
-    if (isRunner() && !captured()) captureMouse();
-    else if (follow) input.click();
+    // The runner's first click captures the mouse; after that a click is a click. (By a piece, or
+    // with one in hand, that first click is a click as well: it would be odd for it to do nothing.)
+    if (isRunner() && !captured()) {
+      captureMouse();
+      if (pieces?.held || pieces?.nearest()) input.click();
+    } else if (follow) input.click();
     else throwBall(ndc);
   };
 
