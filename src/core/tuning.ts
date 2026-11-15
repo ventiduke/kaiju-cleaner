@@ -111,6 +111,11 @@ export const codeDefaults = {
   },
   kaiju: {
     // Shape (needs restart)
+    /**
+     * Overall size, as a label: 1 is the original giant, thirty-nine metres to the top of its head.
+     * The panel's size dial scales the body, legs and tail together and writes the result here.
+     */
+    size: 1,
     bodyRadius: 6.9,
     bodyHalfHeight: 8.1,
     legLength: 9.3,
@@ -242,11 +247,19 @@ export const codeDefaults = {
   },
   tail: {
     /**
-     * 1: the tail smashes buildings as it swings. 0: it only brushes them. Off by default: on the
-     * test course the tail, whipping round at corners behind the player, did about half of all
-     * the damage (33 buildings against 18 for the same careful run).
+     * 1: the tail can smash buildings (when it is swung fast enough: see `wreckSpeed`). 0: never.
+     * On the test course a tail that smashed whatever it touched did about half of all the damage,
+     * from behind the player, where they could not see it.
      */
     wrecks: 0,
+    /**
+     * How fast a part of the tail has to be moving, relative to the kaiju, before it smashes what
+     * it hits (m/s). Slower than this it passes walls by: dragged along a street it does nothing,
+     * whipped round in a hard turn it takes the shopfronts off.
+     */
+    wreckSpeed: 38,
+    /** How many chunks one part of the tail can break in one swing before it is spent (0: no limit). */
+    bite: 3,
     segments: 5,
     length: 34,
     baseRadius: 3.8,
@@ -381,6 +394,26 @@ export const STYLES: { name: string; blurb: string; feel: Tuning['feel']; move: 
   },
 ];
 
+/** The giant the proportions are written for: the panel's size dial scales these. */
+export const GIANT = { bodyRadius: 6.9, bodyHalfHeight: 8.1, legLength: 9.3, tailLength: 34, tailBase: 3.8, tailTip: 1.3 };
+
+/**
+ * Resizes the kaiju to `size` (1 is the giant), keeping whatever proportions it has now: a
+ * tail that was made stubbier stays stubbier.
+ */
+export function applySize(t: Tuning, size: number): void {
+  const k = t.kaiju;
+  const ratio = size / (k.size || 1);
+  const r = (v: number) => Math.round(v * ratio * 100) / 100;
+  k.bodyRadius = r(k.bodyRadius);
+  k.bodyHalfHeight = r(k.bodyHalfHeight);
+  k.legLength = r(k.legLength);
+  t.tail.length = r(t.tail.length);
+  t.tail.baseRadius = r(t.tail.baseRadius);
+  t.tail.tipRadius = r(t.tail.tipRadius);
+  k.size = size;
+}
+
 /** Switches to a movement style: sets the feel dials and the extra moves, and works out the detailed numbers. */
 export function applyStyle(t: Tuning, index: number): void {
   const style = STYLES[index];
@@ -459,6 +492,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     rubbleCap: [0, 600, 10],
   },
   kaiju: {
+    size: [0.3, 1.5, 0.01],
     bodyRadius: [2, 12, 0.1],
     bodyHalfHeight: [2, 16, 0.1],
     legLength: [2, 16, 0.1],
@@ -538,6 +572,8 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
   audio: { volume: [0, 1, 0.01] },
   tail: {
     wrecks: [0, 1, 1],
+    wreckSpeed: [0, 120, 1],
+    bite: [0, 20, 1],
     segments: [2, 8, 1],
     length: [8, 60, 1],
     baseRadius: [1, 6, 0.1],
@@ -581,7 +617,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
 export const restartKeys: { [G in TuningGroup]?: readonly string[] | 'all' } = {
   city: 'all',
   citizens: 'all',
-  kaiju: ['bodyRadius', 'bodyHalfHeight', 'legLength', 'density'],
+  kaiju: ['size', 'bodyRadius', 'bodyHalfHeight', 'legLength', 'density'],
   tail: ['wrecks', 'segments', 'length', 'baseRadius', 'tipRadius', 'density'],
   legs: ['footLength', 'footWidth', 'footHeight'],
   destruction: ['chunkDensity', 'friction'],

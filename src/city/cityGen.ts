@@ -204,6 +204,15 @@ export function monumentJob(x: number, z: number, color: number): JobSpec {
   };
 }
 
+/**
+ * The floor a skybridge should hang at for a kaiju of this build: the lowest that clears its
+ * back when it is down on all fours (which leaves it well below its head when it stands).
+ */
+export function skybridgeFloor(t: Tuning): number {
+  const crawlTop = 2 * t.kaiju.bodyRadius + t.modes.crawlClearance;
+  return Math.max(2, Math.ceil((crawlTop + 2.5) / t.city.floorHeight));
+}
+
 /** A bus, stranded at (x, y, z) and wanted on the road at (toX, toZ). It is modelled lying along z. */
 export function busJob(x: number, y: number, z: number, yaw: number, toX: number, toZ: number, color: number): JobSpec {
   const boxes: PieceBox[] = [
@@ -247,7 +256,10 @@ export function addRubble(sweep: SweepSpec, props: PropSpec[], rng: Rng): void {
   }
 }
 
-export function generateCity(cfg: Tuning['city']): CityLayout {
+/**
+ * @param bridgeFloor the floor skybridges hang at: just above a crawling kaiju's back (see `skybridgeFloor`)
+ */
+export function generateCity(cfg: Tuning['city'], bridgeFloor = 5): CityLayout {
   const rng = new Rng(cfg.seed);
   const n = Math.max(1, Math.round(cfg.blocks));
   const perimeter = cfg.avenueWidth;
@@ -521,6 +533,7 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
       const along: 'x' | 'z' = di === 1 ? 'x' : 'z';
       const ta = A.tiers[0];
       const tb = B.tiers[0];
+      if (ta.floors <= bridgeFloor || tb.floors <= bridgeFloor) continue;
       const [aHalf, bHalf, aSide, bSide, aPos, bPos, aCross, bCross] =
         along === 'x' ? [ta.w / 2, tb.w / 2, ta.d / 2, tb.d / 2, A.x, B.x, A.z, B.z] : [ta.d / 2, tb.d / 2, ta.w / 2, tb.w / 2, A.z, B.z, A.x, B.x];
       const from = aPos + aHalf;
@@ -534,7 +547,7 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
       const top = Math.min(ta.floors, tb.floors) - 1;
       // Sixth floor: over a crawling kaiju's back, square in a standing one's chest.
       if (top < 5) continue;
-      candidates.push({ kind: 'sky', a, b, along, from, to, center: (lo + hi) / 2, floor: 5, width: 5, color: BRIDGE_COLOR });
+      candidates.push({ kind: 'sky', a, b, along, from, to, center: (lo + hi) / 2, floor: bridgeFloor, width: 5, color: BRIDGE_COLOR });
     }
   }
   const used = new Set<number>();

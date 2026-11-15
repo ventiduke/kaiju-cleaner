@@ -14,12 +14,21 @@ interface RawJointSet {
   jointConfigureMotorPosition(handle: number, axis: number, target: number, stiffness: number, damping: number): void;
 }
 
+const PASSING = groups(Group.TAIL, Group.GROUND | Group.PROP | Group.BALL | Group.PIECE);
+const SMASHING = groups(Group.TAIL, Group.GROUND | Group.CHUNK | Group.PROP | Group.BALL | Group.PIECE);
+
 /**
  * The tail: a chain of heavy capsules on motorised ball joints.
  * It is fully physical, so a fast turn whips it round into whatever is behind you.
  */
 export class Tail {
   readonly segments: RigidBody[] = [];
+  /** For each segment: how far it reaches from its centre, and whether it is smashing things right now. */
+  private reach: number[] = [];
+  private armed: boolean[] = [];
+  /** How many chunks each part has broken this swing, and whether it has had its fill. */
+  private bites: number[] = [];
+  private spent: boolean[] = [];
   readonly meshes: THREE.Mesh[] = [];
   private joints: Joint[] = [];
   private applied = NaN;
@@ -34,7 +43,7 @@ export class Tail {
     parent: RigidBody,
     anchor: THREE.Vector3,
     material: THREE.Material,
-    chunks: ChunkField | null,
+    private chunks: ChunkField | null,
   ) {
     const { R, world, tuning } = sim;
     const t = tuning.tail;
@@ -66,9 +75,9 @@ export class Tail {
           .setRotation({ x: lay.x, y: lay.y, z: lay.z, w: lay.w })
           .setDensity(t.density)
           .setFriction(0.4)
-          // (A tail that does not wreck buildings passes through them: one that merely bumped them
-          // would snag on every corner and pull the kaiju off its feet.)
-          .setCollisionGroups(groups(Group.TAIL, Group.GROUND | Group.PROP | Group.BALL | Group.PIECE | (sim.tuning.tail.wrecks ? Group.CHUNK : 0))),
+          // (Unarmed, it passes through buildings: a tail that merely bumped them would snag on
+          // every corner and pull the kaiju off its feet.)
+          .setCollisionGroups(PASSING),
         body,
       );
       const joint = world.createImpulseJoint(
@@ -80,9 +89,11 @@ export class Tail {
       joint.setContactsEnabled(false);
       this.joints.push(joint);
       this.segments.push(body);
-      // A tail that wrecks buildings swings through them like the body does. One that does not still
-      // knocks cars, people and loose lumps about, but leaves the walls standing.
-      if (sim.tuning.tail.wrecks) chunks?.addHitter(body, len / 2 + radius);
+      // Whether it smashes buildings is decided moment to moment, by how fast it is swinging (see `arm`).
+      this.reach.push(len / 2 + radius);
+      this.armed.push(false);
+      this.bites.push(0);
+      this.spent.push(false);
 
       const next = THREE.MathUtils.lerp(t.baseRadius, t.tipRadius, Math.min(1, (i + 1) / (n - 1)));
       const geometry = new THREE.CylinderGeometry(next * 0.95, radius, len * 1.08, 10);
@@ -96,6 +107,15 @@ export class Tail {
       prevAnchor = { x: 0, y: 0, z: -len / 2 };
       cursor.addScaledVector(back, len);
     }
+    // Count what each swinging part breaks, so that a swing can run out (see `arm`).
+    sim.on('chunkBreak', (e) => {
+      for (let i = 0; i < this.segments.length; i++) {
+        if (!this.armed[i]) continue;
+        const p = this.segments[i].translation();
+        const near = this.reach[i] + 3;
+        if ((e.x - p.x) ** 2 + (e.y - p.y) ** 2 + (e.z - p.z) ** 2 < near * near) this.bites[i]++;
+      }
+    });
     this.syncMotors();
   }
 
@@ -130,6 +150,38 @@ export class Tail {
         raw.jointConfigureMotorPosition(j.handle, axis, target, stiffness, damping);
       }
     });
+  }
+
+  /**
+   * Arms or disarms each part of the tail by how fast it is moving relative to the kaiju.
+   * Trailing behind, or brushing a wall on a gentle turn, it passes buildings by. Whipped
+   * round, the parts going faster than `wreckSpeed` smash what they hit, like the body does.
+   * (They let go a little below the speed they caught at, so a part does not flicker.)
+   */
+  arm(bodyVel: { x: number; y: number; z: number }): void {
+    const t = this.sim.tuning.tail;
+    for (let i = 0; i < this.segments.length; i++) {
+      const seg = this.segments[i];
+      const v = seg.linvel();
+      const speed = Math.hypot(v.x - bodyVel.x, v.z - bodyVel.z);
+      // A swing is spent once it has taken its few bites out of the street: after that the part
+      // passes through until it has slowed right down, ready for the next swing.
+      if (speed < t.wreckSpeed * 0.5) {
+        this.spent[i] = false;
+        this.bites[i] = 0;
+      } else if (t.bite > 0 && this.bites[i] >= t.bite) this.spent[i] = true;
+      const want = t.wrecks > 0 && !this.spent[i] && speed > t.wreckSpeed * (this.armed[i] ? 0.7 : 1);
+      if (want === this.armed[i]) continue;
+      this.armed[i] = want;
+      seg.collider(0).setCollisionGroups(want ? SMASHING : PASSING);
+      if (want) this.chunks?.addHitter(seg, this.reach[i]);
+      else this.chunks?.removeHitter(seg);
+    }
+  }
+
+  /** How many parts of the tail are smashing things right now. */
+  armedCount(): number {
+    return this.armed.filter(Boolean).length;
   }
 
   tip(target = new THREE.Vector3()): THREE.Vector3 {

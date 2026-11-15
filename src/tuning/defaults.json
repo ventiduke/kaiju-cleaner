@@ -1,11 +1,39 @@
 {
   "feel": {
-    "speed": 40,
-    "pickup": 0.8,
-    "turning": 2.9,
-    "grip": 62,
-    "wobble": 0.32,
-    "balance": 0.8
+    "speed": 60.5,
+    "pickup": 0.65,
+    "turning": 5,
+    "grip": 57.5,
+    "wobble": 0.19,
+    "balance": 0.82
+  },
+  "city": {
+    "boulevardWidth": 57,
+    "avenueWidth": 37,
+    "sideStreetWidth": 27
+  },
+  "kaiju": {
+    "bodyRadius": 3.7,
+    "bodyHalfHeight": 4.3,
+    "legLength": 5,
+    "density": 3.4,
+    "hoverFrequency": 2.65,
+    "oilSlip": 10.2,
+    "fallDuration": 1,
+    "getUpDuration": 0.7,
+    "size": 0.54
+  },
+  "tail": {
+    "wrecks": 1,
+    "segments": 4,
+    "length": 20,
+    "baseRadius": 2.7,
+    "tipRadius": 0.9,
+    "density": 1.5,
+    "stiffness": 5,
+    "damping": 9.3,
+    "wreckSpeed": 38,
+    "bite": 3
   },
   "move": {
     "style": 1,

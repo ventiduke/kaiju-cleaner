@@ -742,6 +742,7 @@ export class Kaiju implements System {
     ctx.crawl = crawl;
     this.tail.setPose(crawl, pitch);
     if (this.sim.tick % 30 === 0) this.tail.syncMotors();
+    this.tail.arm(this.body.linvel());
   }
 
   /** The catch-step of a stumble: a stagger toward the side it is toppling to, which rights it a little. */

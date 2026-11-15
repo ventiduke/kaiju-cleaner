@@ -64,6 +64,8 @@ function span(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3): void {
   mesh.scale.set(1, len, 1);
 }
 
+/** The body radius the leg settings were tuned at. */
+const REFERENCE_RADIUS = 6.9;
 const CLAW = new THREE.MeshLambertMaterial({ color: 0xd9d2bd });
 
 /**
@@ -72,6 +74,17 @@ const CLAW = new THREE.MeshLambertMaterial({ color: 0xd9d2bd });
  * so steps shove props about and break whatever building they land in.
  */
 export class Legs {
+  /**
+   * The leg settings at this kaiju's size. They are written for the reference giant (a body
+   * 6.9 m in radius); a smaller or larger body gets feet, stance and stride in proportion,
+   * so that changing the body's size does not leave it on somebody else's legs.
+   */
+  private dims(): Sim['tuning']['legs'] {
+    const l = this.sim.tuning.legs;
+    const s = this.sim.tuning.kaiju.bodyRadius / REFERENCE_RADIUS;
+    return { ...l, stanceWidth: l.stanceWidth * s, stepLength: l.stepLength * s, stepHeight: l.stepHeight * s, footLength: l.footLength * s, footWidth: l.footWidth * s, footHeight: l.footHeight * s };
+  }
+
   readonly feet: Foot[] = [];
   /** Every mesh the legs draw, for effects that need to touch all of the kaiju. */
   readonly meshes: THREE.Mesh[] = [];
@@ -99,8 +112,9 @@ export class Legs {
     start: LegContext,
   ) {
     const { R, world, tuning } = sim;
-    const l = tuning.legs;
+    const l = this.dims();
     const k = tuning.kaiju;
+    const s = k.bodyRadius / REFERENCE_RADIUS;
     this.hipHeight = k.legLength + k.bodyRadius * 0.8;
     this.boneLength = this.hipHeight * 0.58;
     this.reach = Math.sqrt((this.boneLength * 2) ** 2 - this.hipHeight ** 2) + l.stanceWidth;
@@ -123,8 +137,8 @@ export class Legs {
         body,
       );
       // Heavy haunches: these carry thirty metres of animal.
-      const thigh = new THREE.Mesh(new THREE.CylinderGeometry(3.0, 3.3, 1, 10), material);
-      const shin = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 2.4, 1, 10), material);
+      const thigh = new THREE.Mesh(new THREE.CylinderGeometry(3.0 * s, 3.3 * s, 1, 10), material);
+      const shin = new THREE.Mesh(new THREE.CylinderGeometry(2.0 * s, 2.4 * s, 1, 10), material);
       const foot = new THREE.Group();
       const sole = new THREE.Mesh(new THREE.BoxGeometry(l.footWidth, l.footHeight, l.footLength * 0.72), material);
       sole.position.set(0, l.footHeight / 2, -l.footLength * 0.1);
@@ -169,7 +183,7 @@ export class Legs {
 
   /** Where a foot would stand if the kaiju were still: under the hip, out to the side. */
   private home(ctx: LegContext, side: number, target: THREE.Vector3): THREE.Vector3 {
-    const w = this.sim.tuning.legs.stanceWidth * this.stanceScale;
+    const w = this.dims().stanceWidth * this.stanceScale;
     const back = this.sim.tuning.kaiju.bodyHalfHeight * 0.85 * ctx.crawl;
     return target.set(
       ctx.pos.x + ctx.left.x * side * w - ctx.forward.x * back,
@@ -179,7 +193,7 @@ export class Legs {
   }
 
   update(dt: number, ctx: LegContext): void {
-    const l = this.sim.tuning.legs;
+    const l = this.dims();
     const maxSpeed = this.sim.tuning.kaiju.maxSpeed;
     const speed = Math.hypot(ctx.velocity.x, ctx.velocity.z);
     this.stanceScale += (ctx.stanceScale - this.stanceScale) * Math.min(1, dt * 5);
@@ -287,7 +301,7 @@ export class Legs {
 
   /** Draws the legs: feet interpolated between steps, knees solved to reach from the hips. */
   render(alpha: number, forward: THREE.Vector3): void {
-    const l = this.sim.tuning.legs;
+    const l = this.dims();
     for (const f of this.feet) {
       const fp = f.foot.position.lerpVectors(f.prev, f.pos, alpha);
       f.foot.quaternion.setFromAxisAngle(Y, lerpAngle(f.prevYaw, f.yaw, alpha));

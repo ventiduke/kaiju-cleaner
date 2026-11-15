@@ -2,6 +2,7 @@ import GUI from 'lil-gui';
 import type { SessionRecorder } from './session';
 import {
   applyFeel,
+  applySize,
   codeDefaults,
   deletePreset,
   feelLabels,
@@ -74,6 +75,18 @@ export function buildTuningGui(tuning: Tuning, opts: PanelOptions): GUI {
         changed();
       });
   }
+
+  // Size is one dial too: it scales body, legs and tail together (and needs a restart to rebuild them).
+  const sizing = { size: tuning.kaiju.size };
+  feel
+    .add(sizing, 'size', 0.3, 1.5, 0.01)
+    .name('size  (1 = the old giant)  ⟳')
+    .onFinishChange((v: number) => {
+      applySize(tuning, v);
+      for (const c of advanced.controllersRecursive()) c.updateDisplay();
+      changed();
+      opts.toast('Size changed: press "restart scene" to rebuild the kaiju at its new size.');
+    });
 
   // --- Feedback ---
   const actions = {

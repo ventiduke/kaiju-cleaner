@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { BridgeSpec, BuildingSpec, CityLayout, Hazard, PropSpec } from '../city/cityGen';
+import { skybridgeFloor, type BridgeSpec, type BuildingSpec, type CityLayout, type Hazard, type PropSpec } from '../city/cityGen';
+import type { Tuning } from '../core/tuning';
 import { Course, type CourseSpec, type Point, type Section } from '../city/course';
 import type { Damage } from '../city/damage';
 import { Rng } from '../core/rng';
@@ -75,7 +76,8 @@ function distanceTo(seg: Segment, x: number, z: number): number {
   return Math.hypot(x - seg.a.x - dx * t, z - seg.a.z - dz * t);
 }
 
-export function courseLayout(spec: CourseSpec = courseSpec()): CityLayout {
+export function courseLayout(spec: CourseSpec, tuning: Tuning): CityLayout {
+  const bridgeFloor = skybridgeFloor(tuning);
   const rng = new Rng(2026);
   const segments = courseSegments(spec);
   const buildings: BuildingSpec[] = [];
@@ -99,9 +101,9 @@ export function courseLayout(spec: CourseSpec = courseSpec()): CityLayout {
   const lane = segments.find((s) => spec.sections[s.section].name.startsWith('Skybridges'))!;
   for (const zone of spec.crawlZones) {
     const off = lane.width / 2 + SIDEWALK + LOT / 2;
-    const north = place(zone.x, zone.z - off, 7, lane);
-    const south = place(zone.x, zone.z + off, 7, lane);
-    bridges.push({ kind: 'sky', a: north, b: south, along: 'z', from: zone.z - off + LOT / 2, to: zone.z + off - LOT / 2, center: zone.x, floor: 5, width: 5, color: 0x8fc7d8 });
+    const north = place(zone.x, zone.z - off, bridgeFloor + 2, lane);
+    const south = place(zone.x, zone.z + off, bridgeFloor + 2, lane);
+    bridges.push({ kind: 'sky', a: north, b: south, along: 'z', from: zone.z - off + LOT / 2, to: zone.z + off - LOT / 2, center: zone.x, floor: bridgeFloor, width: 5, color: 0x8fc7d8 });
   }
 
   // Then a row of buildings down each side of every street.
@@ -211,7 +213,7 @@ function addRoads(sim: Sim, spec: CourseSpec): void {
 
 export function buildCourse(sim: Sim): void {
   const spec = courseSpec();
-  const layout = courseLayout(spec);
+  const layout = courseLayout(spec, sim.tuning);
   addEnvironment(sim, 420, null);
   addRoads(sim, spec);
   populate(sim, layout);

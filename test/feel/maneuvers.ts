@@ -14,7 +14,14 @@ import type { Sim } from '../../src/sim';
  * A fixed set of feel dials for tests to pin behaviour against. The shipped defaults
  * move every time the feel is tuned; the rules the tests check should not move with them.
  */
-export const REF = { feel: { speed: 24, pickup: 1.7, turning: 2, grip: 34, wobble: 0.5, balance: 0.5 } };
+export const REF = {
+  feel: { speed: 24, pickup: 1.7, turning: 2, grip: 34, wobble: 0.5, balance: 0.5 },
+  // The reference is the original giant, in the original streets, whatever size and city ship.
+  kaiju: { size: 1, bodyRadius: 6.9, bodyHalfHeight: 8.1, legLength: 9.3, density: 4, hoverFrequency: 3.2, oilSlip: 5, fallDuration: 1.4, getUpDuration: 1.3 },
+  tail: { wrecks: 0, wreckSpeed: 38, bite: 3, segments: 5, length: 34, baseRadius: 3.8, tipRadius: 1.3, density: 2.8, stiffness: 14, damping: 3.5 },
+  city: { boulevardWidth: 44, avenueWidth: 30, sideStreetWidth: 24 },
+  move: { style: 1, jump: 0, slide: 0, relative: 1 },
+};
 
 export interface Rig {
   sim: Sim;
