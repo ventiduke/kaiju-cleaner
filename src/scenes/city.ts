@@ -1,3 +1,4 @@
+import { Smoke } from '../gfx/smoke';
 import { Sweeps } from '../city/sweeps';
 import { addOutskirts } from '../gfx/backdrop';
 import type { Look } from '../gfx/look';
@@ -222,6 +223,12 @@ export function populate(sim: Sim, layout: CityLayout): void {
     sim.parts.river = flow;
   }
   sim.add(new Dust(sim));
+  // Smoke from every tower that is still missing its top.
+  sim.add(
+    new Smoke(sim, () =>
+      pieces.pieces.filter((piece) => piece.job.kind === 'top' && piece.state !== 'placed').map((piece) => piece.job.socket),
+    ),
+  );
 }
 
 export function buildCity(sim: Sim): void {

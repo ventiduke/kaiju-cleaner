@@ -112,7 +112,9 @@ export function facadeMaterial(look: Look | undefined, opts: { face?: number; se
               float detail = 1.0 - smoothstep(0.25, 0.6, max(aa.x, aa.y));
               pane = mix((hi.x - lo.x) * (hi.y - lo.y), pane, detail);
               float seed = floor(vFace.y + 0.5);
-              float r = fhash(id + vec2(seed * 0.37, (abs(n.x) > 0.5 ? 11.0 : 3.0) + n.x * 5.0 + n.z * 9.0));
+              // (Whole numbers only go into the hash: the least wobble in its input shows up as static.)
+              float side = abs(n.x) > 0.5 ? (n.x > 0.0 ? 1.0 : 2.0) : (n.z > 0.0 ? 3.0 : 4.0);
+              float r = fhash(id + vec2(seed * 0.37, side * 7.0));
               // Glass: dark, a little bluer and brighter toward the top of each pane, like sky in it.
               float up = clamp((f.y - lo.y) / (hi.y - lo.y), 0.0, 1.0);
               vec3 glass = mix(vec3(0.05, 0.07, 0.1), vec3(0.2, 0.3, 0.42), up * up) * (0.75 + 0.5 * r);

@@ -39,10 +39,18 @@ Scenes are picked with a URL parameter:
 | Look around, raise or lower the view | Drag the mouse, or Q / Z | Right stick left / right |
 | Zoom | Mouse wheel | |
 | Reset the view | Double-click | |
+| Time of day (late afternoon, dusk, night, morning, noon) | T | |
+| Show all controls | H | |
+| Tuning and feedback panel, debug readout | ` (backquote) | |
 | Note for Claude | N | |
 | Sound on / off | M | |
 | Free camera on / off | C | |
 | Throw a debug ball at the cursor | B (or click, in the free camera) | |
+
+**A shift.** The game opens on a briefing: today's jobs, and the keys. The job list (top right) shows each
+job and how far off it is; the map (bottom right) and the arrows at the edge of the screen point at them.
+Whenever the city's opinion moves, the reason floats up from where it happened. When the last job is done
+there is a report card, and "next shift" builds a new city.
 
 A bar at the bottom of the screen shows what the kaiju is doing and how long it can keep it up: tiptoe
 stamina, held breath, or dust building toward a sneeze. The bar at the top is what the city thinks of it.
@@ -64,6 +72,10 @@ shifts by itself; the gauge turns amber and says **MOUSE UP** or **MOUSE DOWN** 
 blip). Shove the mouse that way and it comes back; you cannot overdo it. Left alone, the grip (the strip
 beside the gauge) burns down and the piece slips. Drive gently and it rarely asks. A piece let go over its
 marker goes in straight if it was steady and lined up, crooked (and visibly so) if not.
+
+Two jobs need no carrying skill at all. A **bus on a roof** is lifted down and set on the crossroads marked
+for it. A **blocked road** is a taped-off stretch buried in lumps of rubble: get them off it however you
+like, by shouldering through, kicking, a sweep of the tail, or a sneeze aimed down the street.
 
 **Approval.** The city starts undecided (50%). Repairs raise it, a straight one more than a crooked one.
 Knocked-about buildings and squashed people lower it. Bowing (V) wins back people who are running from the
@@ -88,9 +100,18 @@ sturdy rest stay as lumps. A foot landing on rubble crushes the weak bits and st
 The townsfolk run from a stomping kaiju (less from one on tiptoe), cheer a repair, and leave a colourful
 splat if stepped on or sent flying into a wall.
 
+## How it looks
+
+Sky, sun, clouds and stars are drawn by a shader and change with the time of day (`gfx.hour`, or the T key);
+the same settings drive the light, the fog and how many windows are lit. Buildings are still plain boxes:
+their windows, shopfronts and roofs are painted by the block material (`src/gfx/facade.ts`) on whichever
+faces are outside walls, so a broken-open building shows bare concrete inside. The picture is finished with
+bloom and a light grade; if the frame rate stays low for five seconds the game lowers the resolution, then
+turns those passes off, and says so.
+
 ## Tuning the feel
 
-The panel opens on six **Feel** dials: speed, pickup, turning, grip, wobble and balance. They drive the
+Press **`** for the panel. It opens on six **Feel** dials: speed, pickup, turning, grip, wobble and balance. They drive the
 detailed numbers under **Advanced**, which you can still fine-tune by hand afterwards.
 
 ## Giving feedback an agent can use
@@ -115,8 +136,8 @@ and whether a set of turns at different speeds ends steady, in a stumble, or in 
 ## Status
 
 M0 (scaffold), M1 (destructible city), M2 (kaiju movement), M3 (kaiju in the city) and M4 (movement modes)
-are built, with four rounds of playtest changes, three kinds of repair job, four hazards, a bow and a
-score. Each has
+are built, with five rounds of playtest changes, five kinds of job, four hazards, a bow, a score, a
+game loop round them (briefing, job list, map, report card, next shift) and a full visual pass. Each has
 measurable checks in `test/`; whether it is *fun* is a playtest call.
 
 ## How the code is laid out
@@ -126,6 +147,8 @@ measurable checks in `test/`; whether it is *fun* is a playtest call.
 - `src/main.ts` wraps a sim with the renderer, camera, input, HUD and tuning panel.
 - `src/core/tuning.ts` holds every tunable. The in-game panel edits them live; values marked ⟳ apply on
   "restart scene". "Copy JSON" output pasted into `src/tuning/defaults.json` becomes the new default feel.
+- `src/gfx/` is the look: time of day, sky, building fronts, water, smoke, the town beyond the site, and the
+  finishing passes. `src/ui/gameHud.ts` is the game's screen furniture.
 - `src/city/` generates the city as plain data, builds chunked buildings with a support graph, and owns the
   break rules (`destruction.ts`). `src/kaiju/` is the body and balance controller, tail, legs and follow camera.
 - `window.__game` exposes the running sim for console poking and the smoke script.

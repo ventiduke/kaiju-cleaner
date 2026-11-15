@@ -1,3 +1,4 @@
+import { puffMaterial } from '../gfx/smoke';
 import * as THREE from 'three';
 import type { Sim, System } from '../sim';
 
@@ -21,7 +22,7 @@ export class Dust implements System {
   constructor(sim: Sim) {
     this.mesh = new THREE.InstancedMesh(
       new THREE.IcosahedronGeometry(1, 1),
-      new THREE.MeshLambertMaterial({ color: 0xd8d0c0, transparent: true, opacity: 0.5, depthWrite: false }),
+      puffMaterial(0xd8d0c0, 0.75),
       MAX_PUFFS,
     );
     this.mesh.frustumCulled = false;

@@ -33,7 +33,10 @@ async function boot(): Promise<void> {
 
   // The stencil buffer is what lets the kaiju show through buildings as an outline.
   const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // Graphics quality steps down by itself if the machine cannot keep up: 0 full, 1 fewer pixels, 2 no finishing passes.
+  let quality = 0;
+  const pixelRatio = () => Math.min(window.devicePixelRatio, quality === 0 ? 1.5 : 1);
+  renderer.setPixelRatio(pixelRatio());
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -209,6 +212,9 @@ async function boot(): Promise<void> {
   const toast = makeToast();
   let loop: Loop;
   let hudFrame: (dt: number) => void = () => {};
+  let gameHud: GameHud | null = null;
+  let slow = 0.016;
+  let settled = 0;
   const openNote = makeNoteBox(
     () => (loop.paused = true),
     (text) => {
@@ -247,11 +253,12 @@ async function boot(): Promise<void> {
   });
 
   document.getElementById('help')!.textContent = [
-    'W/S run   A/D turn   Shift: tiptoe   Space: crawl   F: hold breath   V: bow (say sorry)      going over? steer into the fall to save it',
-    'CLICK (or E) by a marked piece: pick it up. Click again over its marker to put it back. A toppled one is stood up where it lies.',
-    'while holding: watch the gauge on the left and move the mouse up or down when it says so. Space: plant your feet.',
-    'mouse drag: look around   wheel: zoom   double-click: reset view   Q/Z: swing',
-    'N: note for Claude   M: sound   C: free camera   B: throw ball',
+    'W/S run   A/D turn   Shift: tiptoe   Space: crawl (or plant feet while holding)   F: hold breath   V: bow',
+    'CLICK (or E) by a marked piece: take hold. Click again over its marker to put it back. A toppled one is stood up where it lies.',
+    'while holding: watch the gauge on the left and move the mouse up or down when it says so.',
+    'blocked road: shove, kick, tail-sweep or sneeze the rubble off it.      going over? steer into the fall to save it',
+    'mouse drag: look around   wheel: zoom   double-click: reset view   Q/Z: swing   T: time of day',
+    'N: note for Claude   M: sound   C: free camera   B: throw ball   `: tuning and feedback panel   H: hide this',
   ].join('\n');
   document.getElementById('boot')?.remove();
 
@@ -279,7 +286,21 @@ async function boot(): Promise<void> {
       look.uniforms.uTime.value += frameDt;
       look.uniforms.uCloudCover.value = tuning.gfx.clouds;
       renderer.toneMappingExposure = look.exposure;
-      if (tuning.gfx.post) post.render(tuning.gfx.bloom * (0.6 + 0.9 * look.uniforms.uLit.value));
+      // Keeping up? Judge it on a steady run of frames, not on a hitch.
+      if (gameHud?.playing !== false && frameDt < 0.25) {
+        slow += (frameDt - slow) * 0.02;
+        settled += frameDt;
+        if (settled > 5 && slow > 0.03 && quality < 2) {
+          quality++;
+          settled = 0;
+          slow = 0.016;
+          renderer.setPixelRatio(pixelRatio());
+          resize();
+          if (quality === 2) sun.shadow.mapSize.set(2048, 2048), sun.shadow.map?.dispose(), (sun.shadow.map = null);
+          toast(quality === 1 ? 'Graphics lowered a notch to keep things smooth.' : 'Graphics lowered again (no bloom) to keep things smooth.');
+        }
+      }
+      if (tuning.gfx.post && quality < 2) post.render(tuning.gfx.bloom * (0.6 + 0.9 * look.uniforms.uLit.value));
       else renderer.render(sim.scene, camera);
       hud.frame(sim.lastStepMs);
       hud.update(() => {
@@ -312,7 +333,7 @@ async function boot(): Promise<void> {
   });
   // The game's own HUD: briefing, jobs, map, arrows, verdicts, report card.
   const automated = navigator.webdriver || params.has('nointro');
-  const gameHud =
+  gameHud =
     kaiju && approval
       ? new GameHud({
           sim,
@@ -338,10 +359,11 @@ async function boot(): Promise<void> {
           },
         })
       : null;
-  hudFrame = (dt) => gameHud?.frame(dt);
+  const theHud = gameHud;
+  hudFrame = (dt) => theHud?.frame(dt);
   loop.start();
   // The briefing holds the game until it is dismissed (one frame is drawn behind it first).
-  if (gameHud && !gameHud.playing) setTimeout(() => !gameHud.playing && (loop.paused = true), 60);
+  if (theHud && !theHud.playing) setTimeout(() => !theHud.playing && (loop.paused = true), 60);
 
   // Hook for headless checks and console poking.
   (window as unknown as { __game: unknown }).__game = {
