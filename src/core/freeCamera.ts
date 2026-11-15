@@ -24,7 +24,8 @@ export class FreeCamera {
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
     dom.addEventListener('pointerdown', (e) => {
       down = { x: e.clientX, y: e.clientY, button: e.button, moved: 0, at: performance.now() };
-      dom.setPointerCapture(e.pointerId);
+      // (A mouse the game has already captured cannot be captured again, and saying so is an error.)
+      if (!document.pointerLockElement) dom.setPointerCapture(e.pointerId);
     });
     dom.addEventListener('pointermove', (e) => {
       if (!down) return;

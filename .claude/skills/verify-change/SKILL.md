@@ -17,7 +17,8 @@ Stop at the first step that fails, fix, and start again from the top.
 1. `npm run typecheck`
 2. The test file nearest the change: `npx vitest run test/<name>.test.ts`. If there is none and the change
    is to behaviour, write one first and watch it fail against the old code.
-3. `npm run build && npm run smoke` (boots both scenes in a real browser).
+3. `npm run build && npm run smoke` (boots both scenes in a real browser, then checks with real clicks and
+   keys that the Runner's captured mouse is given back: on Esc, on Tab, for the dials, at the end of a run).
 4. **State.** Put the game in the state that shows the change and read it:
    - in a test or script: `setState(sim, name)` then `snapshot(sim)` (`src/core/states.ts`, `src/core/snapshot.ts`)
    - in the browser: `window.__game.setState(name)`, `window.__game.state()`

@@ -2,6 +2,20 @@
   "about": "Things the playtester has said they like (keep) or dislike (avoid), in their words, with the settings behind them. test/pins.test.ts fails if a pinned value moves: that is the cue to ask before changing it, then update the pin with the new quote.",
   "keep": [
     {
+      "said": "that's feeling a lot better",
+      "when": "playtest 9, 15 Nov 2026 (the Runner, rebuilt as an animal)",
+      "values": {
+        "runner.speed": 30,
+        "runner.sprint": 48,
+        "runner.accel": 0.42,
+        "runner.stop": 0.34,
+        "runner.turn": 10,
+        "runner.turnFast": 3.6,
+        "runner.grip": 90,
+        "runner.lean": 1
+      }
+    },
+    {
       "said": "Strafing, turning didn't feel like I was actually turning, whereas the original movement did",
       "when": "playtest 8, 15 Nov 2026",
       "outcome": "original-movement-turns-on-an-arc"
@@ -98,6 +112,11 @@
       "said": "Tail movement is off, it pretty much just spins around the character",
       "when": "playtest 8",
       "means": "Through any turn the tail stays behind the body: it may swing wide and lag by a fraction of a second, never come round the side. (test/runner.test.ts: 'keeps its tail behind it through a turn'.)"
+    },
+    {
+      "said": "after I click the screen to activate mouse control, I can't figure out how to unlock the mouse; that persists after the end of a run also",
+      "when": "playtest 9",
+      "means": "The game never holds the mouse without saying on the screen how to free it, frees it on Esc and Tab itself, and gives it back unasked whenever something needs clicking (a results card, the dials, a note). `npm run smoke` checks each of these."
     }
   ],
   "superseded": [

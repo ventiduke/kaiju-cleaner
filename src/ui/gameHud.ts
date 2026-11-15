@@ -66,6 +66,10 @@ export class GameHud {
   private floaters: Floater[] = [];
   private coach = el('div', 'gh-coach');
   private overlay = el('div', 'gh-overlay');
+  /** True while a card (the briefing, the report) is up: it needs the mouse. */
+  get showing(): boolean {
+    return this.overlay.style.display === 'grid';
+  }
   private said = new Set<string>();
   private coachTime = 0;
   private listTimer = 0;

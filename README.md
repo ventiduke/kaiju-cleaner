@@ -118,7 +118,8 @@ playing (keys 1, 2, 3), each a setting of the six feel dials plus which extra mo
   belly-slide (C at a run) that goes under a skybridge without stopping.
 
 There is also a fourth, **Runner** (key 4), which is not a setting of those dials but a different body: a
-third-person animal. Click the game to capture the mouse. The mouse turns the view; W A S D mean "that way on
+third-person animal. Click the game (or press Tab) to capture the mouse; Esc or Tab frees it, and the game
+lets go of it by itself when a run ends or the dials are opened. The mouse turns the view; W A S D mean "that way on
 the screen", and the kaiju turns to go there (left alone, the view swings round behind it, so holding A or D
 carries it round in an arc). Shift sprints, Space jumps (hold it for height), and C toggles a crouch.
 

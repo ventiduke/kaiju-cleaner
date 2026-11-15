@@ -43,6 +43,10 @@ export class CourseHud {
   private splits = el('div', 'ch-splits');
   private overlay = el('div', 'gh-overlay');
   private shownLeg = -1;
+  /** True while the results card is up (it needs the mouse). */
+  get showing(): boolean {
+    return this.overlay.style.display === 'grid';
+  }
 
   constructor(
     sim: Sim,

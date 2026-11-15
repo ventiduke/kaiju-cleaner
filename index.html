@@ -79,6 +79,9 @@
       .ch-best { color: #7dff9a; font-weight: 700; }
       .ch-now { color: #ffd23f; }
       body.panel-on .dev-tool { display: flex !important; }
+      /* Whether the game has hold of the mouse, and how to get it back: small, along the bottom edge, under the kaiju's feet. */
+      #mousechip { position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%); white-space: nowrap; display: none; color: #fff; font-size: 12px; background: rgba(20, 24, 32, 0.7); padding: 6px 10px; border-radius: 6px; pointer-events: none; }
+      body.mouse-held #mousechip { background: rgba(190, 120, 20, 0.85); font-weight: bold; }
       #hint { position: fixed; left: 12px; bottom: 10px; color: #fff; font-size: 11px; opacity: 0.6; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); pointer-events: none; }
       body.dev-off #hud, body.dev-off .dev-tool { display: none; }
       body.help-off #help { display: none; }
@@ -107,6 +110,7 @@
     <div id="help"></div>
     <div id="hint">H: controls   N: note for Claude   `: tuning &amp; feedback tools</div>
     <div id="toast"></div>
+    <div id="mousechip"></div>
     <div id="gauge"><canvas width="64" height="300"></canvas><div></div></div>
     <div id="approval"><span></span><b><i></i></b></div>
     <div id="modebar"><span></span><b><i></i></b></div>

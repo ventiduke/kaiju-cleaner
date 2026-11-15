@@ -249,9 +249,48 @@ async function boot(): Promise<void> {
   document.addEventListener('pointermove', (e) => {
     if (document.pointerLockElement === canvas && isRunner()) lookWith(e.movementX, e.movementY);
   });
+  // Capturing the mouse hides the pointer, so the game has to be scrupulous about giving it back:
+  // on Esc or Tab, and by itself whenever something on the screen needs clicking (see `mouseFrame`).
+  // The browser's own Esc was the only way out, and nothing on the screen said so.
+  const mouseChip = document.getElementById('mousechip')!;
+  const captured = () => document.pointerLockElement === canvas;
+  let cardUp: () => boolean = () => false;
+  /** Whether the game has a use for the mouse right now: the runner, playing, with no card in the way. */
+  const wantsMouse = () => isRunner() && !cardUp() && !loop?.paused;
+  const releaseMouse = () => {
+    if (captured()) document.exitPointerLock();
+  };
+  const captureMouse = () => {
+    if (!wantsMouse() || captured()) return;
+    // (A browser refuses for a second after the player has pressed Esc; some refuse without saying so.)
+    try {
+      const asked = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+      asked?.catch?.(() => toast('The browser would not hand over the mouse just then: click again in a moment.'));
+    } catch {
+      toast('This browser will not let the game capture the mouse: hold a mouse button and drag to look instead.');
+    }
+  };
+  const showMouse = () => {
+    const on = captured();
+    document.body.classList.toggle('mouse-held', on);
+    mouseChip.textContent = on ? 'Mouse captured   ·   Esc or Tab to free it' : 'Click the game (or Tab) to look with the mouse';
+    mouseChip.style.display = isRunner() && (on || wantsMouse()) ? 'block' : 'none';
+  };
+  document.addEventListener('pointerlockchange', showMouse);
+  document.addEventListener('pointerlockerror', showMouse);
+  /**
+   * Once a frame: let go of the mouse the moment the game stops having a use for it, and keep
+   * the note on the screen true (the browser's own word that the mouse has changed hands can
+   * come a frame or two late).
+   */
+  const mouseFrame = () => {
+    if (captured() && !wantsMouse()) releaseMouse();
+    const shown = mouseChip.style.display !== 'none';
+    if (shown !== (isRunner() && (captured() || wantsMouse())) || document.body.classList.contains('mouse-held') !== captured()) showMouse();
+  };
   freeCam.onClick = (ndc) => {
     // The runner's first click captures the mouse; after that a click is a click.
-    if (isRunner() && document.pointerLockElement !== canvas) void canvas.requestPointerLock();
+    if (isRunner() && !captured()) captureMouse();
     else if (follow) input.click();
     else throwBall(ndc);
   };
@@ -265,7 +304,10 @@ async function boot(): Promise<void> {
   const lastDraw = { calls: 0, triangles: 0 };
   let settled = 0;
   const openNote = makeNoteBox(
-    () => (loop.paused = true),
+    () => {
+      loop.paused = true;
+      releaseMouse();
+    },
     (text) => {
       loop.paused = false;
       if (text) {
@@ -282,7 +324,7 @@ async function boot(): Promise<void> {
     recorder.tuningChanged();
     hint.textContent =
       `1/2/3/4: movement style (now ${STYLES[tuning.move.style]?.name ?? 'custom'})   ` +
-      (tuning.move.controller === 1 ? 'click: capture mouse' : `X: steering (${tuning.move.relative ? 'by screen' : 'tank'})`) +
+      (tuning.move.controller === 1 ? 'click or Tab: capture mouse   Esc or Tab: free it' : `X: steering (${tuning.move.relative ? 'by screen' : 'tank'})`) +
       '   H: controls   N: note   `: tuning panel';
   };
   refreshPanel();
@@ -296,9 +338,10 @@ async function boot(): Promise<void> {
       // A whole movement style at a keypress.
       applyStyle(tuning, digit);
       refreshPanel();
-      if (!isRunner()) document.exitPointerLock();
+      if (!isRunner()) releaseMouse();
       else if (followCam) followCam.pitch = 0;
-      toast(`${STYLES[digit].name}: ${STYLES[digit].blurb}` + (isRunner() ? '. Click the game to capture the mouse; Esc frees it.' : ''));
+      showMouse();
+      toast(`${STYLES[digit].name}: ${STYLES[digit].blurb}` + (isRunner() ? '. Click the game to capture the mouse; Esc or Tab frees it.' : ''));
     } else if (e.code === 'KeyX') {
       tuning.move.relative = tuning.move.relative ? 0 : 1;
       refreshPanel();
@@ -311,7 +354,16 @@ async function boot(): Promise<void> {
     else if (e.code === 'KeyN') {
       e.preventDefault();
       openNote();
-    } else if (e.code === 'Backquote') document.body.classList.toggle('dev-off');
+    } else if (e.code === 'Backquote') {
+      // Opening the panel is asking for the mouse back, to work its dials.
+      if (!document.body.classList.toggle('dev-off')) releaseMouse();
+    } else if (e.code === 'Tab' && isRunner()) {
+      // Tab hands the mouse over and takes it back. (Esc frees it too: the browser sees to that
+      // itself, and where it lets the key through, so do we.)
+      e.preventDefault();
+      if (captured()) releaseMouse();
+      else captureMouse();
+    } else if (e.code === 'Escape') releaseMouse();
     else if (e.code === 'KeyH') document.body.classList.toggle('help-off');
     else if (e.code === 'KeyT') {
       // Step to the next time of day worth looking at.
@@ -327,7 +379,7 @@ async function boot(): Promise<void> {
   document.getElementById('help')!.textContent = [
     'W/A/S/D move   Shift: tiptoe   C: crawl (at a run, in Wild style: slide)   Space: leap (Wild style)   F: hold breath   V: bow',
     '1 / 2 / 3: movement style (Lumbering, Steady, Wild)   X: steer by the screen, or like a tank',
-    '4: Runner, a third-person animal: the mouse turns the view (click to capture), W A S D run that way on the screen, Shift sprints, Space jumps (hold for height), C crouches; C on the move slides',
+    '4: Runner, a third-person animal: the mouse turns the view (click or Tab to capture it, Esc or Tab to free it), W A S D run that way on the screen, Shift sprints, Space jumps (hold for height), C crouches; C on the move slides',
     'CLICK (or E) by a marked piece: take hold; click again over its marker to put it back. C while holding plants your feet.',
     'blocked road: shove, kick, tail-sweep or sneeze the rubble off it.      going over? steer into the fall to save it',
     'mouse drag: look around   wheel: zoom   double-click: reset view   Q/Z: swing   T: time of day',
@@ -456,10 +508,16 @@ async function boot(): Promise<void> {
   };
   const courseHud = course ? new CourseHud(sim, tuning, course, restartScene, toast) : null;
   if (course) document.body.classList.add('panel-on');
+  cardUp = () => !!theHud?.showing || !!courseHud?.showing;
+  // (At the finish, at once: the results card is on its way and its buttons need a pointer.)
+  sim.on('courseDone', releaseMouse);
+  sim.on('repairsDone', releaseMouse);
   hudFrame = (dt) => {
     theHud?.frame(dt);
     courseHud?.frame();
+    mouseFrame();
   };
+  showMouse();
   loop.start();
   // The briefing holds the game until it is dismissed (one frame is drawn behind it first).
   if (theHud && !theHud.playing) setTimeout(() => !theHud.playing && (loop.paused = true), 60);

@@ -48,6 +48,70 @@ try {
     if (errors.length) failed = true;
     await page.close();
   }
+
+  // The mouse. The Runner captures it, which hides the pointer, so the game must give it back:
+  // on Esc, on Tab, when the dials are opened, and when a run ends and its results card needs
+  // clicking. (A playtester was left with no pointer and a card of buttons he could not press.)
+  {
+    const page = await browser.newPage({ viewport: { width: 800, height: 450 } });
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(`http://localhost:${PORT}/?scene=run`);
+    await page.waitForFunction(() => window.__game?.ready, null, { timeout: 30000 });
+    const held = () => page.evaluate(() => !!document.pointerLockElement);
+    const says = () => page.evaluate(() => document.getElementById('mousechip').textContent);
+    const wrong = [];
+    const expect = async (what, want) => {
+      try {
+        await page.waitForFunction((w) => !!document.pointerLockElement === w, want, { timeout: 15000 });
+      } catch {
+        wrong.push(`${what}: the mouse should be ${want ? 'captured' : 'free'}`);
+      }
+    };
+    const click = () => page.mouse.click(300, 250);
+    await click();
+    await expect('a click on the game', true);
+    await page.waitForFunction(() => /free it/.test(document.getElementById('mousechip').textContent), null, { timeout: 15000 }).catch(() => wrong.push('captured, the screen should say how to free it'));
+    await page.keyboard.press('Escape');
+    await expect('Esc', false);
+    await click();
+    await expect('a second click', true);
+    // (A click while it is captured is an ordinary click, and used to throw an error.)
+    await click();
+    await page.keyboard.press('Tab');
+    await expect('Tab', false);
+    await page.keyboard.press('Tab');
+    await expect('Tab again', true);
+    await page.keyboard.press('Backquote');
+    await expect('opening the dials', false);
+    await page.keyboard.press('Backquote');
+    await click();
+    await expect('a click after the dials', true);
+    // Finish the run by carrying the kaiju through each gate in turn.
+    await page.evaluate(async () => {
+      const g = window.__game;
+      const course = g.sim.parts.course;
+      for (let n = 0; n < 40 && course.state !== 'done'; n++) {
+        const gate = course.next();
+        if (!gate) break;
+        const p = g.kaiju.position();
+        for (const b of [g.kaiju.body, ...g.kaiju.tail.segments]) {
+          const q = b.translation();
+          b.setTranslation({ x: q.x + gate.x - p.x, y: q.y, z: q.z + gate.z - p.z }, true);
+        }
+        await new Promise((r) => setTimeout(r, 700));
+      }
+    });
+    await expect('the end of the run', false);
+    await page.waitForSelector('.ch-card', { timeout: 15000 }).catch(() => wrong.push('no results card at the end of the run'));
+    await click();
+    await page.waitForTimeout(800);
+    if (await held()) wrong.push('a click beside the results card took the mouse again');
+    const problems = [...wrong, ...errors];
+    console.log('mouse', JSON.stringify({ held: await held(), says: await says() }), problems.length ? 'PROBLEMS: ' + problems.join(' | ') : 'ok');
+    if (problems.length) failed = true;
+    await page.close();
+  }
 } finally {
   await browser.close();
   try {
