@@ -42,7 +42,11 @@ more buildings in the squeeze". The score is time plus a penalty for each buildi
 (`PENALTY` in `src/city/course.ts`).
 
 Use it before and after any change to movement, the feel dials, the styles, the kaiju's size or the tail,
-and quote both summaries. What to look for:
+and quote both summaries. (The bot measures whether a body can get round and what it costs. It cannot say
+whether a turn looks like a turn: for that, a filmstrip, in verify-change. And it cuts corners: it heads
+for the next corner as soon as it is within a few strides of this one, so a body that turns in early can
+clip the inside of a narrow street where a faster one runs wide and misses. Read a surprising
+"careful is worse than flat out" leg with that in mind before blaming the handling.) What to look for:
 
 - **Careful should beat flat-out on score** for a style that is fun to master: if flat-out always wins,
   care is not being rewarded; if careful is many times better, speed is being punished out of the game.

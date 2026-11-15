@@ -167,8 +167,8 @@ async function boot(): Promise<void> {
         : kaiju.mode === 'crawl'
           ? tuning.move.controller === 1
             ? kaiju.sliding > 0
-              ? 'SLIDING  (Space: leap out of it   C: get up)'
-              : 'CROUCHED  (C: stand up)'
+              ? 'SLIDING'
+              : 'CROUCHED  (C: up)'
             : 'CRAWLING (no limit)'
           : kaiju.toeLocked
             ? 'calves resting…'

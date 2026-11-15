@@ -24,6 +24,24 @@ const OUTCOMES: Record<string, () => Promise<void>> = {
     expect(STYLES[2].move.jump).toBeGreaterThan(0);
     expect(STYLES[2].move.slide).toBe(1);
   },
+  'original-movement-turns-on-an-arc': async () => {
+    // What was liked about the balancing kaiju's turning: its body comes round over time, leaning as it goes.
+    const g = await makeGame('plane', SHIPPED_FEEL);
+    const k = g.kaiju;
+    g.sim.players[0].thrust = 1;
+    g.sim.run(60 * 3);
+    const yaw = k.yaw;
+    let lean = 0;
+    g.sim.players[0].turn = 1;
+    for (let i = 0; i < 30; i++) {
+      g.sim.step();
+      lean = Math.max(lean, k.tilt);
+    }
+    const turned = Math.abs(Math.atan2(Math.sin(k.yaw - yaw), Math.cos(k.yaw - yaw)));
+    expect(turned, 'half a second of turning should bring it round by something you can see').toBeGreaterThan(0.25);
+    expect(turned, 'and not spin it on the spot').toBeLessThan(2.6);
+    expect(lean).toBeGreaterThan(0.03);
+  },
   'hard-turn-at-speed-falls': async () => {
     const g = await makeGame('plane', SHIPPED_FEEL);
     g.sim.players[0].thrust = 1;

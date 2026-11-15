@@ -2,6 +2,11 @@
   "about": "Things the playtester has said they like (keep) or dislike (avoid), in their words, with the settings behind them. test/pins.test.ts fails if a pinned value moves: that is the cue to ask before changing it, then update the pin with the new quote.",
   "keep": [
     {
+      "said": "Strafing, turning didn't feel like I was actually turning, whereas the original movement did",
+      "when": "playtest 8, 15 Nov 2026",
+      "outcome": "original-movement-turns-on-an-arc"
+    },
+    {
       "said": "the size of the kaiju I had above was feeling better",
       "when": "playtest 7, 15 Nov 2026",
       "values": {
@@ -78,6 +83,21 @@
       "said": "actual slide (not just getting down slowly)",
       "when": "playtest 7",
       "means": "Posture changes the player asks for happen at once."
+    },
+    {
+      "said": "Movement felt a little lifeless. That is, kinda blocky. Strafing, turning didn't feel like I was actually turning",
+      "when": "playtest 8",
+      "means": "No body snaps to face a direction or slides sideways. A turn takes time, travels an arc that widens with speed, and leans; the head, chest and tail each arrive at their own moment. (test/runner.test.ts: 'turns on an arc that widens with speed, leaning into it'.)"
+    },
+    {
+      "said": "Sliding didn't work",
+      "when": "playtest 8",
+      "means": "The slide was starting; it looked the same as the crouch (same pose, legs still walking), so it read as nothing happening. A move must look and sound unlike every other pose from its first frame, and say what it is on the HUD."
+    },
+    {
+      "said": "Tail movement is off, it pretty much just spins around the character",
+      "when": "playtest 8",
+      "means": "Through any turn the tail stays behind the body: it may swing wide and lag by a fraction of a second, never come round the side. (test/runner.test.ts: 'keeps its tail behind it through a turn'.)"
     }
   ],
   "superseded": [

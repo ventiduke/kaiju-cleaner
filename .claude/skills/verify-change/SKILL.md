@@ -54,7 +54,24 @@ change needs:
 | `src/ui/`, `index.html` | the HUD state concerned: `carrying-prompt`, `raising`, `job-nearby`; the briefing with `"query":"&intro=1"` |
 | `src/kaiju/` | yard `spawn`, `toppled`, `bowing`, from the front: `h.view(2.6,-0.2,0.7)` |
 | `src/city/` jobs or hazards | the matching state (`bus-nearby`, `sweep-nearby`, `geyser`) |
-| movement, gait, falling | a still is not evidence: step the state forward and take 4 to 6 shots half a second apart |
+| movement, gait, falling | a still is not evidence: a filmstrip (below) |
+
+### Anything that moves: a filmstrip
+
+Whether a stride, a turn or a slide looks right cannot be read off one frame, and here nobody can watch it
+play. `scripts/strip.mjs` loads the game once, steps it a few ticks between pictures and puts them on one
+sheet, printing the state at each frame (speed, lean, which feet are up):
+
+```sh
+npm run build && node scripts/strip.mjs turn plane \
+  "hold('look',g.kaiju.yaw); hold('thrust',1); hold('sprint',true); run(2); hold('thrust',0); hold('strafe',1)" 9 5 behind
+```
+
+Read the printed state first (does the lean rise and fall? do the feet alternate? is it ever in the air
+with a foot "down"?), then the sheet: does each part arrive at its own moment (head, body, tail), or does
+the whole model move as one block? Five ticks apart shows a stride; ten shows a turn or a slide end to end.
+The last argument is the camera: an angle round from behind (1.4 is side on, for poses and gait), or `behind`
+for what the player sees.
 
 Each shot writes `scripts/out/<out>.png` and `<out>.json`. **Read the JSON first.** It holds the game state,
 `drawn` (draw calls and triangles for the frame), the GPU name, and `picture` (brightness, contrast, detail,

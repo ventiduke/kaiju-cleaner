@@ -194,10 +194,12 @@ export class InputManager {
       if (i === 0 && this.runner() && this.look !== null) {
         // Left alone, the view swings round behind a kaiju running across the screen, so that
         // holding A or D carries it round in an arc. (Never while the view is being turned by
-        // hand, and not for one running straight at the camera.)
+        // hand.)
         this.sinceLook += FIXED_DT;
         const off = wrap(this.heading() - this.look);
-        if ((thrust || strafe) && this.sinceLook > 0.4 && Math.abs(off) < 2.6) this.look += Math.sin(off) * this.follow() * FIXED_DT;
+        // (Nor for one asked to come back toward the camera: "back" should mean straight back.)
+        const toward = Math.min(1, 1 + Math.cos(Math.atan2(strafe, thrust)));
+        if ((thrust || strafe) && this.sinceLook > 0.4 && Math.abs(off) < 2.6) this.look += Math.sin(off) * this.follow() * toward * FIXED_DT;
       }
       if (i === 0) {
         // Passed on in hundredths, keeping the remainder, so that a recorded session replays exactly.

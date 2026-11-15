@@ -961,7 +961,7 @@ export class Kaiju implements System {
     // --- Skidding: feet that have lost their hold throw up dust, and say so once as it starts.
     const skidNow = this.airborne || sliding ? 0 : THREE.MathUtils.clamp((slip - 4) / 10, 0, 1);
     this.skid += (skidNow - this.skid) * Math.min(1, dt * 16);
-    if (this.skid > 0.45 && !this.skidding) {
+    if (this.skid > 0.6 && !this.skidding) {
       this.skidding = true;
       this.skids++;
       this.sim.emit('kaijuSkid', { x: p.x, y: groundY, z: p.z, strength: this.skid });
@@ -1179,7 +1179,7 @@ export class Kaiju implements System {
     }
     this.gaze = ease(this.gaze, look, 7);
     const pitch = crawl * m.crawlPitch + prone * (SLIDE_PITCH - m.crawlPitch) + this.nod * (1 - prone);
-    const level = -pitch * 0.8;
+    const level = -pitch * (0.8 + 0.1 * prone);
     const bobble = striding ? Math.sin(2 * stride) * 0.035 * Math.min(1, pace) : 0;
     this.neck.rotation.set(level * 0.5, this.gaze * 0.45, this.bank * 0.3);
     this.head.rotation.set(level * 0.5 + bobble, this.gaze * 0.55, this.bank * 0.35);
@@ -1249,7 +1249,8 @@ export class Kaiju implements System {
     this.worry = ease(this.worry, alarmed ? 1 : down ? -0.6 : this.carrying || this.mode === 'tiptoe' ? -0.45 : this.bow > 0 ? 0.7 : 0, 9);
     // (The runner's jaw drops in the air and in a slide, and it pants after a sprint.)
     const runner = this.sim.tuning.move.controller === 1;
-    const thrill = !runner ? 0 : this.airborne ? 0.5 : this.sliding > 0 ? 0.6 : this.effort * (0.16 + 0.1 * Math.sin(this.breathing));
+    // (Not far in a slide: its chin is on the road.)
+    const thrill = !runner ? 0 : this.airborne ? 0.5 : this.sliding > 0 ? 0.25 : this.effort * (0.16 + 0.1 * Math.sin(this.breathing));
     this.mouth = ease(this.mouth, this.state === 'falling' ? 1 : alarmed ? 0.55 : this.gasp > 0 ? 0.9 : Math.max(0.04, thrill), 12);
     this.gasp = Math.max(0, this.gasp - dt);
     this.jaw.rotation.x = this.mouth * 0.55;
