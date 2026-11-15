@@ -8,16 +8,19 @@ import type { Sim, System } from '../sim';
 
 /**
  * What each thing is worth, in points of approval (out of 100). The city starts undecided at
- * 50. Doing every job well earns the other 50, shared equally between the jobs, however many
- * there are. The costs are set so that the careful playtest bot, which finishes a nine-job
- * shift having scraped about fifty buildings and a hundred people, lands near the middle
- * (`npm run playbot`): a person taking more care should end well above it, and a rampage
- * well below.
+ * 50. The jobs are worth 36 between them, shared equally however many there are, for plain
+ * good work: so a shift of straight repairs and no damage ends at 86. The rest has to be
+ * earned: a perfect fit is worth a quarter more than a straight one and quick work 15% more
+ * again, which, with every job both, is the other 14. Damage comes off the top.
+ *
+ * The costs are set against the careful playtest bot (`npm run playbot`), which finishes a
+ * nine-job shift with most fits perfect, having clipped about twenty-five buildings: it lands
+ * at about eighty. A person taking more care should end above it, and a rampage far below.
  */
 export const WORTH = {
   start: 50,
-  /** Shared between all the jobs of a shift. */
-  jobs: 50,
+  /** Shared between all the jobs of a shift, for plain good work. */
+  jobs: 36,
   /** A crooked repair earns this share of a straight one; a perfect one earns this much more than one. */
   crookedShare: 0.6,
   perfectBonus: 0.25,

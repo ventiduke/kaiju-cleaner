@@ -91,8 +91,9 @@ inside it, the job is **quick work**.
 A **bus on a roof** is lifted down and set on the crossroads marked for it, the same way. A **blocked road** is a taped-off stretch buried in lumps of rubble: get them off it however you
 like, by shouldering through, kicking, a sweep of the tail, or a sneeze aimed down the street.
 
-**Approval.** The city starts undecided (50%). Repairs raise it: a crooked one earns 60% of a straight one, a
-perfect fit a quarter more, and quick work 15% more again. Knocked-about buildings and squashed people lower it. Bowing (V) wins back people who are running from the
+**Approval.** The city starts undecided (50%). Repairs raise it: straight ones, with no damage done, take it
+to 86%. A crooked one earns 60% of a straight one, a perfect fit a quarter more, and quick work 15% more
+again, so 100% takes every job perfect, quick and clean. Knocked-about buildings and squashed people lower it. Bowing (V) wins back people who are running from the
 kaiju at that moment, up to a point. When the last repair goes in, the banner gives the verdict.
 
 **Hazards.**
