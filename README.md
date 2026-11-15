@@ -17,8 +17,8 @@ npm run smoke      # boots the build in headless Chromium, screenshots to script
 
 Scenes are picked with a URL parameter:
 
-- `?scene=city` (default): the 3×3 block city.
-- `?scene=yard`: a flat tuning ground with three test buildings and a row of props.
+- `?scene=city` (default): the city, 8×8 blocks either side of a river.
+- `?scene=yard`: a flat practice ground with three test buildings, one of each repair job and one of each hazard.
 - `?scene=plane`: nothing but ground, for judging movement on its own.
 
 ## Controls
@@ -29,10 +29,12 @@ Scenes are picked with a URL parameter:
 | Turn | A / D | Left stick left / right |
 | Tiptoe: slow, narrow, quiet, until the calves give out | Hold Shift | A or right trigger |
 | Crawl on all fours: slow, can't be tipped, fits under skybridges | Hold Space | B or left trigger |
-| Pick up and carry a repair piece | Hold the left mouse button (or E) | Hold X or right bumper |
-| Balance what you are carrying | Move the mouse (or I J K L) | Right stick |
+| Take hold of a repair piece; let go of it | Click (or E); click again | X or right bumper |
+| Steady what you are holding, when the gauge says so | Move the mouse up or down (or I / K) | Right stick up / down |
+| Plant your feet while holding (steadier, but no walking) | Hold Space | B or left trigger |
+| Bow (say sorry to the people you just frightened) | V | Left bumper |
 | Hold your breath (keeps dust out of the nose) | Hold F | Y |
-| Look around, raise or lower the view | Drag the mouse (right-drag while carrying), or Q / Z | Right stick |
+| Look around, raise or lower the view | Drag the mouse, or Q / Z | Right stick left / right |
 | Zoom | Mouse wheel | |
 | Reset the view | Double-click | |
 | Note for Claude | N | |
@@ -41,25 +43,38 @@ Scenes are picked with a URL parameter:
 | Throw a debug ball at the cursor | B (or click, in the free camera) | |
 
 A bar at the bottom of the screen shows what the kaiju is doing and how long it can keep it up: tiptoe
-stamina, held breath, or dust building toward a sneeze.
+stamina, held breath, or dust building toward a sneeze. The bar at the top is what the city thinks of it.
 
 **Staying upright.** Fast and sharp tips it over: hold a hard turn at speed and it stumbles, then starts to
 go. Let go at the stumble and it rights itself. Once it is going over there is a short window to save it by
 steering into the fall (toppling right, steer right). If it does go down, mashing a direction scrambles it
 up sooner.
 
-**Repair jobs.** Tower tops are sitting in the road and a bridge is missing a span; each has a coloured
-marker, and a matching marker floats over where it belongs. Stand facing a piece and hold the left mouse
-button to hoist it. A dial appears: the white dot is the load, shoved about by the kaiju's own starts, stops
-and turns; the ring is yours and follows the mouse. Keep the ring on the dot. While they are apart the grip
-(the arc round the dial) burns down, and when it is gone the load slips. Let go over the marker to set the
-piece in place: straight if it was steady and lined up, crooked (and visibly so) if not.
+**Repair jobs.** Tower tops are sitting in the road, a bridge is missing a span, and the clock tower in the
+plaza has gone over. Each has a coloured marker, and a matching marker floats over where it belongs. Stand
+facing a piece and click: the kaiju takes hold, and keeps hold until you click again. Tops and the span are
+carried to their marker and let go there. The clock tower is stood up where it lies: the kaiju plants its
+feet and heaves for a few seconds.
+
+While it has hold of something, a gauge appears at the left of the screen. Most of the time there is nothing
+to do. A sudden start, stop or hard turn throws the marker out of the green band, and now and then the load
+shifts by itself; the gauge turns amber and says **MOUSE UP** or **MOUSE DOWN** (with a rising or falling
+blip). Shove the mouse that way and it comes back; you cannot overdo it. Left alone, the grip (the strip
+beside the gauge) burns down and the piece slips. Drive gently and it rarely asks. A piece let go over its
+marker goes in straight if it was steady and lined up, crooked (and visibly so) if not.
+
+**Approval.** The city starts undecided (50%). Repairs raise it, a straight one more than a crooked one.
+Knocked-about buildings and squashed people lower it. Bowing (V) wins back people who are running from the
+kaiju at that moment, up to a point. When the last repair goes in, the banner gives the verdict.
 
 **Hazards.**
 
 - Oil (dark, glossy patches): at a run its feet shoot out from under it. Tiptoe or crawl across.
 - Weak ground (pale, cracked patches): a heavy step brings it down, trips the kaiju and shakes loose the
   buildings around. Tiptoe is light enough to cross.
+- Water mains (blue covers in the road): a heavy step bursts one. The geyser throws about whatever is on
+  it, staggers the kaiju, and leaves the road slippery until it dries. Standing in the spray does wash
+  the dust out of its nose. Tiptoe is light enough to cross.
 - Dust: every chunk that breaks nearby tickles its nose. When the bar fills it sneezes, which throws it
   backwards and blasts everything in front of it. Hold F to hold its breath through the worst of it.
 - The river: 13 m deep with a current. It pushes the kaiju downstream as it wades, and carries floating
@@ -98,7 +113,8 @@ and whether a set of turns at different speeds ends steady, in a stumble, or in 
 ## Status
 
 M0 (scaffold), M1 (destructible city), M2 (kaiju movement), M3 (kaiju in the city) and M4 (movement modes)
-are built, with three rounds of playtest changes, the first repair jobs and the first hazards. Each has
+are built, with four rounds of playtest changes, three kinds of repair job, four hazards, a bow and a
+score. Each has
 measurable checks in `test/`; whether it is *fun* is a playtest call.
 
 ## How the code is laid out

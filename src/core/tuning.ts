@@ -58,8 +58,12 @@ export const codeDefaults = {
     oilSlicks: 6,
     /** Cracked patches of road over a tunnel: a heavy step brings them down. */
     weakSpots: 6,
+    /** Water mains under the road: a heavy step bursts one into a geyser and a slippery flood. */
+    waterMains: 5,
     /** Things to put back: tower tops lying in the road, and a bridge span. */
     repairJobs: 4,
+    /** Toppled monuments to stand back up (there is one plaza to put them in). */
+    monuments: 1,
     /** Leave the centre block open as a plaza. */
     plaza: true,
     propDensity: 1,
@@ -182,16 +186,22 @@ export const codeDefaults = {
     handHeight: 1,
     liftTime: 0.5,
     /**
-     * The balance game. The load's dot is pushed about by the kaiju's own motion (`sway`, in
-     * dial-widths per m/s^2) and drifts on its own (`wander`). Keep your dot within `tolerance`
-     * (dial-widths) of it. Fully out of line, the grip lasts `slipTime` seconds; back in line,
-     * it recovers in `gripRecover` seconds.
+     * The balance gauge. A marker sits in the middle of it until something throws it out:
+     * the kaiju setting off, braking or swinging round (`sway`: how far a full-blooded one
+     * throws it, as a share of the gauge), or the load shifting by itself (by `wander`, every
+     * `shiftEvery` seconds or so). A shove of the mouse the way the prompt says brings it
+     * back; it cannot be over-corrected. While it is outside the middle band (`tolerance`,
+     * as a share of the gauge) the grip lasts `slipTime` seconds; inside, it recovers in
+     * `gripRecover`.
      */
-    sway: 0.42,
-    wander: 1.6,
-    tolerance: 0.2,
-    slipTime: 1,
-    gripRecover: 1.6,
+    sway: 0.75,
+    wander: 0.7,
+    shiftEvery: 8,
+    tolerance: 0.36,
+    slipTime: 2.2,
+    gripRecover: 1.5,
+    /** Seconds of steady heaving to stand a toppled piece back up. */
+    raiseTime: 4,
     /** Shares of normal speed, acceleration, turn rate and turn acceleration while carrying. */
     speed: 0.6,
     accel: 0.5,
@@ -204,9 +214,9 @@ export const codeDefaults = {
   },
   sneeze: {
     /** How much each chunk breaking right beside it tickles (1 = a sneeze). Crumbling counts double. */
-    dust: 0.012,
+    dust: 0.03,
     /** How fast the tickle clears in clean air (per second). */
-    clear: 0.06,
+    clear: 0.04,
     /** Seconds between "ah... ah..." and the sneeze. */
     windup: 0.9,
     /** How hard it is thrown backwards (m/s). */
@@ -342,7 +352,9 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     skybridges: [0, 16, 1],
     oilSlicks: [0, 20, 1],
     weakSpots: [0, 20, 1],
+    waterMains: [0, 20, 1],
     repairJobs: [0, 10, 1],
+    monuments: [0, 1, 1],
     propDensity: [0, 3, 0.1],
   },
   destruction: {
@@ -417,11 +429,13 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     holdForward: [4, 20, 0.5],
     handHeight: [-6, 8, 0.5],
     liftTime: [0.1, 2, 0.05],
-    sway: [0, 1.5, 0.01],
-    wander: [0, 4, 0.05],
+    sway: [0, 1.5, 0.05],
+    wander: [0, 1.2, 0.05],
+    shiftEvery: [1, 30, 0.5],
     tolerance: [0.05, 0.8, 0.01],
     slipTime: [0.2, 5, 0.05],
     gripRecover: [0.2, 6, 0.05],
+    raiseTime: [0.5, 15, 0.5],
     speed: [0.2, 1, 0.05],
     accel: [0.1, 1, 0.05],
     turn: [0.1, 1, 0.05],

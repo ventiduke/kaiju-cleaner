@@ -16,28 +16,20 @@ function axis(v: number): number {
  */
 export class InputManager {
   private keys = new Set<string>();
-  /** Mouse position in pixels, and where it was when the current grab began. */
-  private mouse = { x: 0, y: 0 };
-  private origin = { x: 0, y: 0 };
-  private mouseHeld = false;
-  private wasGrabbing = false;
-  /** Where the keys have nudged the balance dot to (keys move it; they don't place it). */
-  private keyDot = { x: 0, z: 0 };
-  private usingKeys = false;
-
+  /** Keys that went down since the last update: a tap shorter than a step still counts. */
+  private tapped = new Set<string>();
+  /** Clicks waiting to be passed on as a press of the grab button. */
+  private clicks = 0;
+  private lastY: number | null = null;
+  private atEdge = 0;
+  private wasGrab = false;
   /**
-   * @param surface the game canvas: holding the left button on it grabs, the same as holding E
+   * Balance shoves not yet passed on, in gauge half-lengths: moving the mouse up is positive,
+   * down negative (as are I and K). Only movement counts, never where the pointer is.
    */
-  constructor(
-    private players: PlayerInput[],
-    surface?: HTMLElement,
-  ) {
-    surface?.addEventListener('pointerdown', (e) => {
-      if (e.button === 0) this.mouseHeld = true;
-    });
-    window.addEventListener('pointerup', (e) => {
-      if (e.button === 0) this.mouseHeld = false;
-    });
+  private balance = 0;
+
+  constructor(private players: PlayerInput[]) {
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
       if (e.code === 'Space') e.preventDefault();
@@ -45,17 +37,29 @@ export class InputManager {
       const focused = document.activeElement;
       if (focused instanceof HTMLElement && focused !== document.body) focused.blur();
       this.keys.add(e.code);
+      if (!e.repeat) this.tapped.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
     window.addEventListener('pointermove', (e) => {
-      this.mouse.x = e.clientX;
-      this.mouse.y = e.clientY;
+      const dy = this.lastY === null ? 0 : e.clientY - this.lastY;
+      this.lastY = e.clientY;
+      // With the pointer pinned to the top or bottom of the screen, keep going that way.
+      this.atEdge = e.clientY <= 2 ? 1 : e.clientY >= window.innerHeight - 3 ? -1 : 0;
+      // A drag is looking around, not balancing.
+      if (e.buttons !== 0) return;
+      // A tenth of the screen's height of travel takes the marker from the end of the gauge to the middle.
+      this.balance -= dy / (window.innerHeight * 0.1);
     });
   }
 
+  /** A click on the game: the same as tapping the grab key. */
+  click(): void {
+    this.clicks++;
+  }
+
   private key(...codes: string[]): number {
-    return codes.some((c) => this.keys.has(c)) ? 1 : 0;
+    return codes.some((c) => this.keys.has(c) || this.tapped.has(c)) ? 1 : 0;
   }
 
   update(): void {
@@ -69,7 +73,8 @@ export class InputManager {
       let crouch = false;
       let grab = false;
       let breath = false;
-      let balanceX = 0;
+      let bow = false;
+      const balanceX = 0;
       let balanceZ = 0;
       if (i === 0) {
         thrust += this.key('KeyW', 'ArrowUp') - this.key('KeyS', 'ArrowDown');
@@ -78,30 +83,15 @@ export class InputManager {
         tiptoe = this.key('ShiftLeft', 'ShiftRight') > 0;
         crouch = this.key('Space') > 0;
         breath = this.key('KeyF') > 0;
-        grab = this.key('KeyE') > 0 || this.mouseHeld;
-        // The balance dot starts in the middle when a grab begins, wherever the mouse is.
-        if (grab && !this.wasGrabbing) {
-          this.origin.x = this.mouse.x;
-          this.origin.y = this.mouse.y;
-          this.keyDot.x = this.keyDot.z = 0;
-          this.usingKeys = false;
+        bow = this.key('KeyV') > 0;
+        // One tap of E, or one click, is one press; the game takes hold or lets go on each.
+        grab = this.key('KeyE') > 0;
+        if (this.clicks > 0 && !this.wasGrab) {
+          grab = true;
+          this.clicks--;
         }
-        this.wasGrabbing = grab;
-        // Mouse: a fifth of the screen's height of travel takes the dot to the edge of the dial.
-        const span = window.innerHeight * 0.2;
-        const kx = this.key('KeyL') - this.key('KeyJ');
-        const kz = this.key('KeyI') - this.key('KeyK');
-        if (kx || kz) this.usingKeys = true;
-        if (this.usingKeys) {
-          // IJKL: push the dot about instead.
-          this.keyDot.x = Math.max(-1, Math.min(1, this.keyDot.x + kx * 2.2 * FIXED_DT));
-          this.keyDot.z = Math.max(-1, Math.min(1, this.keyDot.z + kz * 2.2 * FIXED_DT));
-          balanceX = this.keyDot.x;
-          balanceZ = this.keyDot.z;
-        } else {
-          balanceX = Math.max(-1, Math.min(1, (this.mouse.x - this.origin.x) / span));
-          balanceZ = Math.max(-1, Math.min(1, -(this.mouse.y - this.origin.y) / span));
-        }
+        this.wasGrab = grab;
+        this.balance += (this.key('KeyI') - this.key('KeyK') + this.atEdge) * 2.5 * FIXED_DT;
       }
       const pad = pads[i];
       if (pad) {
@@ -111,13 +101,15 @@ export class InputManager {
         tiptoe ||= !!pad.buttons[0]?.pressed || (pad.buttons[7]?.value ?? 0) > 0.4;
         crouch ||= !!pad.buttons[1]?.pressed || (pad.buttons[6]?.value ?? 0) > 0.4;
         breath ||= !!pad.buttons[3]?.pressed;
-        if (pad.buttons[2]?.pressed || pad.buttons[5]?.pressed) {
-          // While grabbing, the right stick balances instead of swinging the camera.
-          grab = true;
-          balanceX = axis(pad.axes[2] ?? 0);
-          balanceZ = -axis(pad.axes[3] ?? 0);
-          camYaw = 0;
-        }
+        grab ||= !!pad.buttons[2]?.pressed || !!pad.buttons[5]?.pressed;
+        // The right stick, pushed up or down, balances a load directly.
+        if (i === 0) this.balance -= axis(pad.axes[3] ?? 0) * 2.5 * FIXED_DT;
+        bow ||= !!pad.buttons[4]?.pressed;
+      }
+      if (i === 0) {
+        // Passed on in hundredths, keeping the remainder, so that a recorded session replays exactly.
+        balanceZ = Math.round(Math.max(-1, Math.min(1, this.balance)) * 100) / 100;
+        this.balance = Math.abs(this.balance) > 1 ? 0 : this.balance - balanceZ;
       }
       p.thrust = Math.max(-1, Math.min(1, thrust));
       p.turn = Math.max(-1, Math.min(1, turn));
@@ -126,8 +118,10 @@ export class InputManager {
       p.crouch = crouch;
       p.grab = grab;
       p.breath = breath;
+      p.bow = bow;
       p.balanceX = balanceX;
       p.balanceZ = balanceZ;
     }
+    this.tapped.clear();
   }
 }

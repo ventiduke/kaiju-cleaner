@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { CityLayout, PropSpec } from '../city/cityGen';
+import { monumentJob, type CityLayout, type PropSpec } from '../city/cityGen';
 import { ALL_GROUPS, Group, groups } from '../core/physics';
 import type { Sim } from '../sim';
 import { populate } from './city';
@@ -34,10 +34,12 @@ export function yardLayout(): CityLayout {
       },
     ],
     props,
-    // An oil slick off to one side for practising slides, and a patch of weak ground on the other.
+    // An oil slick off to one side for practising slides, a patch of weak ground on the other,
+    // and a water main to burst.
     hazards: [
       { kind: 'oil', x: -60, z: 30, radius: 12 },
       { kind: 'weak', x: 70, z: 45, radius: 8 },
+      { kind: 'main', x: -75, z: -10, radius: 2.1 },
     ],
     // A repair job to practise on: the stepped tower's top, sitting in the open.
     jobs: [
@@ -60,6 +62,8 @@ export function yardLayout(): CityLayout {
         symmetry: Math.PI / 2,
         color: 0xffd23f,
       },
+      // And a toppled clock tower to stand back up.
+      monumentJob(-35, 40, 0x3fd0ff),
     ],
     river: null,
     spawn: { x: 0, z: 70, yaw: Math.PI },

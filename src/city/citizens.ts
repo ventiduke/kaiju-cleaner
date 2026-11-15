@@ -249,6 +249,39 @@ export class Citizens implements System {
     if (any) this.sim.emit('citizenCheer', { x, y: 0, z });
   }
 
+  /**
+   * The kaiju has said sorry. Everyone near who was running from it stops, and gives it a
+   * (short, wary) cheer. Returns how many were won over.
+   */
+  calm(x: number, z: number, radius: number): number {
+    let won = 0;
+    for (let i = 0; i < this.count; i++) {
+      if (this.state[i] !== State.Run) continue;
+      if (Math.hypot(this.x[i] - x, this.z[i] - z) > radius) continue;
+      this.state[i] = State.Cheer;
+      this.timer[i] = 2 + this.rng.next();
+      won++;
+    }
+    if (won) this.sim.emit('citizenCheer', { x, y: 0, z });
+    return won;
+  }
+
+  /** A jolt from a point (a geyser, say): everyone within the radius is thrown up and outward. */
+  jolt(x: number, z: number, radius: number, power: number): number {
+    let thrown = 0;
+    for (let i = 0; i < this.count; i++) {
+      if (this.state[i] === State.Gone || this.state[i] === State.Flying) continue;
+      const dx = this.x[i] - x;
+      const dz = this.z[i] - z;
+      const d = Math.hypot(dx, dz);
+      if (d > radius) continue;
+      const k = (power * 0.5) / Math.max(d, 1);
+      this.fling(i, dx * k, power * (0.8 + 0.4 * this.rng.next()), dz * k);
+      thrown++;
+    }
+    return thrown;
+  }
+
   /** How many are cheering right now. */
   cheering(): number {
     let k = 0;

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 /**
  * Minimal orbit camera: drag to orbit, wheel to zoom, right-drag to pan.
- * A press that doesn't move counts as a click (used to throw debug balls).
+ * A press that doesn't move counts as a click.
  */
 export class FreeCamera {
   target = new THREE.Vector3(0, 8, 0);
@@ -20,10 +20,10 @@ export class FreeCamera {
     private camera: THREE.PerspectiveCamera,
     dom: HTMLElement,
   ) {
-    let down: { x: number; y: number; button: number; moved: number } | null = null;
+    let down: { x: number; y: number; button: number; moved: number; at: number } | null = null;
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
     dom.addEventListener('pointerdown', (e) => {
-      down = { x: e.clientX, y: e.clientY, button: e.button, moved: 0 };
+      down = { x: e.clientX, y: e.clientY, button: e.button, moved: 0, at: performance.now() };
       dom.setPointerCapture(e.pointerId);
     });
     dom.addEventListener('pointermove', (e) => {
@@ -48,7 +48,9 @@ export class FreeCamera {
       }
     });
     dom.addEventListener('pointerup', (e) => {
-      if (down && down.moved < 5 && down.button === 0 && this.onClick) {
+      // A press that barely moves is a click; so is a quick one, even with a hand that is busy steering.
+      const quick = down && performance.now() - down.at < 220 && down.moved < 40;
+      if (down && (down.moved < 5 || quick) && down.button === 0 && this.onClick) {
         const r = dom.getBoundingClientRect();
         this.onClick(
           new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1),

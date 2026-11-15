@@ -82,6 +82,21 @@ export class GameAudio {
       this.tone({ gain: 0.3, time: 0.2, from: 659, to: 659, type: 'triangle', delay: 0.2 });
       this.tone({ gain: 0.3, time: 0.45, from: e.straight ? 784 : 740, to: e.straight ? 784 : 690, type: 'triangle', delay: 0.35 });
     });
+    // The balance gauge wants attention: a rising blip for "mouse up", a falling one for "mouse down".
+    sim.on('gaugePrompt', (e) => {
+      this.tone({ gain: 0.3, time: 0.14, from: e.up ? 520 : 780, to: e.up ? 780 : 520, type: 'square' });
+    });
+    sim.on('mainBurst', (e) => {
+      this.tone({ gain: 0.8 * this.near(e), time: 0.5, from: 90, to: 40, type: 'sine' });
+      this.burst({ gain: 0.8 * this.near(e), time: 2.5, from: 5000, to: 1800, q: 0.3 });
+    });
+    sim.on('kaijuBow', () => {
+      this.tone({ gain: 0.3, time: 0.35, from: 330, to: 262, type: 'triangle' });
+      this.tone({ gain: 0.3, time: 0.5, from: 262, to: 196, type: 'triangle', delay: 0.3 });
+    });
+    sim.on('repairsDone', () => {
+      [523, 659, 784, 1047].forEach((f, i) => this.tone({ gain: 0.4, time: i === 3 ? 0.9 : 0.22, from: f, to: f, type: 'triangle', delay: 0.6 + i * 0.2 }));
+    });
     sim.on('citizenSquish', (e) => this.tone({ gain: 0.35 * this.near(e), time: 0.16, from: 1500, to: 520, type: 'square' }));
     sim.on('citizenScare', (e) => {
       const now = performance.now();

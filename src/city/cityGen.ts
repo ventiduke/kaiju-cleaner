@@ -86,11 +86,12 @@ export interface PieceBox {
 
 /** Something broken off that has to be carried back to where it belongs. */
 export interface JobSpec {
-  kind: 'top' | 'span';
+  /** A tower top or a bridge span is carried back; a toppled monument is stood up where it lies. */
+  kind: 'top' | 'span' | 'raise';
   boxes: PieceBox[];
   height: number;
-  /** Where the piece is lying at the start. */
-  start: { x: number; z: number; yaw: number };
+  /** Where the piece is at the start. `y` lifts it off the ground and `roll` lays it on its side. */
+  start: { x: number; z: number; yaw: number; y?: number; roll?: number };
   /** Where its base belongs. */
   socket: { x: number; y: number; z: number; yaw: number };
   /** It looks the same every this many radians of turn (a square top: a quarter turn). */
@@ -101,7 +102,7 @@ export interface JobSpec {
 
 export interface Hazard {
   /** Oil has no grip. Weak ground gives way under a heavy step. */
-  kind: 'oil' | 'weak';
+  kind: 'oil' | 'weak' | 'main';
   x: number;
   z: number;
   radius: number;
@@ -168,6 +169,28 @@ function layAxis(n: number, blockSize: number, widths: number[]): Axis {
 }
 
 /** Generates the city as plain data. No physics, no rendering. */
+/**
+ * A toppled clock tower: a 'raise' job. It stands at (x, z) when it is up; it starts lying on
+ * its side, top toward +x, hinged over the edge of its own plinth.
+ */
+export function monumentJob(x: number, z: number, color: number): JobSpec {
+  const half = 3;
+  return {
+    kind: 'raise',
+    boxes: [
+      { x: 0, y: 1.2, z: 0, hx: half, hy: 1.2, hz: half, color: 0x8d8f96 },
+      { x: 0, y: 6.9, z: 0, hx: 1.8, hy: 4.5, hz: 1.8, color: 0xb9b2a3 },
+      { x: 0, y: 13.1, z: 0, hx: 2.6, hy: 1.7, hz: 2.6, color: 0xf2ead8 },
+      { x: 0, y: 15.4, z: 0, hx: 1.4, hy: 0.6, hz: 1.4, color: 0x3f7f6b },
+    ],
+    height: 16,
+    start: { x: x + half, y: half, z, yaw: 0, roll: -Math.PI / 2 },
+    socket: { x, y: 0, z, yaw: 0 },
+    symmetry: Math.PI / 2,
+    color,
+  };
+}
+
 export function generateCity(cfg: Tuning['city']): CityLayout {
   const rng = new Rng(cfg.seed);
   const n = Math.max(1, Math.round(cfg.blocks));
@@ -259,10 +282,12 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
         plazas.push(rect);
         for (let k = 0; k < 10; k++) {
           const a = (k / 10) * Math.PI * 2;
+          // The toppled clock tower lies across the middle, where two of the trees would be.
+          if (k % 5 === 0 && cfg.monuments > 0) continue;
           props.push({ kind: 'tree', x: rect.x + Math.cos(a) * size * 0.38, z: rect.z + Math.sin(a) * size * 0.38, rotY: a, color: 0xffffff });
         }
         for (let k = 0; k < Math.round(3 * density); k++) {
-          props.push({ kind: 'cart', x: rect.x + (k - 1) * 5, z: rect.z + rng.range(-4, 4), rotY: rng.int(0, 3) * (Math.PI / 2), color: rng.pick(CAR_COLORS) });
+          props.push({ kind: 'cart', x: rect.x + (k - 1) * 5, z: rect.z + (cfg.monuments > 0 ? -8 : 0) + rng.range(-2, 2), rotY: rng.int(0, 3) * (Math.PI / 2), color: rng.pick(CAR_COLORS) });
         }
       } else {
         const kind = rng.next();
@@ -408,6 +433,9 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     });
   }
 
+  // Repair jobs, part three: the clock tower in the plaza has gone over, and wants standing up.
+  for (const plaza of plazas.slice(0, cfg.monuments)) jobs.push(monumentJob(plaza.x - 8, plaza.z, JOB_COLORS[jobs.length % JOB_COLORS.length]));
+
   // Skybridges: join buildings that face each other across a street, a few floors up.
   const bridges: BridgeSpec[] = [];
   const candidates: BridgeSpec[] = [];
@@ -512,6 +540,23 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     if (z > az.span / 2 - 45) continue;
     if (hazards.some((h) => Math.hypot(h.x - x, h.z - z) < 34)) continue;
     hazards.push({ kind: 'weak', x, z, radius });
+  }
+
+  // Water mains: covers in the road, anywhere a foot might land.
+  for (let attempt = 0; attempt < cfg.waterMains * 14 && hazards.filter((h) => h.kind === 'main').length < cfg.waterMains; attempt++) {
+    const alongX = rng.chance(0.5);
+    const street = rng.pick(alongX ? az.streets.filter((_, i) => i !== riverRow) : ax.streets);
+    if (!street) continue;
+    const t = rng.range(-0.42, 0.42) * (alongX ? ax.span : az.span);
+    // Off the centre line, in one of the lanes.
+    const lane = (rng.chance(0.5) ? 1 : -1) * Math.min(street.width / 4, 5);
+    const x = alongX ? t : street.center + lane;
+    const z = alongX ? street.center + lane : t;
+    if (theRiver && z > theRiver.z0 - 22 && z < theRiver.z1 + 22) continue;
+    if (z > az.span / 2 - 45) continue;
+    if (hazards.some((h) => Math.hypot(h.x - x, h.z - z) < 34)) continue;
+    if (jobs.some((j) => Math.hypot(j.start.x - x, j.start.z - z) < 24)) continue;
+    hazards.push({ kind: 'main', x, z, radius: 2.1 });
   }
 
   const main = boulevard ?? ax.streets.find((s) => s.width === cfg.avenueWidth) ?? { center: 0, width: cfg.avenueWidth };

@@ -25,6 +25,10 @@ function smooth(t: number): number {
   return x * x * (3 - 2 * x);
 }
 
+/** A bow: how far it bends (rad) and how long the whole thing takes (s). */
+const BOW_PITCH = 0.95;
+const BOW_SECONDS = 1.9;
+
 /**
  * One kaiju: a top-heavy capsule floating on a hover spring, kept upright by a
  * deliberately under-damped balance controller. The wobble is the game.
@@ -64,6 +68,14 @@ export class Kaiju implements System {
   traction = 1;
   /** 1 while it has its hands full (set by the repair pieces system). */
   carrying = 0;
+  /** True while its feet are planted for a lift: it will not walk or turn. */
+  planted = false;
+  /** How far into a bow it is (0 upright, 1 bent right over), and how many it has made. */
+  bow = 0;
+  bows = 0;
+  private bowTime = 0;
+  private bowHeld = false;
+  private bowed = false;
   private toeLock = false;
   /** True while it has to rest before it can tiptoe again. */
   get toeLocked(): boolean {
@@ -265,7 +277,7 @@ export class Kaiju implements System {
     up.set(0, 1, 0).applyQuaternion(quat);
     // Crawling pitches the whole body forward. Its heading is then read off the pitched frame,
     // and "upright" means lined up with that pitched spine, not with the sky.
-    const pitch = smooth(this.crawl) * this.sim.tuning.modes.crawlPitch;
+    const pitch = smooth(this.crawl) * this.sim.tuning.modes.crawlPitch + smooth(this.bow) * BOW_PITCH;
     fwd.set(0, Math.sin(pitch), Math.cos(pitch)).applyQuaternion(quat);
     fwd.y = 0;
     if (fwd.lengthSq() > 0.05) {
@@ -286,14 +298,29 @@ export class Kaiju implements System {
     const upright = this.state === 'walk' || this.state === 'stumble' || this.state === 'falling';
     if (this.toeLock && this.toeMeter > 0.5) this.toeLock = false;
     this.mode =
-      !upright || this.carrying ? 'normal' : input.crouch ? 'crawl' : input.tiptoe && !this.toeLock ? 'tiptoe' : 'normal';
+      !upright || this.carrying || this.bowTime > 0 ? 'normal' : input.crouch ? 'crawl' : input.tiptoe && !this.toeLock ? 'tiptoe' : 'normal';
     const tiptoe = this.mode === 'tiptoe';
     // Getting down and back up takes a moment.
     this.crawl = THREE.MathUtils.clamp(this.crawl + (this.mode === 'crawl' ? dt : -dt) * 1.3, 0, 1);
     const crawl = smooth(this.crawl);
     // While it is on its way down or up, its spine is nowhere near where it is headed. That is
     // a change of posture, not a loss of balance: hold it firmly and don't call it a stumble.
-    if (this.crawl > 0 && this.crawl < 1) this.shifting = 0.5;
+    // A bow of apology: feet together, bend from the hips, hold it, straighten up. It has to be
+    // standing quietly with its hands free to start one, and anything that upsets it ends it.
+    const bowPressed = input.bow && !this.bowHeld;
+    this.bowHeld = input.bow;
+    if (bowPressed && this.bowTime <= 0 && this.bow === 0 && this.state === 'walk' && this.mode === 'normal' && !this.carrying && this.crawl === 0) {
+      this.bowTime = BOW_SECONDS;
+      this.bowed = false;
+    }
+    if (this.bowTime > 0) this.bowTime = this.state === 'walk' ? this.bowTime - dt : 0;
+    this.bow = THREE.MathUtils.clamp(this.bow + (this.bowTime > 0.45 ? dt : -dt) * 2.4, 0, 1);
+    if (this.bow >= 1 && !this.bowed) {
+      this.bowed = true;
+      this.bows++;
+      this.sim.emit('kaijuBow', { x: pos.x, y: pos.y, z: pos.z });
+    }
+    if ((this.crawl > 0 && this.crawl < 1) || this.bow > 0 || this.bowTime > 0) this.shifting = 0.5;
     else this.shifting = Math.max(0, this.shifting - dt);
     const shifting = this.shifting > 0;
     this.toeMeter = THREE.MathUtils.clamp(
@@ -425,7 +452,7 @@ export class Kaiju implements System {
     // the lean into starts and stops, the roll out of corners, and the falls come from.
     tmp.set(0, 0, 0);
     if (standing) {
-      const target = (input.thrust >= 0 ? input.thrust * k.maxSpeed : input.thrust * k.reverseSpeed) * speedShare;
+      const target = this.planted || this.bowTime > 0 ? 0 : (input.thrust >= 0 ? input.thrust * k.maxSpeed : input.thrust * k.reverseSpeed) * speedShare;
       const diff = target * control - this.forwardSpeed;
       // Oil and the like: the feet can neither push nor hold.
       const traction = this.sim.traction(pos.x, pos.z);
@@ -504,7 +531,7 @@ export class Kaiju implements System {
         (tiptoe ? m.tiptoeTurn : 1) *
         (1 - (1 - m.crawlTurn) * crawl) *
         (1 - (1 - this.sim.tuning.carry.turn) * this.carrying);
-      const targetRate = input.turn * k.maxTurnRate * authority * control * careful;
+      const targetRate = this.planted || this.bowTime > 0 ? 0 : input.turn * k.maxTurnRate * authority * control * careful;
       const swing = k.turnAcceleration * (1 - (1 - this.sim.tuning.carry.turnAccel) * this.carrying);
       const accel = THREE.MathUtils.clamp((targetRate - av.y) / dt, -swing, swing);
       tmp.y += accel * dt;

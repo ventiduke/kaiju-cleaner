@@ -12,19 +12,22 @@ export interface PlayerInput {
   tiptoe: boolean;
   /** Held to crouch: slow and steady, tail tucked. */
   crouch: boolean;
-  /** Held to pick up the nearest repair piece and keep hold of it. */
+  /** Pressed (not held) to take hold of a piece, and again to let go. */
   grab: boolean;
-  /** Where to shift the hands under a held piece: -1..1, x to the right, z forward. */
+  /** Unused. */
   balanceX: number;
+  /** This step's shove on the balance gauge, in gauge half-lengths: up is positive. */
   balanceZ: number;
   /** Held to hold its breath, keeping dust out of its nose. */
   breath: boolean;
+  /** Tapped to bow in apology. */
+  bow: boolean;
   /** Camera orbit input (-1..1). */
   camYaw: number;
 }
 
 export function emptyInput(): PlayerInput {
-  return { thrust: 0, turn: 0, tiptoe: false, crouch: false, grab: false, balanceX: 0, balanceZ: 0, breath: false, camYaw: 0 };
+  return { thrust: 0, turn: 0, tiptoe: false, crouch: false, grab: false, balanceX: 0, balanceZ: 0, breath: false, bow: false, camYaw: 0 };
 }
 
 export interface System {
@@ -46,6 +49,14 @@ export interface SimEvents {
   oilSlip: { x: number; y: number; z: number };
   chunkCrumble: { x: number; y: number; z: number; size: number };
   groundCollapse: { x: number; y: number; z: number; radius: number };
+  /** The kaiju has bowed in apology (at the bottom of the bow). */
+  kaijuBow: { x: number; y: number; z: number };
+  /** The balance gauge has strayed out of its band: `up` if the fix is to move the mouse up. */
+  gaugePrompt: { x: number; y: number; z: number; up: boolean };
+  /** A water main has burst. */
+  mainBurst: { x: number; y: number; z: number };
+  /** Every repair job is done. `approval` is the city's verdict, 0..100. */
+  repairsDone: { x: number; y: number; z: number; approval: number };
   sneezeWindup: { x: number; y: number; z: number };
   sneeze: { x: number; y: number; z: number; dx: number; dz: number };
   citizenSplat: { x: number; y: number; z: number };

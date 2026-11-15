@@ -1,3 +1,5 @@
+import { Approval } from '../city/approval';
+import { WaterMains } from '../city/mains';
 import * as THREE from 'three';
 import { generateCity, type CityLayout } from '../city/cityGen';
 import { Damage } from '../city/damage';
@@ -202,7 +204,11 @@ export function populate(sim: Sim, layout: CityLayout): void {
   sim.parts.weakSpots = addHazards(sim, layout, kaiju, chunks, props);
   sim.parts.nose = sim.add(new Nose(sim, kaiju, chunks, props));
   sim.parts.citizens = sim.add(new Citizens(sim, layout, kaiju, damage));
-  sim.parts.pieces = sim.add(new Pieces(sim, layout.jobs, kaiju, chunks));
+  const citizens = sim.parts.citizens as Citizens;
+  const pieces = sim.add(new Pieces(sim, layout.jobs, kaiju, chunks));
+  sim.parts.pieces = pieces;
+  sim.parts.mains = sim.add(new WaterMains(sim, layout.hazards, kaiju, props, citizens, sim.parts.nose as Nose));
+  sim.parts.approval = sim.add(new Approval(sim, damage, pieces, citizens, kaiju));
   if (layout.river) {
     const flow = sim.add(new RiverFlow(sim, layout.river, chunks, layout.sizeX));
     flow.exclude(kaiju.body);
