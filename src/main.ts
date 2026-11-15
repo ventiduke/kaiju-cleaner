@@ -10,6 +10,8 @@ import { GameAudio } from './core/audio';
 import { FreeCamera } from './core/freeCamera';
 import { InputManager } from './core/input';
 import { Loop } from './core/loop';
+import { snapshot } from './core/snapshot';
+import { setState } from './core/states';
 import { initRapier } from './core/physics';
 import { BUILD, SessionRecorder } from './core/session';
 import { makeTuning, stashForRestart, takeRestartStash } from './core/tuning';
@@ -214,6 +216,7 @@ async function boot(): Promise<void> {
   let hudFrame: (dt: number) => void = () => {};
   let gameHud: GameHud | null = null;
   let slow = 0.016;
+  const lastDraw = { calls: 0, triangles: 0 };
   let settled = 0;
   const openNote = makeNoteBox(
     () => (loop.paused = true),
@@ -302,6 +305,8 @@ async function boot(): Promise<void> {
       }
       if (tuning.gfx.post && quality < 2) post.render(tuning.gfx.bloom * (0.6 + 0.9 * look.uniforms.uLit.value));
       else renderer.render(sim.scene, camera);
+      lastDraw.calls = renderer.info.render.calls;
+      lastDraw.triangles = renderer.info.render.triangles;
       hud.frame(sim.lastStepMs);
       hud.update(() => {
         const c = sim.counts();
@@ -376,6 +381,9 @@ async function boot(): Promise<void> {
     kaiju,
     recorder,
     hud: gameHud,
+    /** What is going on, as plain data (plus what the renderer drew last frame). */
+    state: () => ({ ...snapshot(sim), drawn: { calls: lastDraw.calls, triangles: lastDraw.triangles }, quality }),
+    setState: (name: string) => setState(sim, name),
     THREE,
     ready: true,
   };
