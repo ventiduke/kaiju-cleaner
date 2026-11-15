@@ -14,6 +14,14 @@ function drive(g: Game, seconds: number): { avgMs: number; worstMs: number } {
   return { avgMs: total / n, worstMs: worst };
 }
 
+/**
+ * Physics step budget (average ms). The target is 4 ms on a mid-range laptop, and this run
+ * measures about 3.5. Wall-clock time on a shared CI runner swings by a factor of two or
+ * three from one run to the next, so there the limit only catches a gross regression; it
+ * must not be what stops a deploy.
+ */
+const STEP_BUDGET_MS = process.env.CI ? 20 : 8;
+
 describe('M3 kaiju in the city', () => {
   it('can run a boulevard lane down to the river without breaking a single chunk', async () => {
     const g = await makeGame('city');
@@ -31,7 +39,7 @@ describe('M3 kaiju in the city', () => {
     expect(Math.abs(p.x - g.layout.spawn.x)).toBeLessThan(3);
     expect(g.damage.chunksBroken).toBe(0);
     expect(g.kaiju.stumbles + g.kaiju.falls).toBe(0);
-    expect(cost.avgMs).toBeLessThan(8);
+    expect(cost.avgMs).toBeLessThan(STEP_BUDGET_MS);
   });
 
   it('wrecks dozens of chunks and sets off multi-floor collapses when it runs through a block', async () => {
@@ -57,8 +65,7 @@ describe('M3 kaiju in the city', () => {
     // It ploughs through; it must never end up wedged in its own rubble.
     expect(travelled).toBeGreaterThan(150);
     expect(g.chunks.looseCount).toBeLessThanOrEqual(g.sim.tuning.destruction.debrisCap + 60);
-    // Budget is 4 ms on a mid-range laptop; CI machines vary, so allow slack here.
-    expect(cost.avgMs).toBeLessThan(8);
+    expect(cost.avgMs).toBeLessThan(STEP_BUDGET_MS);
   });
 
   it('finds the side street a squeeze: even a centre-line walk knocks things about', async () => {
