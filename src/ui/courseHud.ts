@@ -124,8 +124,10 @@ export class CourseHud {
     const c = this.course;
     this.time.textContent = clock(c.seconds());
     this.time.classList.toggle('ch-done', c.state === 'done');
-    if (c.leg !== this.shownLeg || c.state === 'ready') {
-      this.shownLeg = c.leg;
+    // (Redrawn when the leg changes, and when the clock starts or stops.)
+    const key = c.leg * 3 + (c.state === 'ready' ? 0 : c.state === 'running' ? 1 : 2);
+    if (key !== this.shownLeg) {
+      this.shownLeg = key;
       const section = c.spec.sections[c.leg];
       this.leg.textContent = c.state === 'ready' ? 'Cross the line to start the clock' : section ? `${c.leg + 1}/${c.spec.sections.length}  ${section.name}: ${section.brief}` : 'Finished';
       this.splits.replaceChildren(...c.legs.map((l) => el('span', l.buildings ? 'ch-hit' : '', `${l.name.split(' ')[0]} ${l.seconds.toFixed(1)}${l.buildings ? ` · ${l.buildings} hit` : ''}`)));

@@ -199,8 +199,8 @@ export class Kaiju implements System {
     chunks?.addHitter(this.body, k.bodyHalfHeight + k.bodyRadius);
 
     // Hide: a dark grey-green, mottled. (No costume: it is a monster, if a well-meaning one.)
-    const skin = rimLit(new THREE.MeshLambertMaterial({ color: 0x3f4d48 }), true);
-    const dark = rimLit(new THREE.MeshLambertMaterial({ color: 0x2b3532 }), true);
+    const skin = rimLit(new THREE.MeshLambertMaterial({ color: 0x4a5952 }), true);
+    const dark = rimLit(new THREE.MeshLambertMaterial({ color: 0x333f3a }), true);
     this.buildVisual(skin, dark);
     sim.track(this.body, this.visual);
 
