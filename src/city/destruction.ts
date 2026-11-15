@@ -1,3 +1,5 @@
+import { facadeMaterial } from '../gfx/facade';
+import type { Look } from '../gfx/look';
 import * as THREE from 'three';
 import { ALL_GROUPS, FIXED_DT, Group, groups, type RigidBody } from '../core/physics';
 import type { Sim, System } from '../sim';
@@ -135,8 +137,9 @@ export class ChunkField implements System {
     this.field = new InstancedBodies(
       sim,
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshLambertMaterial({ color: 0xffffff }),
+      facadeMaterial(sim.parts.look as Look | undefined),
       capacity,
+      true,
     );
     this.rubble = new Rubble(sim);
     specs.forEach((spec, i) => this.addBuilding(spec, built[i]));
@@ -182,6 +185,9 @@ export class ChunkField implements System {
         sy: b.hy * 2 - GROOVE,
         sz: b.hz * 2 - GROOVE,
         color: spec.color,
+        face: b.face ?? 0,
+        // The same for every block of a building, so its windows share a look.
+        seed: (building * 7) % 100,
       });
     }
     for (const s of supports) this.chunks[s.chunk].dependents.push(index);

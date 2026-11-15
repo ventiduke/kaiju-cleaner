@@ -1,3 +1,6 @@
+import { Sweeps } from '../city/sweeps';
+import { addOutskirts } from '../gfx/backdrop';
+import type { Look } from '../gfx/look';
 import { Approval } from '../city/approval';
 import { WaterMains } from '../city/mains';
 import * as THREE from 'three';
@@ -208,7 +211,11 @@ export function populate(sim: Sim, layout: CityLayout): void {
   const pieces = sim.add(new Pieces(sim, layout.jobs, kaiju, chunks));
   sim.parts.pieces = pieces;
   sim.parts.mains = sim.add(new WaterMains(sim, layout.hazards, kaiju, props, citizens, sim.parts.nose as Nose));
-  sim.parts.approval = sim.add(new Approval(sim, damage, pieces, citizens, kaiju));
+  const sweeps = sim.add(new Sweeps(sim, layout.sweeps, props));
+  sim.parts.sweeps = sweeps;
+  const approval = sim.add(new Approval(sim, damage, pieces, citizens, kaiju, sweeps));
+  sim.parts.approval = approval;
+  sim.parts.jobs = approval.board;
   if (layout.river) {
     const flow = sim.add(new RiverFlow(sim, layout.river, chunks, layout.sizeX));
     flow.exclude(kaiju.body);
@@ -221,5 +228,6 @@ export function buildCity(sim: Sim): void {
   const layout = generateCity(sim.tuning.city);
   addEnvironment(sim, Math.max(300, Math.max(layout.sizeX, layout.sizeZ) * 1.25), layout.river);
   addStreets(sim, layout);
+  addOutskirts(sim, sim.parts.look as Look, layout.sizeX, layout.sizeZ, layout.river);
   populate(sim, layout);
 }

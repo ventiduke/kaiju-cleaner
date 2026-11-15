@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import type { River } from '../city/cityGen';
 import { WATER_SURFACE } from '../city/river';
 import { ALL_GROUPS, Group, groups } from '../core/physics';
+import { addHills } from '../gfx/backdrop';
+import { Look } from '../gfx/look';
+import { makeSky } from '../gfx/sky';
+import { waterMaterial } from '../gfx/water';
 import type { Sim } from '../sim';
-
-export const SKY = 0x9fc4e8;
 
 /**
  * Sky, fog, lights and the ground: shared by every scene.
@@ -12,31 +14,30 @@ export const SKY = 0x9fc4e8;
  */
 export function addEnvironment(sim: Sim, extent = 400, river: River | null = null): THREE.DirectionalLight {
   const { scene, world, R } = sim;
-  scene.background = new THREE.Color(SKY);
-  scene.fog = new THREE.Fog(SKY, extent * 0.9, extent * 2.6);
+  const look = new Look(scene, extent);
+  look.set(sim.tuning.gfx.hour);
+  sim.parts.look = look;
+  scene.add(makeSky(look));
+  addHills(scene, extent);
 
-  scene.add(new THREE.HemisphereLight(0xdfeeff, 0x6b6f5a, 1.1));
-  const sun = new THREE.DirectionalLight(0xfff2dd, 2.4);
-  sun.position.set(-extent * 0.35, extent * 0.7, extent * 0.25);
+  const sun = look.sun;
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(4096, 4096);
   const cam = sun.shadow.camera;
   // The shadow box follows the action (see main.ts), so it only needs to cover what is on screen.
-  const box = 190;
+  const box = 200;
   cam.left = -box;
   cam.right = box;
   cam.top = box;
   cam.bottom = -box;
   cam.near = 1;
-  cam.far = extent * 2;
-  sun.shadow.bias = -0.0005;
-  sun.shadow.normalBias = 0.3;
-  scene.add(sun);
-  scene.add(sun.target);
+  cam.far = extent * 2.4;
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.35;
   sim.parts.sun = sun;
 
   const far = extent * 3;
-  const grass = new THREE.MeshLambertMaterial({ color: 0x7d8a6a });
+  const grass = new THREE.MeshLambertMaterial({ color: 0x7f9a62 });
   /** A slab of ground between two z values, with its top at `top`. */
   const slab = (z0: number, z1: number, top: number, material: THREE.Material) => {
     const depth = z1 - z0;
@@ -71,10 +72,7 @@ export function addEnvironment(sim: Sim, extent = 400, river: River | null = nul
     mesh.position.set(0, -river.depth / 2, z);
     scene.add(mesh);
   }
-  const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(far * 2, river.z1 - river.z0),
-    new THREE.MeshLambertMaterial({ color: 0x2f7fb0, transparent: true, opacity: 0.8, depthWrite: false }),
-  );
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(far * 2, river.z1 - river.z0), waterMaterial(look, sim.tuning.city.riverCurrent));
   water.rotation.x = -Math.PI / 2;
   water.position.set(0, WATER_SURFACE, (river.z0 + river.z1) / 2);
   water.renderOrder = 5;

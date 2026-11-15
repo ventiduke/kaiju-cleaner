@@ -53,6 +53,10 @@ export interface SimEvents {
   kaijuBow: { x: number; y: number; z: number };
   /** The balance gauge has strayed out of its band: `up` if the fix is to move the mouse up. */
   gaugePrompt: { x: number; y: number; z: number; up: boolean };
+  /** A blocked road has been swept clear. */
+  sweepDone: { x: number; y: number; z: number };
+  /** The city's opinion just moved: by how much, why, and where it happened. */
+  approval: { x: number; y: number; z: number; delta: number; why: string };
   /** A water main has burst. */
   mainBurst: { x: number; y: number; z: number };
   /** Every repair job is done. `approval` is the city's verdict, 0..100. */

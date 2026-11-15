@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { monumentJob, type CityLayout, type PropSpec } from '../city/cityGen';
+import { addRubble, busJob, monumentJob, type CityLayout, type PropSpec, type SweepSpec } from '../city/cityGen';
+import { Rng } from '../core/rng';
 import { ALL_GROUPS, Group, groups } from '../core/physics';
 import type { Sim } from '../sim';
 import { populate } from './city';
@@ -15,6 +16,8 @@ export function yardLayout(): CityLayout {
   for (let i = 0; i < 5; i++) props.push({ kind: 'lamp', x: 30 + i * 10, z: -12, rotY: 0, color: 0xffffff });
   for (let i = 0; i < 5; i++) props.push({ kind: 'tree', x: 30 + i * 10, z: 4, rotY: i, color: 0xffffff });
   props.push({ kind: 'cart', x: 20, z: -12, rotY: 0.4, color: 0xe07b39 });
+  const yardSweep: SweepSpec = { x: -70, z: 90, hx: 10, hz: 8, color: 0x8cff66 };
+  addRubble(yardSweep, props, new Rng(5));
   return {
     sizeX: 0,
     sizeZ: 0,
@@ -64,7 +67,11 @@ export function yardLayout(): CityLayout {
       },
       // And a toppled clock tower to stand back up.
       monumentJob(-35, 40, 0x3fd0ff),
+      // A bus that has ended up on the low block, to lift down onto the open ground beside it.
+      busJob(-45, 12, -55, 0.4, -75, -45, 0xff7ad9),
     ],
+    // A stretch of ground buried in rubble, to sweep clear.
+    sweeps: [yardSweep],
     river: null,
     spawn: { x: 0, z: 70, yaw: Math.PI },
   };
@@ -84,6 +91,7 @@ export function buildPlane(sim: Sim): void {
     props: [],
     hazards: [],
     jobs: [],
+    sweeps: [],
     river: null,
     spawn: { x: 0, z: 0, yaw: 0 },
   });

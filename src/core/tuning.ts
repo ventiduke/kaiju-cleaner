@@ -64,6 +64,9 @@ export const codeDefaults = {
     repairJobs: 4,
     /** Toppled monuments to stand back up (there is one plaza to put them in). */
     monuments: 1,
+    /** Buses to lift down off roofs, and stretches of road to sweep clear of rubble. */
+    busJobs: 2,
+    sweepJobs: 2,
     /** Leave the centre block open as a plaza. */
     plaza: true,
     propDensity: 1,
@@ -258,6 +261,18 @@ export const codeDefaults = {
     footWidth: 4.4,
     footHeight: 2.2,
   },
+  /** Which shift this is: each one is a new city. */
+  game: { shift: 1 },
+  /** How it looks. None of this touches the simulation. */
+  gfx: {
+    /** Time of day, 6 to 22. T steps through the good ones. */
+    hour: 17.4,
+    /** Glow round bright things (0 off). */
+    bloom: 0.38,
+    clouds: 0.55,
+    /** 1: antialiased float buffer, bloom and grading. 0: straight to the screen, for slow machines. */
+    post: 1,
+  },
   camera: {
     distance: 100,
     height: 72,
@@ -355,6 +370,8 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     waterMains: [0, 20, 1],
     repairJobs: [0, 10, 1],
     monuments: [0, 1, 1],
+    busJobs: [0, 6, 1],
+    sweepJobs: [0, 6, 1],
     propDensity: [0, 3, 0.1],
   },
   destruction: {
@@ -473,6 +490,13 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     footLength: [2, 12, 0.1],
     footWidth: [1, 8, 0.1],
     footHeight: [0.5, 4, 0.1],
+  },
+  game: { shift: [1, 99, 1] },
+  gfx: {
+    hour: [6, 22, 0.1],
+    bloom: [0, 1.5, 0.02],
+    clouds: [0, 1, 0.05],
+    post: [0, 1, 1],
   },
   camera: {
     distance: [15, 220, 1],

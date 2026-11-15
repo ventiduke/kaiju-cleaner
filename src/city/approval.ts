@@ -1,6 +1,8 @@
 import type { Citizens } from './citizens';
 import type { Damage } from './damage';
+import { JobBoard } from './jobs';
 import type { Pieces } from './pieces';
+import type { Sweeps } from './sweeps';
 import type { Kaiju } from '../kaiju/kaiju';
 import type { Sim, System } from '../sim';
 
@@ -9,6 +11,8 @@ export const WORTH = {
   start: 50,
   straight: 14,
   crooked: 8,
+  /** A road swept clear. */
+  swept: 10,
   /** Per person won over by a bow, up to `forgivenMax` in all. */
   forgiven: 0.5,
   forgivenMax: 15,
@@ -28,48 +32,95 @@ export function verdict(approval: number): string {
 }
 
 /**
- * What the city makes of the kaiju, from 0 to 100. It starts in the middle. Putting things
- * back raises it (more for a straight job than a crooked one), and so does bowing to
- * people it has just frightened. Knocking buildings about and squashing people lowers it.
- * When the last repair goes in, that is the verdict.
+ * What the city makes of the kaiju, from 0 to 100. It starts in the middle. Finishing jobs
+ * raises it (more for a straight repair than a crooked one), and so does bowing to people
+ * it has just frightened. Knocking buildings about and squashing people lowers it. When the
+ * last job is done, that is the verdict.
+ *
+ * Every time the score moves it says so (`approval` event), with a reason and the place it
+ * happened, so the game can show the player what they just did.
  */
 export class Approval implements System {
   value = WORTH.start;
   /** How many frightened people a bow has won over. */
   forgiven = 0;
-  /** Set once every repair is done: the time it took, and the score at that moment. */
+  /** Set once every job is done: the time it took, and the score at that moment. */
   finished: { seconds: number; approval: number } | null = null;
+  private last = { straight: 0, crooked: 0, swept: 0, forgiven: 0, squished: 0, buildings: 0 };
+  private at = {
+    job: { x: 0, y: 0, z: 0 },
+    squish: { x: 0, y: 0, z: 0 },
+    damage: { x: 0, y: 0, z: 0 },
+    kaiju: { x: 0, y: 0, z: 0 },
+  };
 
   constructor(
     private sim: Sim,
     private damage: Damage,
     private pieces: Pieces | null,
     private citizens: Citizens | null,
-    kaiju: Kaiju,
+    private kaiju: Kaiju,
+    private sweeps: Sweeps | null = null,
   ) {
+    const board = new JobBoard(pieces, sweeps);
+    this.board = board;
     sim.on('kaijuBow', (e) => {
       // Sorry only counts if someone is there to hear it.
       this.forgiven += this.citizens?.calm(e.x, e.z, 70 + kaiju.speed) ?? 0;
     });
+    const note = (key: 'job' | 'squish' | 'damage') => (e: { x: number; y: number; z: number }) => {
+      this.at[key] = { x: e.x, y: e.y, z: e.z };
+    };
+    sim.on('piecePlace', note('job'));
+    sim.on('pieceDrop', note('job'));
+    sim.on('sweepDone', note('job'));
+    sim.on('citizenSquish', note('squish'));
+    sim.on('citizenSplat', note('squish'));
+    sim.on('chunkBreak', note('damage'));
   }
+
+  readonly board: JobBoard;
 
   postStep(): void {
     const d = this.damage;
     const p = this.pieces;
-    const straight = p ? p.placed - p.crooked : 0;
+    const now = {
+      straight: p ? p.placed - p.crooked : 0,
+      crooked: p?.crooked ?? 0,
+      swept: this.sweeps?.sweeps.filter((s) => s.done).length ?? 0,
+      forgiven: Math.min(WORTH.forgivenMax, this.forgiven * WORTH.forgiven),
+      squished: d.citizensSquished,
+      buildings: d.buildingsDamaged,
+    };
     const raw =
       WORTH.start +
-      straight * WORTH.straight +
-      (p?.crooked ?? 0) * WORTH.crooked +
-      Math.min(WORTH.forgivenMax, this.forgiven * WORTH.forgiven) +
-      d.citizensSquished * WORTH.squished +
-      d.buildingsDamaged * WORTH.building +
+      now.straight * WORTH.straight +
+      now.crooked * WORTH.crooked +
+      now.swept * WORTH.swept +
+      now.forgiven +
+      now.squished * WORTH.squished +
+      now.buildings * WORTH.building +
       d.chunksBroken * WORTH.chunk;
     this.value = Math.max(0, Math.min(100, raw));
-    if (p && !this.finished && p.allPlaced()) {
+
+    // Say what changed.
+    const k = this.kaiju.body.translation();
+    this.at.kaiju = { x: k.x, y: k.y + 14, z: k.z };
+    const last = this.last;
+    const tell = (delta: number, why: string, at: { x: number; y: number; z: number }) => {
+      if (Math.abs(delta) > 0.01) this.sim.emit('approval', { x: at.x, y: at.y, z: at.z, delta, why });
+    };
+    const jobs = (now.straight - last.straight) * WORTH.straight + (now.crooked - last.crooked) * WORTH.crooked;
+    tell(jobs, jobs < 0 ? 'Knocked it off again' : now.crooked > last.crooked ? 'Close enough…' : 'Good as new!', this.at.job);
+    tell((now.swept - last.swept) * WORTH.swept, 'Road clear!', this.at.job);
+    tell(now.forgiven - last.forgiven, 'Apology accepted', this.at.kaiju);
+    tell((now.squished - last.squished) * WORTH.squished, 'Squashed!', this.at.squish);
+    tell((now.buildings - last.buildings) * WORTH.building, 'That was somebody\'s building', this.at.damage);
+    this.last = now;
+
+    if (!this.finished && this.board.allDone()) {
       this.finished = { seconds: this.sim.time, approval: this.value };
-      const k = p.pieces[p.pieces.length - 1].body.translation();
-      this.sim.emit('repairsDone', { x: k.x, y: k.y, z: k.z, approval: this.value });
+      this.sim.emit('repairsDone', { x: this.at.job.x, y: this.at.job.y, z: this.at.job.z, approval: this.value });
     }
   }
 }

@@ -1,3 +1,5 @@
+import { Face, facadeMaterial } from '../gfx/facade';
+import type { Look } from '../gfx/look';
 import * as THREE from 'three';
 import { Rng } from '../core/rng';
 import { ALL_GROUPS, FIXED_DT, Group, groups, type RigidBody } from '../core/physics';
@@ -133,7 +135,13 @@ export class Pieces implements System {
         volume += 8 * box.hx * box.hy * box.hz;
         const mesh = new THREE.Mesh(
           new THREE.BoxGeometry(box.hx * 2 - 0.14, box.hy * 2 - 0.14, box.hz * 2 - 0.14),
-          new THREE.MeshLambertMaterial({ color: box.color }),
+          job.kind === 'top' && Math.abs(box.x) + Math.abs(box.z) > 0.1
+            ? facadeMaterial(sim.parts.look as Look | undefined, {
+                color: box.color,
+                face: (box.x > 0 ? Face.PX : Face.NX) | (box.z > 0 ? Face.PZ : Face.NZ),
+                seed: Math.abs(Math.round(job.socket.x * 3 + job.socket.z)) % 100,
+              })
+            : new THREE.MeshLambertMaterial({ color: box.color }),
         );
         mesh.position.set(box.x, box.y, box.z);
         mesh.castShadow = true;
@@ -148,6 +156,8 @@ export class Pieces implements System {
       );
       band.position.y = job.kind === 'span' ? job.height + 0.1 : 0.3;
       if (job.kind === 'span') band.scale.set(0.3, 0.2, 0.3);
+      // A bus needs no plinth: its marker floats over it.
+      band.visible = job.kind !== 'bus';
       group.add(band);
 
       const material = new THREE.MeshBasicMaterial({ color: job.color });
@@ -189,6 +199,14 @@ export class Pieces implements System {
     }
 
     sim.onContactForce((c1, c2, force) => this.onForce(c1, c2, force));
+    // A piece resting on a building is asleep; when the building goes from under it, it has to wake up and fall.
+    sim.on('chunkBreak', (e) => {
+      for (const piece of this.pieces) {
+        if (piece.state !== 'loose' || !piece.body.isSleeping()) continue;
+        const p = piece.body.translation();
+        if (p.y > 1 && e.y < p.y + 1 && Math.hypot(e.x - p.x, e.z - p.z) < piece.bounds.hx + 14) piece.body.wakeUp();
+      }
+    });
   }
 
   /**

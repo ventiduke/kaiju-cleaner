@@ -76,7 +76,7 @@ const STILL = { carry: { wander: 0 } };
 describe('repair pieces', () => {
   it('start asleep, each with a place to go', async () => {
     const g = await yard();
-    expect(g.pieces.pieces.map((p) => p.job.kind)).toEqual(['top', 'raise']);
+    expect(g.pieces.pieces.map((p) => p.job.kind)).toEqual(['top', 'raise', 'bus']);
     const [top, tower] = g.pieces.pieces;
     g.sim.run(30);
     expect(top.state).toBe('loose');
@@ -444,7 +444,7 @@ describe('repair pieces', () => {
     const g = await makeGame('city');
     const pieces = g.sim.parts.pieces as Pieces;
     const cfg = g.sim.tuning.city;
-    expect(pieces.pieces.length).toBe(cfg.repairJobs + cfg.monuments);
+    expect(pieces.pieces.length).toBe(cfg.repairJobs + cfg.monuments + cfg.busJobs);
     const tops = g.layout.jobs.filter((j) => j.kind === 'top');
     const spans = g.layout.jobs.filter((j) => j.kind === 'span');
     expect(spans.length).toBe(1);

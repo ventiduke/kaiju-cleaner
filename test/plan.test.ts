@@ -3,6 +3,7 @@ import { Approval, WORTH, verdict } from '../src/city/approval';
 import type { Citizens } from '../src/city/citizens';
 import type { WaterMains } from '../src/city/mains';
 import type { Pieces } from '../src/city/pieces';
+import type { Sweeps } from '../src/city/sweeps';
 import type { Nose } from '../src/kaiju/nose';
 import { makeGame, type Game } from './helpers';
 
@@ -201,7 +202,28 @@ describe('city approval', () => {
       g.sim.step();
     }
     g.sim.step();
+    expect(clock.state).toBe('placed');
+    expect(done).toBe(null);
+    // The bus comes down off the roof and goes on its marker.
+    const bus = pieces.pieces[2];
+    moveTo(g, bus.job.socket.x - k.forward.x * d, bus.job.socket.z - k.forward.z * d);
+    pieces.grab(bus);
+    g.sim.run(45);
+    tap(g, 'grab');
+    g.sim.run(5);
     expect(pieces.allPlaced()).toBe(true);
+    expect(approval.finished).toBe(null);
+    // Last, the blocked road: with the rubble gone, the shift is done.
+    const sweeps = g.sim.parts.sweeps as Sweeps;
+    const reasons: string[] = [];
+    g.sim.on('approval', (e) => reasons.push(e.why));
+    const swept = approval.value;
+    for (const lump of sweeps.sweeps[0].lumps) lump.setTranslation({ x: -70, y: 2, z: 140 }, true);
+    g.sim.run(15);
+    expect(sweeps.sweeps[0].done).toBe(true);
+    expect(approval.board.allDone()).toBe(true);
+    expect(approval.value).toBeCloseTo(swept + WORTH.swept, 1);
+    expect(reasons).toContain('Road clear!');
     expect(approval.finished).not.toBe(null);
     expect(done).toBeCloseTo(approval.value, 5);
     expect(approval.finished!.approval).toBeGreaterThan(before + WORTH.straight);

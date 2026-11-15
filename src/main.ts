@@ -3,7 +3,7 @@ import type { Damage } from './city/damage';
 import type { ChunkField } from './city/destruction';
 import type { BallTool } from './core/ball';
 import { buildTuningGui, Hud, makeNoteBox, makeToast } from './core/debug';
-import { verdict, type Approval } from './city/approval';
+import type { Approval } from './city/approval';
 import type { Citizens } from './city/citizens';
 import type { Pieces } from './city/pieces';
 import { GameAudio } from './core/audio';
@@ -12,7 +12,11 @@ import { InputManager } from './core/input';
 import { Loop } from './core/loop';
 import { initRapier } from './core/physics';
 import { BUILD, SessionRecorder } from './core/session';
-import { makeTuning, takeRestartStash } from './core/tuning';
+import { makeTuning, stashForRestart, takeRestartStash } from './core/tuning';
+import type { CityLayout } from './city/cityGen';
+import { GameHud } from './ui/gameHud';
+import { HOURS, type Look } from './gfx/look';
+import { Post } from './gfx/post';
 import { FollowCamera } from './kaiju/camera';
 import type { Kaiju } from './kaiju/kaiju';
 import type { Nose } from './kaiju/nose';
@@ -32,12 +36,16 @@ async function boot(): Promise<void> {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
   document.body.appendChild(renderer.domElement);
 
-  const camera = new THREE.PerspectiveCamera(tuning.camera.fov, 1, 1, 3000);
+  const camera = new THREE.PerspectiveCamera(tuning.camera.fov, 1, 1, 9000);
+  const look = sim.parts.look as Look;
+  const post = new Post(renderer, sim.scene, camera);
   const freeCam = new FreeCamera(camera, renderer.domElement);
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
+    post.setSize(window.innerWidth, window.innerHeight, renderer.getPixelRatio());
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
   };
@@ -156,31 +164,17 @@ async function boot(): Promise<void> {
   const approvalBar = document.getElementById('approval')!;
   const approvalLabel = approvalBar.querySelector('span')!;
   const approvalFill = approvalBar.querySelector('i')!;
-  const banner = document.getElementById('banner')!;
   let approvalShown = -1;
   const drawApproval = () => {
-    if (!approval || !pieces?.pieces.length) return;
+    if (!approval || !approval.board.total) return;
     const value = Math.round(approval.value);
     if (value === approvalShown) return;
     approvalShown = value;
     approvalBar.style.display = 'flex';
-    approvalLabel.textContent = `city approval ${value}%`;
+    approvalLabel.textContent = `CITY APPROVAL  ${value}%`;
     approvalFill.style.width = `${value}%`;
     approvalFill.style.background = value >= 60 ? '#7dff9a' : value >= 35 ? '#ffd23f' : '#ff5544';
   };
-  sim.on('repairsDone', (e) => {
-    const t = Math.round(sim.time);
-    banner.textContent = `ALL REPAIRS DONE\n${Math.round(e.approval)}% approval`;
-    const detail = document.createElement('small');
-    detail.textContent =
-      `${verdict(e.approval)}\n` +
-      `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}   ` +
-      `${pieces?.crooked ?? 0} crooked   ${damage.buildingsDamaged} buildings knocked about   ${damage.citizensSquished} people squashed`;
-    banner.appendChild(detail);
-    banner.style.display = 'block';
-    setTimeout(() => (banner.style.display = 'none'), 14000);
-  });
-
   const recorder = sim.add(new SessionRecorder(sim, sceneName, kaiju, damage));
   const audio = new GameAudio(sim, kaiju);
   if (sceneName === 'city') {
@@ -214,6 +208,7 @@ async function boot(): Promise<void> {
   const hud = new Hud();
   const toast = makeToast();
   let loop: Loop;
+  let hudFrame: (dt: number) => void = () => {};
   const openNote = makeNoteBox(
     () => (loop.paused = true),
     (text) => {
@@ -225,6 +220,8 @@ async function boot(): Promise<void> {
     },
   );
   buildTuningGui(tuning, { scene: sceneName, scenes: SCENES, recorder, addNote: openNote, toast });
+  // The tuning panel is a dev tool: tucked away until the ` key asks for it.
+  document.querySelector('.lil-gui')?.classList.add('dev-tool');
 
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement) return;
@@ -236,6 +233,13 @@ async function boot(): Promise<void> {
     else if (e.code === 'KeyN') {
       e.preventDefault();
       openNote();
+    } else if (e.code === 'Backquote') document.body.classList.toggle('dev-off');
+    else if (e.code === 'KeyH') document.body.classList.toggle('help-off');
+    else if (e.code === 'KeyT') {
+      // Step to the next time of day worth looking at.
+      const at = HOURS.findIndex((h) => Math.abs(h - tuning.gfx.hour) < 0.05);
+      tuning.gfx.hour = HOURS[(at + 1) % HOURS.length];
+      toast(`Time of day: ${Math.floor(tuning.gfx.hour)}:${String(Math.round((tuning.gfx.hour % 1) * 60)).padStart(2, '0')}`);
     } else if (e.code === 'KeyM') {
       tuning.audio.muted = !tuning.audio.muted;
       toast(tuning.audio.muted ? 'Sound off' : 'Sound on');
@@ -252,8 +256,8 @@ async function boot(): Promise<void> {
   document.getElementById('boot')?.remove();
 
   // Keep the shadow box centred on the action.
-  const sun = sim.parts.sun as THREE.DirectionalLight;
-  const sunOffset = sun.position.clone();
+  const sun = look.sun;
+  const sunOffset = look.sunOffset;
 
   loop = new Loop({
     step: () => {
@@ -269,8 +273,14 @@ async function boot(): Promise<void> {
       audio.update();
       drawGauge();
       drawApproval();
+      hudFrame(frameDt);
       drawMode();
-      renderer.render(sim.scene, camera);
+      look.set(tuning.gfx.hour);
+      look.uniforms.uTime.value += frameDt;
+      look.uniforms.uCloudCover.value = tuning.gfx.clouds;
+      renderer.toneMappingExposure = look.exposure;
+      if (tuning.gfx.post) post.render(tuning.gfx.bloom * (0.6 + 0.9 * look.uniforms.uLit.value));
+      else renderer.render(sim.scene, camera);
       hud.frame(sim.lastStepMs);
       hud.update(() => {
         const c = sim.counts();
@@ -300,7 +310,38 @@ async function boot(): Promise<void> {
       });
     },
   });
+  // The game's own HUD: briefing, jobs, map, arrows, verdicts, report card.
+  const automated = navigator.webdriver || params.has('nointro');
+  const gameHud =
+    kaiju && approval
+      ? new GameHud({
+          sim,
+          tuning,
+          camera,
+          kaiju,
+          board: approval.board,
+          approval,
+          damage,
+          layout: sim.parts.layout as CityLayout,
+          pieces,
+          citizens,
+          nose,
+          intro: (params.has('intro') || !automated) && sceneName === 'city',
+          begin: () => (loop.paused = false),
+          restart: (next) => {
+            if (next) {
+              tuning.city.seed += 1;
+              tuning.game.shift += 1;
+            }
+            stashForRestart(tuning);
+            location.reload();
+          },
+        })
+      : null;
+  hudFrame = (dt) => gameHud?.frame(dt);
   loop.start();
+  // The briefing holds the game until it is dismissed (one frame is drawn behind it first).
+  if (gameHud && !gameHud.playing) setTimeout(() => !gameHud.playing && (loop.paused = true), 60);
 
   // Hook for headless checks and console poking.
   (window as unknown as { __game: unknown }).__game = {
@@ -312,6 +353,7 @@ async function boot(): Promise<void> {
     followCam,
     kaiju,
     recorder,
+    hud: gameHud,
     THREE,
     ready: true,
   };

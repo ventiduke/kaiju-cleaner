@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { ALL_GROUPS, Group, groups } from '../core/physics';
+import { ALL_GROUPS, Group, groups, type RigidBody } from '../core/physics';
 import type { Sim, System } from '../sim';
 import type { PropKind, PropSpec } from './cityGen';
 import type { Damage } from './damage';
@@ -63,6 +63,19 @@ const KINDS: Record<PropKind, KindDef> = {
       { hx: 1.3, hy: 1.6, hz: 1.3, y: 4.8 },
     ],
     density: 0.25,
+  },
+  rubble: {
+    // A lump of fallen wall: broken concrete with a few bent bars sticking out.
+    geometry: () =>
+      mergeGeometries([
+        part(new THREE.BoxGeometry(3.3, 2.2, 2.8), 0xa7a39a, 0, 1.15, 0),
+        part(new THREE.BoxGeometry(1.9, 1.3, 2.0).rotateY(0.5), 0x8f8b84, 0.9, 2.5, 0.2),
+        part(new THREE.BoxGeometry(1.6, 1.0, 1.2).rotateY(-0.4), 0xb9b4a8, -1.2, 0.5, 1.3),
+        part(new THREE.CylinderGeometry(0.09, 0.09, 2.4, 4).rotateZ(0.9), 0x8a4a2a, -1.4, 2.3, -0.5),
+        part(new THREE.CylinderGeometry(0.09, 0.09, 2.0, 4).rotateX(0.8), 0x8a4a2a, 0.6, 2.9, 1.1),
+      ]),
+    boxes: [{ hx: 1.65, hy: 1.1, hz: 1.4, y: 1.15 }],
+    density: 0.5,
   },
   cart: {
     geometry: () =>
@@ -165,6 +178,11 @@ export class PropField implements System {
         body.setAngvel({ x: uz * 2, y: 1, z: -ux * 2 }, true);
       }
     }
+  }
+
+  /** The bodies of every prop of one kind, in the order they were listed. */
+  bodiesOf(kind: PropKind): RigidBody[] {
+    return (this.fields.get(kind)?.field.bodies.filter((b) => !!b) ?? []) as RigidBody[];
   }
 
   render(alpha: number): void {

@@ -19,6 +19,9 @@ export interface Part {
   sy: number;
   sz: number;
   color: number;
+  /** For building blocks: which faces are outside walls, and a random number for the windows. */
+  face?: number;
+  seed?: number;
 }
 
 /**
@@ -33,6 +36,7 @@ export class InstancedBodies implements BodyField {
   count = 0;
   parts = 0;
 
+  private faces: THREE.InstancedBufferAttribute | null = null;
   private partStart: number[] = [];
   private partCount: number[] = [];
   private offset: Float32Array;
@@ -50,7 +54,13 @@ export class InstancedBodies implements BodyField {
     material: THREE.Material,
     /** Most instances (parts) it will ever draw. */
     readonly capacity: number,
+    /** Give every instance an `aFace` attribute (see the facade material). */
+    faces = false,
   ) {
+    if (faces) {
+      this.faces = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, capacity) * 2), 2);
+      geometry.setAttribute('aFace', this.faces);
+    }
     this.mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, capacity));
     this.mesh.count = 0;
     this.mesh.castShadow = true;
@@ -80,6 +90,10 @@ export class InstancedBodies implements BodyField {
       this.offset.set([part.ox, part.oy, part.oz], k * 3);
       this.scale.set([part.sx, part.sy, part.sz], k * 3);
       this.mesh.setColorAt(k, c.setHex(part.color));
+      if (this.faces) {
+        this.faces.setXY(k, part.face ?? 0, part.seed ?? 0);
+        this.faces.needsUpdate = true;
+      }
     }
     this.mesh.count = this.parts;
     this.read(i);

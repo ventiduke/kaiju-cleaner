@@ -20,7 +20,7 @@ export interface BuildingSpec {
   style?: BuildStyle;
 }
 
-export type PropKind = 'car' | 'lamp' | 'tree' | 'cart';
+export type PropKind = 'car' | 'lamp' | 'tree' | 'cart' | 'rubble';
 
 export interface PropSpec {
   kind: PropKind;
@@ -87,7 +87,9 @@ export interface PieceBox {
 /** Something broken off that has to be carried back to where it belongs. */
 export interface JobSpec {
   /** A tower top or a bridge span is carried back; a toppled monument is stood up where it lies. */
-  kind: 'top' | 'span' | 'raise';
+  kind: 'top' | 'span' | 'raise' | 'bus';
+  /** What the job list calls it. */
+  name?: string;
   boxes: PieceBox[];
   height: number;
   /** Where the piece is at the start. `y` lifts it off the ground and `roll` lays it on its side. */
@@ -106,6 +108,15 @@ export interface Hazard {
   x: number;
   z: number;
   radius: number;
+}
+
+/** A stretch of road buried in rubble, to be swept clear. `hx`, `hz` are the half-sizes of the stretch. */
+export interface SweepSpec {
+  x: number;
+  z: number;
+  hx: number;
+  hz: number;
+  color: number;
 }
 
 /** A band of water across the whole map, between two z values. */
@@ -128,6 +139,8 @@ export interface CityLayout {
   props: PropSpec[];
   hazards: Hazard[];
   jobs: JobSpec[];
+  /** Roads to sweep clear. Their rubble is among the props. */
+  sweeps: SweepSpec[];
   river: River | null;
   /** Where a kaiju starts: at the south end of the widest street, facing north (-z). */
   spawn: { x: number; z: number; yaw: number };
@@ -189,6 +202,49 @@ export function monumentJob(x: number, z: number, color: number): JobSpec {
     symmetry: Math.PI / 2,
     color,
   };
+}
+
+/** A bus, stranded at (x, y, z) and wanted on the road at (toX, toZ). It is modelled lying along z. */
+export function busJob(x: number, y: number, z: number, yaw: number, toX: number, toZ: number, color: number): JobSpec {
+  const boxes: PieceBox[] = [
+    { x: 0, y: 2.3, z: 0, hx: 1.9, hy: 1.7, hz: 6, color: 0xf2b705 },
+    { x: 0, y: 2.95, z: 0, hx: 1.95, hy: 0.55, hz: 5.4, color: 0x26303a },
+    { x: 0, y: 4.1, z: 0, hx: 1.7, hy: 0.12, hz: 5.6, color: 0xffd966 },
+  ];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) boxes.push({ x: sx * 1.6, y: 0.55, z: sz * 3.8, hx: 0.45, hy: 0.55, hz: 0.95, color: 0x1c1f24 });
+  return {
+    kind: 'bus',
+    name: 'Bus on a roof',
+    boxes,
+    height: 4.3,
+    start: { x, y, z, yaw },
+    socket: { x: toX, y: 0, z: toZ, yaw: 0 },
+    symmetry: Math.PI,
+    color,
+  };
+}
+
+/** Fills a stretch of road with lumps of rubble (and takes away whatever was parked there). */
+export function addRubble(sweep: SweepSpec, props: PropSpec[], rng: Rng): void {
+  for (let i = props.length - 1; i >= 0; i--) {
+    const p = props[i];
+    if (Math.abs(p.x - sweep.x) < sweep.hx + 4 && Math.abs(p.z - sweep.z) < sweep.hz + 4) props.splice(i, 1);
+  }
+  const pitch = 5.2;
+  const nx = Math.max(1, Math.floor((sweep.hx * 2 - 3) / pitch));
+  const nz = Math.max(1, Math.floor((sweep.hz * 2 - 3) / pitch));
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < nz; j++) {
+      if (rng.chance(0.2)) continue;
+      props.push({
+        kind: 'rubble',
+        x: sweep.x + (i - (nx - 1) / 2) * pitch + rng.range(-0.7, 0.7),
+        z: sweep.z + (j - (nz - 1) / 2) * pitch + rng.range(-0.7, 0.7),
+        rotY: rng.range(0, Math.PI * 2),
+        color: 0xffffff,
+      });
+    }
+  }
 }
 
 export function generateCity(cfg: Tuning['city']): CityLayout {
@@ -436,6 +492,22 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
   // Repair jobs, part three: the clock tower in the plaza has gone over, and wants standing up.
   for (const plaza of plazas.slice(0, cfg.monuments)) jobs.push(monumentJob(plaza.x - 8, plaza.z, JOB_COLORS[jobs.length % JOB_COLORS.length]));
 
+  // Repair jobs, part four: buses that have somehow ended up on low roofs. Each wants lifting
+  // down and setting on the nearest free crossroads.
+  for (const i of order) {
+    if (jobs.filter((j) => j.kind === 'bus').length >= cfg.busJobs) break;
+    const b = buildings[i];
+    const t = b.tiers[0];
+    if (b.tiers.length !== 1 || t.floors < 2 || t.floors > 4 || t.w < 13 || t.d < 13) continue;
+    if (jobs.some((j) => Math.hypot(j.socket.x - b.x, j.socket.z - b.z) < 80 || Math.hypot(j.start.x - b.x, j.start.z - b.z) < 50)) continue;
+    const crossing = crossings
+      .filter((c) => !c.taken)
+      .sort((p, q) => Math.hypot(p.x - b.x, p.z - b.z) - Math.hypot(q.x - b.x, q.z - b.z))[0];
+    if (!crossing) break;
+    crossing.taken = true;
+    jobs.push(busJob(b.x, t.floors * cfg.floorHeight, b.z, rng.range(0.2, 1.2), crossing.x, crossing.z, JOB_COLORS[jobs.length % JOB_COLORS.length]));
+  }
+
   // Skybridges: join buildings that face each other across a street, a few floors up.
   const bridges: BridgeSpec[] = [];
   const candidates: BridgeSpec[] = [];
@@ -559,6 +631,28 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     hazards.push({ kind: 'main', x, z, radius: 2.1 });
   }
 
+  // Blocked roads: a stretch of street, between crossings, buried in lumps of fallen masonry.
+  const sweeps: SweepSpec[] = [];
+  for (let attempt = 0; attempt < cfg.sweepJobs * 30 && sweeps.length < cfg.sweepJobs; attempt++) {
+    const alongX = rng.chance(0.5);
+    const street = rng.pick(alongX ? az.streets.filter((_, i) => i !== riverRow) : ax.streets);
+    if (!street || street.width < cfg.avenueWidth) continue;
+    // Alongside one block, so that it never spills into a crossing.
+    const length = Math.min(10, size / 2 - 4);
+    const t = rng.pick(alongX ? ax.starts : az.starts) + size / 2 + rng.range(-1, 1);
+    const x = alongX ? t : street.center;
+    const z = alongX ? street.center : t;
+    if (theRiver && z > theRiver.z0 - 30 && z < theRiver.z1 + 30) continue;
+    if (z > az.span / 2 - 60) continue;
+    if (hazards.some((h) => Math.hypot(h.x - x, h.z - z) < 36)) continue;
+    if (jobs.some((j) => Math.hypot(j.start.x - x, j.start.z - z) < 40 || Math.hypot(j.socket.x - x, j.socket.z - z) < 40)) continue;
+    if (sweeps.some((w) => Math.hypot(w.x - x, w.z - z) < 120)) continue;
+    const half = street.width / 2 - 1.5;
+    const sweep: SweepSpec = { x, z, hx: alongX ? length : half, hz: alongX ? half : length, color: JOB_COLORS[(jobs.length + sweeps.length) % JOB_COLORS.length] };
+    sweeps.push(sweep);
+    addRubble(sweep, props, rng);
+  }
+
   const main = boulevard ?? ax.streets.find((s) => s.width === cfg.avenueWidth) ?? { center: 0, width: cfg.avenueWidth };
   return {
     sizeX: ax.span + 2 * perimeter,
@@ -571,6 +665,7 @@ export function generateCity(cfg: Tuning['city']): CityLayout {
     props,
     hazards,
     jobs,
+    sweeps,
     river: theRiver,
     // Just off the centre line, so the kaiju doesn't start on top of the boulevard's trees.
     spawn: { x: main.center + (boulevard ? boulevard.width / 4 + 0.75 : 0), z: az.span / 2 + perimeter * 0.5, yaw: Math.PI },

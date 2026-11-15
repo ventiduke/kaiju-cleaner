@@ -69,6 +69,7 @@ export class Nose implements System {
     if (this.tickle >= 1 && up) {
       this.windup = t.windup;
       const p = k.body.translation();
+      k.startle(t.windup);
       this.sim.emit('sneezeWindup', { x: p.x, y: p.y, z: p.z });
       return;
     }

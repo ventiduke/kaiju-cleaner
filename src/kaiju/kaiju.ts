@@ -29,6 +29,22 @@ function smooth(t: number): number {
 const BOW_PITCH = 0.95;
 const BOW_SECONDS = 1.9;
 
+/** Adds a rim of sky-coloured light round the edges of a shape, so it stands out against a dark street. */
+function rimLit<T extends THREE.MeshLambertMaterial>(material: T): T {
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <emissivemap_fragment>',
+      /* glsl */ `#include <emissivemap_fragment>
+      {
+        float rim = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.5);
+        totalEmissiveRadiance += diffuseColor.rgb * rim * 0.55 + vec3(0.25, 0.3, 0.4) * rim * 0.25;
+      }`,
+    );
+  };
+  material.customProgramCacheKey = () => 'rim';
+  return material;
+}
+
 /**
  * One kaiju: a top-heavy capsule floating on a hover spring, kept upright by a
  * deliberately under-damped balance controller. The wobble is the game.
@@ -93,6 +109,11 @@ export class Kaiju implements System {
   readonly left = new THREE.Vector3(1, 0, 0);
   private ghost: THREE.MeshBasicMaterial | null = null;
   private arms: THREE.Mesh[] = [];
+  private jaw!: THREE.Mesh;
+  private face: { eye: THREE.Mesh; pupil: THREE.Mesh; brow: THREE.Mesh; side: number; pupilX: number; pupilY: number; browY: number }[] = [];
+  private blink = 2;
+  private mouth = 0;
+  private worry = 0;
   private readonly legContext: LegContext;
 
   constructor(
@@ -126,8 +147,8 @@ export class Kaiju implements System {
     );
     chunks?.addHitter(this.body, k.bodyHalfHeight + k.bodyRadius);
 
-    const skin = new THREE.MeshLambertMaterial({ color: 0x4fa37a });
-    const dark = new THREE.MeshLambertMaterial({ color: 0x3c8463 });
+    const skin = rimLit(new THREE.MeshLambertMaterial({ color: 0x4fa37a }));
+    const dark = rimLit(new THREE.MeshLambertMaterial({ color: 0x3c8463 }));
     this.buildVisual(skin, dark);
     sim.track(this.body, this.visual);
 
@@ -178,10 +199,17 @@ export class Kaiju implements System {
     const headY = h + r * 0.55;
     add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.92, 14, 10), skin), 0, headY, r * 0.45);
     add(new THREE.Mesh(new THREE.BoxGeometry(r * 1.15, r * 0.7, r * 1.2), skin), 0, headY - r * 0.25, r * 1.15);
-    add(new THREE.Mesh(new THREE.BoxGeometry(r * 1.0, r * 0.16, r * 1.0), belly), 0, headY - r * 0.62, r * 1.2);
+    // The lower jaw hangs from a hinge at the back of the snout, so it can drop open.
+    const jawGeometry = new THREE.BoxGeometry(r * 1.0, r * 0.16, r * 1.0);
+    jawGeometry.translate(0, 0, r * 0.5);
+    this.jaw = add(new THREE.Mesh(jawGeometry, belly), 0, headY - r * 0.62, r * 0.7);
+    add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.9, r * 0.2, r * 0.9), new THREE.MeshLambertMaterial({ color: 0x7a2e3a })), 0, headY - r * 0.5, r * 1.15);
     for (const s of [-1, 1]) {
-      add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.27, 10, 8), white), s * r * 0.5, headY + r * 0.42, r * 0.95);
-      add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.13, 8, 6), black), s * r * 0.5, headY + r * 0.44, r * 1.19);
+      const eye = add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.27, 12, 10), white), s * r * 0.5, headY + r * 0.42, r * 0.95);
+      const pupil = add(new THREE.Mesh(new THREE.SphereGeometry(r * 0.13, 8, 6), black), s * r * 0.5, headY + r * 0.44, r * 1.19);
+      // A heavy brow over each eye: most of what its face can say.
+      const brow = add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.5, r * 0.11, r * 0.2), dark), s * r * 0.5, headY + r * 0.74, r * 1.08);
+      this.face.push({ eye, pupil, brow, side: s, pupilX: pupil.position.x, pupilY: pupil.position.y, browY: brow.position.y });
       add(new THREE.Mesh(new THREE.BoxGeometry(r * 0.09, r * 0.09, r * 0.09), black), s * r * 0.25, headY - r * 0.05, r * 1.76);
       // Stubby arms.
       const armGeometry = new THREE.CapsuleGeometry(r * 0.22, r * 0.7, 4, 8);
@@ -202,6 +230,35 @@ export class Kaiju implements System {
       );
       plate.rotation.x = -Math.PI / 2 + 0.35;
     }
+
+    // Site safety: a hard hat (several sizes too small) and a hi-vis vest that will not close over the belly.
+    const hatYellow = new THREE.MeshLambertMaterial({ color: 0xffc928 });
+    const hat = new THREE.Group();
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(r * 0.6, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), hatYellow);
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.78, r * 0.78, r * 0.07, 16), hatYellow);
+    brim.position.z = r * 0.12;
+    const ridge = new THREE.Mesh(new THREE.BoxGeometry(r * 0.14, r * 0.12, r * 1.1), hatYellow);
+    ridge.position.y = r * 0.56;
+    ridge.scale.y = 0.6;
+    hat.add(dome, brim, ridge);
+    hat.position.set(0, headY + r * 0.78, r * 0.4);
+    hat.rotation.x = -0.12;
+    hat.traverse((o) => (o.castShadow = true));
+    this.visual.add(hat);
+
+    const vestOrange = new THREE.MeshLambertMaterial({ color: 0xff6a13, side: THREE.DoubleSide });
+    const stripe = new THREE.MeshLambertMaterial({ color: 0xf2f6d0, emissive: 0x5c5f3a, side: THREE.DoubleSide });
+    // Open at the front (the cylinder's seam is turned to face forward and left gaping).
+    const gap = 1.25;
+    const band = (radius: number, height: number, y: number, material: THREE.Material) => {
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 20, 1, true, gap / 2, Math.PI * 2 - gap), material);
+      mesh.position.y = y;
+      mesh.castShadow = true;
+      this.visual.add(mesh);
+    };
+    band(r * 1.035, h * 1.0, h * 0.3, vestOrange);
+    band(r * 1.05, h * 0.09, h * 0.52, stripe);
+    band(r * 1.05, h * 0.09, h * 0.05, stripe);
   }
 
   /**
@@ -595,7 +652,7 @@ export class Kaiju implements System {
     this.sim.emit('kaijuFall', { x: t.x, y: t.y, z: t.z });
   }
 
-  render(alpha: number): void {
+  render(alpha: number, frameDt = 1 / 60): void {
     this.legs.render(alpha, this.forward);
     if (this.ghost) this.ghost.visible = this.sim.tuning.camera.silhouette;
     // Down on all fours the arms become front legs: swung to point at the ground and stretched to reach it.
@@ -605,7 +662,42 @@ export class Kaiju implements System {
       arm.rotation.x = -1.0 - c * 0.57;
       arm.scale.set(1 + c * 0.7, 1 + c * 0.12, 1 + c * 0.7);
     }
+    this.expression(frameDt);
   }
+
+  /** Its face: brows that knit when things go wrong, eyes that widen and dart, a jaw that drops. */
+  private expression(dt: number): void {
+    const alarmed = this.state === 'falling' || this.state === 'stumble';
+    const down = this.state === 'fallen' || this.state === 'getup';
+    const input = this.input;
+    const ease = (from: number, to: number, rate: number) => from + (to - from) * Math.min(1, dt * rate);
+    // Worry: 1 knits the brows up in the middle; -1 pulls them down flat (concentrating, or cross with itself).
+    this.worry = ease(this.worry, alarmed ? 1 : down ? -0.6 : this.carrying || this.mode === 'tiptoe' ? -0.45 : this.bow > 0 ? 0.7 : 0, 9);
+    this.mouth = ease(this.mouth, this.state === 'falling' ? 1 : alarmed ? 0.55 : this.gasp > 0 ? 0.9 : 0.04, 12);
+    this.gasp = Math.max(0, this.gasp - dt);
+    this.jaw.rotation.x = this.mouth * 0.55;
+    this.blink -= dt;
+    if (this.blink < -0.13) this.blink = 1.5 + ((this.sim.tick * 7919) % 300) / 100;
+    const shut = down ? 0.25 : this.blink < 0 && !alarmed ? 0.08 : this.bow > 0.5 ? 0.15 : 1;
+    const wide = 1 + 0.3 * Math.max(0, this.worry);
+    for (const f of this.face) {
+      f.eye.scale.set(wide, wide * shut, wide);
+      f.pupil.visible = shut > 0.3;
+      // Pupils lead a turn, and shrink to dots in alarm.
+      const size = alarmed ? 0.6 : 1;
+      f.pupil.scale.setScalar(size);
+      f.pupil.position.x = ease(f.pupil.position.x, f.pupilX - input.turn * 0.09 * this.sim.tuning.kaiju.bodyRadius, 10);
+      f.pupil.position.y = ease(f.pupil.position.y, f.pupilY - (this.carrying ? 0.07 : 0) * this.sim.tuning.kaiju.bodyRadius, 10);
+      f.brow.rotation.z = f.side * this.worry * 0.5;
+      f.brow.position.y = f.browY + (this.worry > 0 ? 0.1 : 0.04) * this.worry * this.sim.tuning.kaiju.bodyRadius;
+    }
+  }
+
+  /** Makes it gape for a moment (a sneeze coming, a nasty surprise). */
+  startle(seconds = 0.6): void {
+    this.gasp = seconds;
+  }
+  private gasp = 0;
 
   position(target = new THREE.Vector3()): THREE.Vector3 {
     const t = this.body.translation();

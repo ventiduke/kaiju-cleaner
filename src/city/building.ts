@@ -1,4 +1,5 @@
 import { Rng } from '../core/rng';
+import { Face } from '../gfx/facade';
 import type { BuildingSpec, Tier } from './cityGen';
 
 /** How a building is put together. */
@@ -12,6 +13,8 @@ export interface BoxSpec {
   hx: number;
   hy: number;
   hz: number;
+  /** Which of its faces are outside walls of the building (bits of `Face`). */
+  face?: number;
 }
 
 /**
@@ -185,9 +188,23 @@ export function buildingChunks(spec: BuildingSpec, floorHeight: number): ChunkSp
   const drafts: Draft[] = [];
   let base = 0;
   for (const tier of spec.tiers) {
+    const first = drafts.length;
     if (style === 'brick') brickTier(spec, tier, base, floorHeight, drafts);
     else if (style === 'puzzle') puzzleTier(spec, tier, base, floorHeight, rng, drafts);
     else gridTier(spec, tier, base, floorHeight, style === 'fine' ? 2 : 1, drafts);
+    // Mark which faces of each new box are on the outside of this tier.
+    const e = 0.01;
+    for (let k = first; k < drafts.length; k++) {
+      for (const b of drafts[k].boxes) {
+        b.face =
+          (b.x + b.hx >= spec.x + tier.w / 2 - e ? Face.PX : 0) |
+          (b.x - b.hx <= spec.x - tier.w / 2 + e ? Face.NX : 0) |
+          (b.z + b.hz >= spec.z + tier.d / 2 - e ? Face.PZ : 0) |
+          (b.z - b.hz <= spec.z - tier.d / 2 + e ? Face.NZ : 0) |
+          (b.y + b.hy >= floorHeight * (base + tier.floors) - e ? Face.ROOF : 0) |
+          (b.y - b.hy <= e ? Face.STREET : 0);
+      }
+    }
     base += tier.floors;
   }
 
