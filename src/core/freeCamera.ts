@@ -49,7 +49,7 @@ export class FreeCamera {
     });
     dom.addEventListener('pointerup', (e) => {
       // A press that barely moves is a click; so is a quick one, even with a hand that is busy steering.
-      const quick = down && performance.now() - down.at < 220 && down.moved < 40;
+      const quick = down && performance.now() - down.at < 220 && down.moved < 14;
       if (down && (down.moved < 5 || quick) && down.button === 0 && this.onClick) {
         const r = dom.getBoundingClientRect();
         this.onClick(
