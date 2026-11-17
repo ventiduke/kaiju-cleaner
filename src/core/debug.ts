@@ -100,6 +100,7 @@ export function buildTuningGui(tuning: Tuning, opts: PanelOptions): GUI {
     turnFast: 'turning: at a sprint',
     grip: 'grip  (less: more drift)',
     lean: 'lean into turns',
+    aimTurn: 'carrying: how fast it turns to the view',
     jump: 'jump height  (m)',
     slideBoost: 'slide: kick at the start',
     slideFriction: 'slide: how fast it slows',

@@ -336,6 +336,8 @@ export const codeDefaults = {
     turnFast: 3.6,
     /** How long a turn takes to build and to die away (s): the weight in its steering. */
     turnEase: 0.07,
+    /** With something in its hands, how fast it swings round to face where the player is looking (rad/s). */
+    aimTurn: 4.5,
     /** Sideways acceleration its feet can hold (m/s^2). Turned harder than this at speed, it drifts. */
     grip: 90,
     /** How far it leans into turns and with its speed (1: as drawn; 0: bolt upright). */
@@ -366,7 +368,11 @@ export const codeDefaults = {
     sensitivity: 1,
   },
   /** Which shift this is: each one is a new city. */
-  game: { shift: 1 },
+  game: {
+    shift: 1,
+    /** How hard the city is: 0 as it always was, 1 and 2 with the streets pulled in (see `DIFFICULTY`). */
+    difficulty: 0,
+  },
   /** How it looks. None of this touches the simulation. */
   gfx: {
     /** Time of day, 6 to 22. T steps through the good ones. */
@@ -467,6 +473,29 @@ export const STYLES: { name: string; blurb: string; feel: Tuning['feel'] | null;
     move: { jump: 0, slide: 0, relative: 0, controller: 1 },
   },
 ];
+
+/**
+ * How hard the city is. The streets are what make it hard: the same jobs in the same places,
+ * with less room to carry them through. Each level scales the boulevard, the avenues and the
+ * side streets (the side streets most: "some of the streets could be narrower").
+ */
+export const DIFFICULTY: { name: string; blurb: string; streets: [number, number, number] }[] = [
+  { name: 'Wide streets', blurb: 'room to swing a tail', streets: [1, 1, 1] },
+  { name: 'Tight streets', blurb: 'avenues and side streets pulled in', streets: [0.86, 0.74, 0.64] },
+  { name: 'Back alleys', blurb: 'side streets barely wider than what you are carrying', streets: [0.72, 0.6, 0.52] },
+];
+
+/** The city settings at the difficulty chosen: the shipped ones with the streets narrowed (never to less than the kaiju can get down). */
+export function cityFor(t: Tuning): Tuning['city'] {
+  const level = DIFFICULTY[Math.round(t.game.difficulty)] ?? DIFFICULTY[0];
+  const least = t.kaiju.bodyRadius * 2 + 6;
+  return {
+    ...t.city,
+    boulevardWidth: Math.max(least, Math.round(t.city.boulevardWidth * level.streets[0])),
+    avenueWidth: Math.max(least, Math.round(t.city.avenueWidth * level.streets[1])),
+    sideStreetWidth: Math.max(least, Math.round(t.city.sideStreetWidth * level.streets[2])),
+  };
+}
 
 /** The giant the proportions are written for: the panel's size dial scales these. */
 export const GIANT = { bodyRadius: 6.9, bodyHalfHeight: 8.1, legLength: 9.3, tailLength: 34, tailBase: 3.8, tailTip: 1.3 };
@@ -683,6 +712,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     turn: [1, 30, 0.5],
     turnFast: [0.5, 15, 0.1],
     turnEase: [0.01, 0.4, 0.01],
+    aimTurn: [0.5, 15, 0.1],
     grip: [10, 300, 5],
     lean: [0, 2, 0.05],
     airControl: [0, 1, 0.05],
@@ -700,7 +730,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     camFollow: [0, 3, 0.05],
     sensitivity: [0.2, 3, 0.05],
   },
-  game: { shift: [1, 99, 1] },
+  game: { shift: [1, 99, 1], difficulty: [0, 2, 1] },
   gfx: {
     hour: [6, 22, 0.1],
     bloom: [0, 1.5, 0.02],
@@ -722,6 +752,7 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
 /** Keys that only take effect when the scene is rebuilt. */
 export const restartKeys: { [G in TuningGroup]?: readonly string[] | 'all' } = {
   city: 'all',
+  game: ['difficulty'],
   citizens: 'all',
   kaiju: ['size', 'bodyRadius', 'bodyHalfHeight', 'legLength', 'density'],
   tail: ['wrecks', 'segments', 'length', 'baseRadius', 'tipRadius', 'density'],

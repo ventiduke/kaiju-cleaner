@@ -1,4 +1,4 @@
-// npm run playbot [-- <scene> <careful|reckless|idle> <how many seeds>]
+// npm run playbot [-- <scene> <careful|reckless|idle> <how many seeds> <difficulty 0-2>]
 import { spawnSync } from 'node:child_process';
 
 const r = spawnSync('npx', ['vitest', 'run', '--config', 'vitest.play.config.ts', '--disable-console-intercept', '--reporter=dot'], {

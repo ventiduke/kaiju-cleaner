@@ -38,7 +38,8 @@ Scenes are picked with a URL parameter:
 | Crouch, for getting under skybridges and stepping lightly. On the move: a slide | C (toggles) | B |
 | Take hold of a repair piece; let go of it | Click (or E); click again | X or right bumper |
 | Catch a slipping load, or heave a toppled one, on the bar | Space, as the marker crosses the green | A |
-| Plant your feet while holding: a wider green, and the view turns you on the spot | C | B |
+| Line a held piece up: the kaiju faces where you look, and steps forward, back and sideways | Mouse; W A S D | Right stick; left stick |
+| Plant your feet while holding: a wider green | C | B |
 | Bow (say sorry to the people you just frightened) | V | Left bumper |
 | The older, balancing styles (Lumbering, Steady, Wild), and back to the Runner | 1 / 2 / 3, and 4 | |
 | In the balancing styles: tiptoe; crawl; steer by the screen or like a tank | Hold Shift; hold C; X | |
@@ -78,7 +79,8 @@ and the kaiju takes a firm hold again; dead centre is a better hold still. A pre
 fumble and costs grip. Do nothing and the load is on the ground in about three seconds. The green is wider
 standing still, and widest with feet planted (C).
 
-Carried pieces are let go over their marker. The piece squares itself up as it gets there, so only two
+While it is carrying, the kaiju faces where you are looking, so the mouse swings the load round and W A S D
+step it forward, back and sideways without turning away. Carried pieces are let go over their marker. The piece squares itself up as it gets there, so only two
 things decide the fit: how close to the mark it is, and whether the hold is firm. Within a metre is a
 **perfect fit**, within about two and a half is straight, anything else in reach is crooked (and visibly
 so), and a slipping load always goes in crooked. The label above the load says which it would be before

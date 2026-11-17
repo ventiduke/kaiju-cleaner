@@ -13,6 +13,11 @@
       #toast { position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%); color: #fff; font-size: 13px; background: rgba(20, 24, 32, 0.85); padding: 8px 14px; border-radius: 6px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
       #note { position: fixed; left: 50%; top: 38%; transform: translateX(-50%); width: min(640px, 80vw); display: none; background: rgba(20, 24, 32, 0.92); padding: 14px; border-radius: 8px; color: #fff; font-size: 13px; }
       #note input { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px; font: inherit; font-size: 14px; border-radius: 4px; border: 1px solid #556; background: #111; color: #fff; }
+      .gh-levels { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; font-size: 13px; }
+      .gh-levels b { opacity: 0.75; margin-right: 4px; }
+      .gh-level { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.35); background: transparent; color: #fff; cursor: pointer; }
+      .gh-level:hover { background: rgba(255, 255, 255, 0.12); }
+      .gh-level.gh-on { background: #ffd23f; border-color: #ffd23f; color: #1b1e26; font-weight: bold; cursor: default; }
       /* The grip bar: placed by the game just above whatever the kaiju is holding. */
       #grip { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -100%); display: none; pointer-events: none; text-align: center; color: #fff; }
       #grip canvas { display: block; }

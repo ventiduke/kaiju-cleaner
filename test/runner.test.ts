@@ -415,8 +415,46 @@ describe('the runner', () => {
     g.sim.run(120);
     expect(k.speed).toBeLessThan(g.sim.tuning.runner.speed * g.sim.tuning.carry.speed * 1.05);
     expect(k.speed).toBeGreaterThan(g.sim.tuning.runner.speed * g.sim.tuning.carry.speed * 0.9);
-    // C plants its feet: it stays upright (no crawl), stops, and turns on the spot to face where the view points.
+    // The mouse aims it. Standing, turning the view turns the kaiju, and the load swings round with it...
     inp.sprint = false;
+    inp.thrust = 0;
+    g.sim.run(60);
+    expect(k.aiming).toBe(true);
+    const stood = k.position().clone();
+    inp.look = -0.9;
+    const swung = g.sim.stepUntil(() => Math.abs(wrap(k.yaw - -0.9)) < 0.05, 3);
+    expect(swung.met).toBe(true);
+    // (Heavily: a quarter turn takes a moment, not an instant.)
+    expect(swung.seconds).toBeGreaterThan(0.12);
+    expect(k.position().distanceTo(stood)).toBeLessThan(1);
+    g.sim.run(45);
+    const load = piece.body.translation();
+    expect(Math.hypot(load.x - (k.position().x + k.forward.x * reach), load.z - (k.position().z + k.forward.z * reach))).toBeLessThan(1);
+    // ...and the keys step it about without turning it: A is a sidestep to its left, S a step back.
+    // (A fresh hold first: this is about its feet, not its grip.)
+    pieces.grip = 1;
+    pieces.slipping = false;
+    const facing = k.yaw;
+    const left = k.left.clone();
+    const ahead = k.forward.clone();
+    inp.strafe = 1;
+    g.sim.run(60);
+    let moved = k.position().clone().sub(stood);
+    expect(moved.dot(left)).toBeGreaterThan(4);
+    expect(Math.abs(moved.dot(ahead))).toBeLessThan(1.5);
+    expect(Math.abs(wrap(k.yaw - facing))).toBeLessThan(0.05);
+    inp.strafe = 0;
+    inp.thrust = -1;
+    g.sim.run(60);
+    moved = k.position().clone().sub(stood);
+    expect(moved.dot(ahead)).toBeLessThan(-3);
+    expect(Math.abs(wrap(k.yaw - facing))).toBeLessThan(0.05);
+    inp.thrust = 0;
+    g.sim.run(40);
+    // C plants its feet: it stays upright (no crawl), will not step, and still turns to the view.
+    pieces.grip = 1;
+    pieces.slipping = false;
+    expect(pieces.held).toBe(piece);
     inp.crouch = true;
     g.sim.run(60);
     expect(k.slides).toBe(0);

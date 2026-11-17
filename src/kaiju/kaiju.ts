@@ -139,6 +139,12 @@ export class Kaiju implements System {
   carrying = 0;
   /** True while its feet are planted for a lift: it will not walk or turn. */
   planted = false;
+  /**
+   * True while it is carrying something about (set by the repair pieces). The Runner then keeps
+   * its nose, and so the load, pointed where the player is looking, and steps forward, back and
+   * sideways under it: the mouse lines the piece up.
+   */
+  aiming = false;
   /** In the air from a leap; how long a belly-slide has left (s); and how many of each it has done. */
   airborne = false;
   sliding = 0;
@@ -971,8 +977,13 @@ export class Kaiju implements System {
     // (With its hands full the crouch key plants its feet instead: it stays standing, and turns
     // on the spot to face the way the player is looking, to line a piece up.)
     const low = (input.crouch && !this.carrying) || sliding;
-    if (!sliding && push > 0.05) turnTo = wish;
-    else if (this.planted && this.carrying && input.crouch) turnTo = input.look;
+    // Carrying, it faces where the player is looking, whatever its feet are doing: "moving the
+    // mouse should adjust the character aim... to line things up". Heavily, though: it is a load.
+    const aiming = this.aiming && this.carrying > 0 && !bowing;
+    if (aiming) {
+      turnTo = input.look;
+      maxTurn = Math.min(maxTurn, r.aimTurn);
+    } else if (!sliding && push > 0.05) turnTo = wish;
 
     // --- Facing: it swings toward where it is going, with a moment to get the turn started and to end it.
     const off = Math.atan2(Math.sin(turnTo - this.yaw), Math.cos(turnTo - this.yaw));
@@ -982,7 +993,24 @@ export class Kaiju implements System {
     this.forward.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     this.left.set(this.forward.z, 0, -this.forward.x);
 
-    if (!sliding) {
+    if (aiming) {
+      // --- Stepping about under a load: the keys are still directions on the screen, but it
+      // goes that way without turning to face it (forward freely, sideways and back at a shuffle).
+      const top = r.speed * (1 - 0.45 * this.wading) * (1 - (1 - t.carry.speed) * this.carrying);
+      const toward = Math.cos(wish - this.yaw);
+      const pace = top * push * (0.6 + 0.4 * Math.max(0, toward));
+      const tx = push > 0.05 ? Math.sin(wish) * pace : 0;
+      const tz = push > 0.05 ? Math.cos(wish) * pace : 0;
+      const before = vx * this.forward.x + vz * this.forward.z;
+      const rate = (r.speed / Math.max(0.05, push > 0.05 ? r.accel : r.stop)) * traction;
+      const dx = tx - vx;
+      const dz = tz - vz;
+      const gap = Math.hypot(dx, dz);
+      const step = gap > rate * dt ? (rate * dt) / gap : 1;
+      vx += dx * step;
+      vz += dz * step;
+      forwardAccel = (vx * this.forward.x + vz * this.forward.z - before) / dt;
+    } else if (!sliding) {
       // --- Speed, in its own frame: along its nose, and across it.
       let u = vx * this.forward.x + vz * this.forward.z;
       let s = vx * this.left.x + vz * this.left.z;

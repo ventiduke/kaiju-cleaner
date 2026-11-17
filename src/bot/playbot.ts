@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cityFor } from '../core/tuning';
 import type { Approval } from '../city/approval';
 import type { CityLayout } from '../city/cityGen';
 import type { Damage } from '../city/damage';
@@ -103,7 +104,7 @@ export class PlayBot {
     this.layout = sim.parts.layout as CityLayout;
     this.xs = this.layout.streets.filter((s) => s.along === 'z').map((s) => s.center);
     this.zs = this.layout.streets.filter((s) => s.along === 'x').map((s) => s.center);
-    this.wideXs = this.layout.streets.filter((s) => s.along === 'z' && s.width >= sim.tuning.city.avenueWidth).map((s) => s.center);
+    this.wideXs = this.layout.streets.filter((s) => s.along === 'z' && s.width >= cityFor(sim.tuning).avenueWidth).map((s) => s.center);
     for (const piece of this.pieces?.pieces ?? []) this.jobs.push({ name: piece.job.name ?? piece.job.kind, done: false, sloppy: false, seconds: null, tries: 0, gaveUp: false });
     for (let i = 0; i < (this.sweeps?.sweeps.length ?? 0); i++) this.jobs.push({ name: 'blocked road', done: false, sloppy: false, seconds: null, tries: 0, gaveUp: false });
     this.last.copy(this.kaiju.position());

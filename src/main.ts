@@ -408,7 +408,7 @@ async function boot(): Promise<void> {
     'The Runner (key 4, the default): the mouse turns the view (click or Tab to capture it, Esc or Tab to free it), W A S D run that way on the screen, Shift sprints, Space jumps (hold for height), C crouches; C on the move slides   V: bow',
     '1 / 2 / 3: the balancing styles (Lumbering, Steady, Wild): W/A/S/D move   Shift: tiptoe   C: crawl   X: steer by the screen, or like a tank',
     'CLICK (or E) by a marked piece: take hold; click again over its marker to put it back. When it slips, a bar comes up: SPACE as the marker crosses the green.',
-    'C while holding plants your feet: a wider green, and the mouse turns you on the spot to line it up.',
+    'While holding, the kaiju faces where you look: line the piece up with the mouse; W A S D step it forward, back and sideways. C plants your feet (a wider green).',
     'blocked road: shove, kick, tail-sweep or sneeze the rubble off it.      going over? steer into the fall to save it',
     'mouse drag: look around   wheel: zoom   double-click: reset view   Q/Z: swing   T: time of day',
     'N: note for Claude   M: sound   B: throw ball   \\: free camera   `: tuning and feedback panel   H: hide this',
@@ -517,6 +517,11 @@ async function boot(): Promise<void> {
             return gate ? [{ name: gate.name, color: gate.color, done: false, sloppy: false, active: true, x: gate.x, z: gate.z, note: 'next gate' }] : [];
           },
           begin: () => (loop.paused = false),
+          difficulty: (level) => {
+            tuning.game.difficulty = level;
+            stashForRestart(tuning);
+            location.reload();
+          },
           restart: (next) => {
             if (next) {
               tuning.city.seed += 1;

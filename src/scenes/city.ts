@@ -6,6 +6,7 @@ import type { Look } from '../gfx/look';
 import { Approval } from '../city/approval';
 import { WaterMains } from '../city/mains';
 import * as THREE from 'three';
+import { cityFor } from '../core/tuning';
 import { generateCity, reachFloors, skybridgeFloor, type CityLayout } from '../city/cityGen';
 import { Damage } from '../city/damage';
 import { Citizens } from '../city/citizens';
@@ -234,7 +235,7 @@ export function populate(sim: Sim, layout: CityLayout): void {
 }
 
 export function buildCity(sim: Sim): void {
-  const layout = generateCity(sim.tuning.city, skybridgeFloor(sim.tuning), reachFloors(sim.tuning));
+  const layout = generateCity(cityFor(sim.tuning), skybridgeFloor(sim.tuning), reachFloors(sim.tuning));
   addEnvironment(sim, Math.max(300, Math.max(layout.sizeX, layout.sizeZ) * 1.25), layout.river);
   addStreets(sim, layout);
   addOutskirts(sim, sim.parts.look as Look, layout.sizeX, layout.sizeZ, layout.river);

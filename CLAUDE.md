@@ -8,7 +8,7 @@ is checked by tests, a scripted player, and headless screenshots. `README.md` sa
 ```sh
 npm run typecheck        npm test                 npm run build && npm run smoke
 npm run feel [-- file]   # handling numbers; with a session file, the playtester's notes and a replay
-npm run playbot [-- <scene> <careful|reckless|idle> <seeds>]   # a scripted player plays a shift
+npm run playbot [-- <scene> <careful|reckless|idle> <seeds> <difficulty 0-2>]   # a scripted player plays a shift
 npm run course [-- [run] <style 0-3> <careful|flatout>]         # a bot drives the test course (or the runner's) on each movement style
 node scripts/shots.mjs '<json>'   # named-state screenshots, each with a state dump (needs a build)
 node scripts/strip.mjs <name> <scene> '<setup>' [frames] [ticks] [view]   # a filmstrip: a movement, frame by frame

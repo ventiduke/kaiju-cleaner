@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { cityFor, DIFFICULTY, makeTuning } from '../src/core/tuning';
 import type { Approval } from '../src/city/approval';
 import { ChunkState } from '../src/city/destruction';
 import type { Pieces } from '../src/city/pieces';
@@ -147,5 +148,36 @@ describe('the city job list', () => {
     g.sim.run(120);
     expect(g.awakeOthers()).toBe(0);
     expect(approval.value).toBe(50);
+  });
+});
+
+describe('difficulty', () => {
+  it('is the same city with the streets pulled in, the side streets most, and never too narrow to walk', async () => {
+    const shipped = makeTuning();
+    const widths = DIFFICULTY.map((_, level) => {
+      const t = makeTuning({ game: { difficulty: level } });
+      const c = cityFor(t);
+      return [c.boulevardWidth, c.avenueWidth, c.sideStreetWidth];
+    });
+    expect(widths[0]).toEqual([shipped.city.boulevardWidth, shipped.city.avenueWidth, shipped.city.sideStreetWidth]);
+    for (let level = 1; level < widths.length; level++) {
+      for (let kind = 0; kind < 3; kind++) expect(widths[level][kind]).toBeLessThan(widths[level - 1][kind]);
+      // The side streets lose the most.
+      expect(widths[level][2] / widths[0][2]).toBeLessThan(widths[level][0] / widths[0][0]);
+      // A kaiju can still get down the narrowest of them with room either side.
+      expect(widths[level][2]).toBeGreaterThanOrEqual(shipped.kaiju.bodyRadius * 2 + 6);
+    }
+    // The hardest city is really built that way, with every job it had before.
+    // (At the size and in the streets it ships with: the tests' giant would not fit down them.)
+    const asShipped = { kaiju: shipped.kaiju, city: shipped.city };
+    const easy = await makeGame('city', { ...asShipped, game: { difficulty: 0 } });
+    const hard = await makeGame('city', { ...asShipped, game: { difficulty: 2 } });
+    const narrowest = (g: typeof easy) => Math.min(...g.layout.streets.map((s) => s.width));
+    expect(narrowest(hard)).toBeLessThan(narrowest(easy) * 0.7);
+    expect(hard.layout.jobs.length).toBe(easy.layout.jobs.length);
+    expect(hard.layout.sweeps.length).toBe(easy.layout.sweeps.length);
+    hard.sim.run(60);
+    expect(hard.awakeOthers()).toBe(0);
+    expect(hard.damage.chunksBroken).toBe(0);
   });
 });

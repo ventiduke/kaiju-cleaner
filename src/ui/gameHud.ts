@@ -6,6 +6,7 @@ import type { Damage } from '../city/damage';
 import type { JobBoard, JobView } from '../city/jobs';
 import type { Pieces } from '../city/pieces';
 import type { Tuning } from '../core/tuning';
+import { DIFFICULTY } from '../core/tuning';
 import type { Kaiju } from '../kaiju/kaiju';
 import type { Nose } from '../kaiju/nose';
 import type { Sim } from '../sim';
@@ -24,6 +25,8 @@ export interface HudDeps {
   nose?: Nose;
   /** Start the scene again: the same city, or the next shift's. */
   restart: (next: boolean) => void;
+  /** Rebuilds the city at another difficulty. */
+  difficulty: (level: number) => void;
   /** Called when the briefing is dismissed and play begins. */
   begin: () => void;
   /** Show the briefing first (off for automated runs). */
@@ -113,6 +116,16 @@ export class GameHud {
       todo.append(el('b', '', "Today's jobs"));
       for (const [name, n] of count) todo.append(el('span', '', `${n} × ${name}`));
       card.append(todo);
+      // How hard: the same jobs, with less room to carry them through.
+      const levels = el('div', 'gh-levels');
+      levels.append(el('b', '', 'Streets'));
+      DIFFICULTY.forEach((level, i) => {
+        const pick = el('button', i === this.d.tuning.game.difficulty ? 'gh-level gh-on' : 'gh-level', level.name);
+        pick.title = level.blurb;
+        if (i !== this.d.tuning.game.difficulty) pick.addEventListener('click', () => this.d.difficulty(i));
+        levels.append(pick);
+      });
+      card.append(levels);
       const keys = el('div', 'gh-keys');
       const rows: [string, string][] = [
         ['Mouse', 'look around (click the game to capture it; Esc or Tab frees it)'],
@@ -121,6 +134,7 @@ export class GameHud {
         ['Space', 'jump; and, carrying, catch a slipping load on the bar'],
         ['C', 'crouch (on the move: slide); carrying, plant your feet'],
         ['Click', 'take hold / let go'],
+        ['Mouse, carrying', 'aims the load: the kaiju faces where you look, and W A S D step it about'],
         ['V', 'bow (say sorry)'],
         ['T', 'time of day'],
       ];
@@ -152,7 +166,7 @@ export class GameHud {
     const score = approval.finished?.approval ?? approval.value;
     const stars = score >= 90 ? 5 : score >= 72 ? 4 : score >= 52 ? 3 : score >= 30 ? 2 : 1;
     this.card((card) => {
-      card.append(el('div', 'gh-kicker', `SHIFT ${tuning.game.shift} COMPLETE`), el('h1', '', `${Math.round(score)}% approval`));
+      card.append(el('div', 'gh-kicker', `SHIFT ${tuning.game.shift} COMPLETE  ·  ${(DIFFICULTY[tuning.game.difficulty] ?? DIFFICULTY[0]).name.toUpperCase()}`), el('h1', '', `${Math.round(score)}% approval`));
       card.append(el('div', 'gh-stars', '★'.repeat(stars) + '☆'.repeat(5 - stars)), el('p', 'gh-lede', verdict(score)));
       const grid = el('div', 'gh-stats');
       const rows: [string, string | number][] = [
@@ -392,7 +406,7 @@ export class GameHud {
     const runner = this.d.tuning.move.controller === 1;
     if (sim.time > 1.5 && this.say('move', runner ? 'W A S D run that way on the screen; click the game and the mouse looks. The arrows point at your jobs. Mind the buildings.' : 'W / S to walk, A / D to turn. The arrows point at your jobs. Mind the buildings.')) return;
     if (held?.state === 'raising' && this.say('raise', 'Heave! Press SPACE each time the marker crosses the green. Dead centre heaves hardest.')) return;
-    if (held && held.state !== 'raising' && this.say('carry', 'Got it. Carry it to the matching marker and click to set it down. It works loose as you go: when the bar comes up, SPACE as the marker crosses the green.')) return;
+    if (held && held.state !== 'raising' && this.say('carry', 'Got it. It points where you look now: line it up with the mouse, and click over the matching marker. When the bar comes up, SPACE as the marker crosses the green.')) return;
     if (!held && pieces?.nearest() && this.say('grab', 'Click (or E) to take hold of it.')) return;
     if (!runner && kaiju.stumbles > 0 && this.say('stumble', 'Wobbling? Ease off the turn. Going over? Steer into the fall to save it.')) return;
     if (nose && nose.tickle > 0.45 && this.say('dust', 'Dust up the nose: a sneeze is coming. Point it somewhere harmless (or at a blocked road).')) return;

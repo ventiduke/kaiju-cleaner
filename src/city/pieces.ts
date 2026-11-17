@@ -352,6 +352,7 @@ export class Pieces implements System {
     this.held = null;
     this.kaiju.carrying = 0;
     this.kaiju.planted = false;
+    this.kaiju.aiming = false;
     const firm = !this.slipping;
     this.slipping = false;
     this.over = null;
@@ -506,6 +507,8 @@ export class Pieces implements System {
     }
     this.parLeft = Math.max(0, piece.par - (this.sim.time - this.heldSince));
     k.carrying = 1;
+    // (Carried about, the kaiju aims it; stood up where it lies, it does not.)
+    k.aiming = piece.state !== 'raising';
     // Holding the crawl key with its hands full plants its feet instead: no walking, no turning,
     // and a much steadier load. Standing a piece up, it is planted throughout.
     const planted = piece.state === 'raising' || input.crouch;
