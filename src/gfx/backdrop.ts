@@ -39,7 +39,15 @@ export function addHills(scene: THREE.Scene, extent: number): void {
  * striped barrier, with a wall the kaiju cannot cross along it (only the kaiju: rubble and
  * the river pass straight through).
  */
-export function addOutskirts(sim: Sim, look: Look, sizeX: number, sizeZ: number, river: { z0: number; z1: number } | null): void {
+export function addOutskirts(
+  sim: Sim,
+  look: Look,
+  sizeX: number,
+  sizeZ: number,
+  river: { z0: number; z1: number } | null,
+  /** For a level with a lake front: true where there is open water, and so no town and no barrier posts. */
+  open: (x: number, z: number) => boolean = () => false,
+): void {
   const { scene, world, R } = sim;
   const rng = new Rng(4711);
   const hx = sizeX / 2 + 70;
@@ -56,6 +64,7 @@ export function addOutskirts(sim: Sim, look: Look, sizeX: number, sizeZ: number,
       const t = (i + 0.5) / n;
       const z = z0 + (z1 - z0) * t;
       if (river && z > river.z0 - 4 && z < river.z1 + 4) continue;
+      if (open(x0 + (x1 - x0) * t, z)) continue;
       p.set(x0 + (x1 - x0) * t, 1.6, z);
       q.setFromAxisAngle(UP, Math.atan2(x1 - x0, z1 - z0));
       posts.push(m.compose(p, q, s.set(1.2, 3.2, 8.6)).clone());
@@ -91,6 +100,7 @@ export function addOutskirts(sim: Sim, look: Look, sizeX: number, sizeZ: number,
       const out = Math.max(Math.abs(x) - hx, Math.abs(z) - hz);
       if (out < 55) continue;
       if (river && z > river.z0 - 26 && z < river.z1 + 26) continue;
+      if (open(x, z)) continue;
       const fade = 1 - out / (reach - Math.min(hx, hz));
       if (!rng.chance(0.3 + 0.55 * fade)) continue;
       const w = rng.range(16, 30);

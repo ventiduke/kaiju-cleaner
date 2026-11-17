@@ -44,4 +44,5 @@ npm run verify:live      # is the deployed site serving this commit, and does it
 `feedback/pins.json` holds what the playtester likes and dislikes, in their words. Read it before changing
 how anything feels. `feedback/feel-log.md` is the history of such changes.
 
-`research/gamedev-survey/` is where these practices came from.
+`research/gamedev-survey/` is where these practices came from. `research/chicago-map/` is the map data the
+Chicago level (`src/scenes/chicago.ts`) is drawn from, and how far each number can be trusted.

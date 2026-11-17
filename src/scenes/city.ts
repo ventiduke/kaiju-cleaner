@@ -7,7 +7,7 @@ import { Approval } from '../city/approval';
 import { WaterMains } from '../city/mains';
 import * as THREE from 'three';
 import { cityFor } from '../core/tuning';
-import { generateCity, reachFloors, skybridgeFloor, type CityLayout } from '../city/cityGen';
+import { generateCity, inWater, reachFloors, skybridgeFloor, type CityLayout, type Rect } from '../city/cityGen';
 import { Damage } from '../city/damage';
 import { Citizens } from '../city/citizens';
 import { ChunkField } from '../city/destruction';
@@ -21,21 +21,26 @@ import { Nose } from '../kaiju/nose';
 import type { Sim } from '../sim';
 import { addEnvironment } from './common';
 
-/** Asphalt, block slabs and lane dashes. Purely visual. */
-function addStreets(sim: Sim, layout: CityLayout): void {
+/**
+ * Asphalt, block slabs and lane dashes. Purely visual.
+ * @param paved for a level with water in odd places: the rectangles to lay asphalt on, instead of the whole site
+ */
+export function addStreets(sim: Sim, layout: CityLayout, paved?: Rect[]): void {
   // Asphalt under everything, in one piece or one per bank.
   const asphaltMaterial = new THREE.MeshLambertMaterial({ color: 0x4b4f58 });
   const r = layout.river;
-  const bands: [number, number][] = r
-    ? [
-        [-layout.sizeZ / 2, r.z0],
-        [r.z1, layout.sizeZ / 2],
-      ]
-    : [[-layout.sizeZ / 2, layout.sizeZ / 2]];
-  for (const [z0, z1] of bands) {
-    const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(layout.sizeX, z1 - z0), asphaltMaterial);
+  const bands: Rect[] =
+    paved ??
+    (r
+      ? [
+          { x: 0, z: (-layout.sizeZ / 2 + r.z0) / 2, w: layout.sizeX, d: r.z0 + layout.sizeZ / 2 },
+          { x: 0, z: (r.z1 + layout.sizeZ / 2) / 2, w: layout.sizeX, d: layout.sizeZ / 2 - r.z1 },
+        ]
+      : [{ x: 0, z: 0, w: layout.sizeX, d: layout.sizeZ }]);
+  for (const band of bands) {
+    const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(band.w, band.d), asphaltMaterial);
     asphalt.rotation.x = -Math.PI / 2;
-    asphalt.position.set(0, 0.03, (z0 + z1) / 2);
+    asphalt.position.set(band.x, 0.03, band.z);
     asphalt.receiveShadow = true;
     sim.scene.add(asphalt);
   }
@@ -67,6 +72,7 @@ function addStreets(sim: Sim, layout: CityLayout): void {
       // No lane markings on the water.
       if (r && s.along === 'z' && t > r.z0 - 2 && t < r.z1 + 2) continue;
       const pos = s.along === 'z' ? new THREE.Vector3(s.center, 0.05, t) : new THREE.Vector3(t, 0.05, s.center);
+      if (inWater(layout.waters, pos.x, pos.z, 2) || (paved && !paved.some((b) => Math.abs(pos.x - b.x) < b.w / 2 && Math.abs(pos.z - b.z) < b.d / 2))) continue;
       dashes.push(m.compose(pos, s.along === 'z' ? none : quarter, one).clone());
     }
   }

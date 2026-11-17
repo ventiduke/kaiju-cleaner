@@ -1,3 +1,4 @@
+import type { CityLayout } from './cityGen';
 import type { Citizens } from './citizens';
 import type { Damage } from './damage';
 import { JobBoard } from './jobs';
@@ -94,6 +95,21 @@ export class Approval implements System {
 
   readonly board: JobBoard;
 
+  /** What to say about a building that has just been knocked about: in a real city, some of them have names. */
+  private whose(at: { x: number; z: number }): string {
+    const landmarks = (this.sim.parts.layout as CityLayout | undefined)?.landmarks ?? [];
+    let near: string | null = null;
+    let best = 20;
+    for (const l of landmarks) {
+      const d = Math.hypot(l.x - at.x, l.z - at.z);
+      if (d < best) {
+        best = d;
+        near = l.name;
+      }
+    }
+    return near ? `That was the ${near.replace(/ \(.*\)$/, '').replace(/^The /, '')}!` : "That was somebody's building";
+  }
+
   /** What one job done well is worth this shift. */
   get perJob(): number {
     return WORTH.jobs / Math.max(1, this.board.total);
@@ -135,7 +151,7 @@ export class Approval implements System {
     tell((now.swept - last.swept) * each, 'Road clear!', this.at.job);
     tell(now.forgiven - last.forgiven, 'Apology accepted', this.at.kaiju);
     tell((now.squished - last.squished) * WORTH.squished, 'Squashed!', this.at.squish);
-    tell((now.buildings - last.buildings) * WORTH.building, 'That was somebody\'s building', this.at.damage);
+    tell((now.buildings - last.buildings) * WORTH.building, this.whose(this.at.damage), this.at.damage);
     this.last = now;
 
     if (!this.finished && this.board.allDone()) {

@@ -25,6 +25,8 @@ export interface HudDeps {
   nose?: Nose;
   /** Start the scene again: the same city, or the next shift's. */
   restart: (next: boolean) => void;
+  /** Which level this is: 'city' (made up afresh each shift) or 'chicago'. */
+  place: string;
   /** Rebuilds the city at another difficulty. */
   difficulty: (level: number) => void;
   /** Called when the briefing is dismissed and play begins. */
@@ -68,6 +70,9 @@ export class GameHud {
   private arrows: HTMLDivElement[] = [];
   private floaters: Floater[] = [];
   private coach = el('div', 'gh-coach');
+  /** In a level with real streets: which corner the kaiju is at. */
+  private where = el('div', 'gh-where');
+  private whereSaid = '';
   private overlay = el('div', 'gh-overlay');
   /** True while a card (the briefing, the report) is up: it needs the mouse. */
   get showing(): boolean {
@@ -83,7 +88,7 @@ export class GameHud {
 
   constructor(private d: HudDeps) {
     document.body.appendChild(this.root);
-    this.root.append(this.list, this.map, this.coach, this.overlay);
+    this.root.append(this.list, this.map, this.coach, this.where, this.overlay);
     this.map.width = this.map.height = 220;
     this.drawStaticMap();
     d.sim.on('approval', (e) => this.float(e.x, e.y, e.z, e.delta, e.why));
@@ -110,8 +115,17 @@ export class GameHud {
     const count = new Map<string, number>();
     for (const j of jobs) count.set(j.name, (count.get(j.name) ?? 0) + 1);
     this.card((card) => {
-      card.append(el('div', 'gh-kicker', `SHIFT ${this.d.tuning.game.shift}`), el('h1', '', 'Kaiju Cleaners'));
-      card.append(el('p', 'gh-lede', 'You are twenty metres tall, very sorry about the city, and here to help put it right. Try not to make it worse.'));
+      const chicago = this.d.place === 'chicago';
+      card.append(el('div', 'gh-kicker', `SHIFT ${this.d.tuning.game.shift}${chicago ? '  ·  CHICAGO' : ''}`), el('h1', '', 'Kaiju Cleaners'));
+      card.append(
+        el(
+          'p',
+          'gh-lede',
+          chicago
+            ? 'Chicago: the Loop, the river and the lake front, off a real map. You start on Michigan Avenue at Congress, looking north. The L is at chest height; go under it or pay for it.'
+            : 'You are twenty metres tall, very sorry about the city, and here to help put it right. Try not to make it worse.',
+        ),
+      );
       const todo = el('div', 'gh-todo');
       todo.append(el('b', '', "Today's jobs"));
       for (const [name, n] of count) todo.append(el('span', '', `${n} × ${name}`));
@@ -145,8 +159,11 @@ export class GameHud {
       test.addEventListener('click', () => (location.search = '?scene=course'));
       const run = el('button', 'gh-go gh-quiet', 'Runner course');
       run.addEventListener('click', () => (location.search = '?scene=run'));
+      // The other level.
+      const other = el('button', 'gh-go gh-quiet', chicago ? 'The first city' : 'New level: Chicago');
+      other.addEventListener('click', () => (location.search = chicago ? '?scene=city' : '?scene=chicago'));
       const row = el('div', 'gh-buttons');
-      row.append(go, test, run);
+      row.append(go, other, test, run);
       card.append(row, el('div', 'gh-small', 'Enter or click to start   ·   H: all controls   ·   ` : tuning and feedback tools'));
       const start = () => {
         if (this.playing) return;
@@ -184,7 +201,7 @@ export class GameHud {
       ];
       for (const [k, val] of rows) grid.append(el('span', '', k), el('b', '', String(val)));
       card.append(grid);
-      const next = el('button', 'gh-go', 'Next shift: a new city');
+      const next = el('button', 'gh-go', this.d.place === 'chicago' ? 'Next shift: Chicago again, rebuilt' : 'Next shift: a new city');
       const again = el('button', 'gh-go gh-quiet', 'Same city again');
       const keep = el('button', 'gh-go gh-quiet', 'Keep stomping about');
       next.addEventListener('click', () => this.d.restart(true));
@@ -253,6 +270,13 @@ export class GameHud {
     for (const b of L.blocks) rect(b.x, b.z, b.w, b.d, '#8a877f');
     for (const b of L.plazas) rect(b.x, b.z, b.w, b.d, '#c9c0aa');
     if (L.river) rect(0, (L.river.z0 + L.river.z1) / 2, 4000, L.river.z1 - L.river.z0, '#2f7fb0');
+    for (const w of L.waters ?? []) {
+      const x1 = Math.min(w.x1, 4000);
+      const x0 = Math.max(w.x0, -4000);
+      const z1 = Math.min(w.z1, 4000);
+      const z0 = Math.max(w.z0, -4000);
+      rect((x0 + x1) / 2, (z0 + z1) / 2, x1 - x0, z1 - z0, '#2f7fb0');
+    }
     for (const b of L.bridges) {
       if (b.kind !== 'road') continue;
       if (b.along === 'z') rect(b.center, (b.from + b.to) / 2, b.width, b.to - b.from, '#6a6e76');
@@ -416,7 +440,27 @@ export class GameHud {
   }
 
   /** Once per drawn frame. */
+  /** Names the nearest street corner, where the streets have names. */
+  private locate(): void {
+    const streets = this.d.layout.streets.filter((st) => st.name);
+    if (!streets.length) return;
+    const p = this.d.kaiju.visual.position;
+    const nearest = (along: 'x' | 'z', at: number) => streets.filter((st) => st.along === along).sort((a, b) => Math.abs(a.center - at) - Math.abs(b.center - at))[0];
+    const ns = nearest('z', p.x);
+    const ew = nearest('x', p.z);
+    if (!ns || !ew) return;
+    // On a street, it is that street "at" the cross street; in a block, the corner of the two.
+    const onNs = Math.abs(ns.center - p.x) < ns.width / 2;
+    const onEw = Math.abs(ew.center - p.z) < ew.width / 2;
+    const said = onEw && !onNs ? `${ew.name} at ${ns.name}` : `${ns.name} at ${ew.name}`;
+    if (said !== this.whereSaid) {
+      this.whereSaid = said;
+      this.where.textContent = said;
+    }
+  }
+
   frame(dt: number): void {
+    this.locate();
     this.listTimer -= dt;
     if (this.listTimer <= 0) {
       this.listTimer = 0.2;

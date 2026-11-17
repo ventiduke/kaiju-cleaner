@@ -127,12 +127,27 @@
     {
       "said": "The 'move mouse' to keep hold of something doesn't work",
       "when": "playtest 10",
-      "means": "The mouse is for looking, and nothing else: no mechanic may need the mouse moved, because the Runner has it captured for the view. Skill checks are a key press."
+      "means": "No skill check may need the mouse moved: the Runner has it captured. The mouse looks, and (playtest 11) while something is held it aims the kaiju, so the load can be lined up. Timing checks are a key press."
     },
     {
       "said": "Sneezing happens too much I think; and we don't need the 'hold breath'",
       "when": "playtest 10",
       "means": "A sneeze is an occasional event, not a rhythm: a careful shift should see one or two (`npm run playbot` prints the count). No meters to nurse."
+    },
+    {
+      "said": "When I'm holding something, moving the mouse should adjust the character 'aim' or position, so that I can use the mouse to \"line things up\" before releasing",
+      "when": "playtest 11",
+      "means": "With a load in its hands the kaiju faces where the player looks, with no extra key, and the keys step it about without turning it away. (test/runner.test.ts: 'with its hands full'.)"
+    },
+    {
+      "said": "oil slicks didn't seem to really do much... sneezing should knock the kaiju on it's back... burst water main should knock the kaiju up",
+      "when": "playtest 11",
+      "means": "A hazard has to do something that can be seen from across the street: it floors the kaiju or throws it, and costs it what it was holding. Losing some grip, or a number moving, is not a hazard. (test/runner.test.ts: 'can be floored'.)"
+    },
+    {
+      "said": "Current city is \"too easy\" - some of the streets could be narrower. But maybe that's a higher difficulty level",
+      "when": "playtest 11",
+      "means": "The city as it was stays the first level. Harder is offered as a choice (narrower streets, the side streets most), never by quietly tightening the default; and the playtest 6 rule still holds at every level: a street the route depends on can be walked."
     }
   ],
   "superseded": [

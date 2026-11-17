@@ -26,6 +26,10 @@ The city takes about a minute per run to simulate. Styles (`src/bot/playbot.ts`)
 - **reckless**: straight at everything, flat out; stabs at the bar, and one press in four is a fumble.
 - **idle**: never touches the controls. Nothing should finish, break or move.
 
+`npm run playbot -- chicago careful 1` plays the Chicago level, and a fourth number sets the difficulty
+(`npm run playbot -- city careful 1 2` is the first city with back-alley streets). A new level or a new
+difficulty is not done until the careful bot finishes it.
+
 It drives whichever body the game ships with (the Runner now), and the report has a line for the grip bar
 (catches, fumbles, drops) and counts sneezes and perfect fits. Rough targets, from the playtester's notes:
 a careful shift finishes every job with one to three sneezes and no more than a drop or two; a reckless

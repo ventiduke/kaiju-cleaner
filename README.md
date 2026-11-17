@@ -19,7 +19,9 @@ npm run smoke      # boots the build in headless Chromium, screenshots to script
 
 Scenes are picked with a URL parameter:
 
-- `?scene=city` (default): the city, 8×8 blocks either side of a river.
+- `?scene=city` (default): the city, 8×8 blocks either side of a river, made up afresh each shift.
+- `?scene=chicago`: Chicago, from a real map: the Loop, the river and its fork, the lake front, twenty
+  landmarks and the L (see "Chicago" below).
 - `?scene=course`: the movement test course: a timed kilometre of streets of different widths, with skybridges
   to get under and thin ground to step lightly over. The tuning dials are open beside it.
 - `?scene=run`: the Runner's course: a sprint, three low walls to jump, towers to weave round and three low
@@ -54,7 +56,8 @@ Scenes are picked with a URL parameter:
 | Free camera on / off | \\ | |
 | Throw a debug ball at the cursor | B (or click, in the free camera) | |
 
-**A shift.** The game opens on a briefing: today's jobs, and the keys. The job list (top right) shows each
+**A shift.** The game opens on a briefing: today's jobs, the keys, a choice of how tight the streets are
+(wide, as the city always was; tight; back alleys), and the way to the other level. The job list (top right) shows each
 job and how far off it is; the map (bottom right) and the arrows at the edge of the screen point at them.
 Whenever the city's opinion moves, the reason floats up from where it happened. When the last job is done
 there is a report card, and "next shift" builds a new city.
@@ -98,16 +101,36 @@ to 86%. A crooked one earns 60% of a straight one, a perfect fit a quarter more,
 again, so 100% takes every job perfect, quick and clean. Knocked-about buildings and squashed people lower it. Bowing (V) wins back people who are running from the
 kaiju at that moment, up to a point. When the last repair goes in, the banner gives the verdict.
 
+**Chicago.** A second level, laid out from a real map (`research/chicago-map/` says where every number
+came from and how far to trust it). The streets are the real ones in their real order: Wacker, Wells,
+LaSalle, Clark, Dearborn, State, Wabash and Michigan across; Chicago Avenue, Grand, Kinzie, then the river,
+then Wacker Drive, Lake, Randolph, Madison, Adams, Jackson, Van Buren and Congress going south. The river
+runs east to the lake and forks at the west end of the Loop. East of Lake Shore Drive there is only the
+lake, with Navy Pier in it. Each landmark is on its own corner: Willis Tower, 311 South Wacker, the Board
+of Trade closing the end of LaSalle Street, the Rookery, Daley Center, Chase Tower, the library, the
+Cultural Center, Union Station across the river; Aon, Prudential, Aqua and the St. Regis by the lake; the
+Art Institute and the parks; and north of the river the Merchandise Mart, Marina City, Trump Tower, the
+Wrigley Building, the Tribune Tower and, at the top of Michigan Avenue, the Hancock. The L runs round the
+Loop at chest height: crouch or slide under it, or go through it and pay. The corner you are standing on
+is named at the top left, and the city says so when it is the Wrigley Building you have just hit.
+
+It is drawn like a transit map, not to scale: about a third of the real size across the ground with
+streets wide enough to walk, a few lesser streets left out, and towers a sixteenth of their height, kept
+in their real order. The jobs are the place's own: the DuSable Bridge's missing leaf, the Cultural Center's
+dome, Union Station's skylight, the Art Institute's roof, the Water Tower to stand back up, an L car on a
+roof, and Cloud Gate to carry back to Millennium Park. Buckingham Fountain is a water main.
+
 **Hazards.**
 
-- Oil (dark, glossy patches): no grip. The Runner cannot turn or stop on it; the balancing styles go over.
+- Oil (dark, glossy patches): no grip. At a run, the Runner's feet go from under it and it crosses on its
+  back, spinning; at a crouch it gets over. The balancing styles go over.
 - Weak ground (pale, cracked patches): a heavy step brings it down and shakes loose the buildings around.
   Crouched (or on tiptoe, in the balancing styles) it is light enough to cross.
-- Water mains (blue covers in the road): a heavy step bursts one. The geyser throws about whatever is on
-  it, staggers the kaiju, and leaves the road slippery until it dries. Standing in the spray does wash
+- Water mains (blue covers in the road): a heavy step bursts one. The geyser throws the kaiju into the
+  air (it lands in a heap), tosses whatever else is on it, and leaves the road slippery until it dries. Standing in the spray does wash
   the dust out of its nose. Tiptoe is light enough to cross.
-- Dust: every chunk that breaks nearby tickles its nose. When the bar fills it sneezes, which throws it
-  backwards and blasts everything in front of it. There is no holding it in: the "ah... ah..." is about a
+- Dust: every chunk that breaks nearby tickles its nose. When the bar fills it sneezes, which blasts
+  everything in front of it and puts the kaiju flat on its back, dropping whatever it held. There is no holding it in: the "ah... ah..." is about a
   second in which to point it somewhere harmless, or at a blocked road. Afterwards its nose is clear for a
   while, so one sneeze's wreckage does not bring on the next.
 - The river: 13 m deep with a current. It pushes the kaiju downstream as it wades, and carries floating

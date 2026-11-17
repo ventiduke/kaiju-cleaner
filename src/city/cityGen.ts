@@ -43,6 +43,8 @@ export interface Street {
   /** Its centre on the other axis. */
   center: number;
   width: number;
+  /** What it is called, in a level that has real streets. */
+  name?: string;
 }
 
 /**
@@ -126,6 +128,26 @@ export interface River {
   depth: number;
 }
 
+/**
+ * A rectangle of water: a lake, a harbour, a branch of a river that does not run the whole
+ * width of the map. Levels made by hand (a real city's water is not one straight band) list
+ * these instead of a `River`. They do not flow.
+ */
+export interface Water {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+  depth: number;
+}
+
+/** Whether a point is over one of a layout's rectangles of water. */
+export function inWater(waters: Water[] | undefined, x: number, z: number, margin = 0): boolean {
+  if (!waters) return false;
+  for (const w of waters) if (x > w.x0 - margin && x < w.x1 + margin && z > w.z0 - margin && z < w.z1 + margin) return true;
+  return false;
+}
+
 export interface CityLayout {
   /** Extent of the paved area, including the perimeter road. */
   sizeX: number;
@@ -142,6 +164,10 @@ export interface CityLayout {
   /** Roads to sweep clear. Their rubble is among the props. */
   sweeps: SweepSpec[];
   river: River | null;
+  /** Other water, as rectangles (see `Water`). */
+  waters?: Water[];
+  /** Buildings that are somebody's in particular, in a level made from a real place. */
+  landmarks?: { name: string; x: number; z: number; floors: number; metres: number; building: number }[];
   /** Where a kaiju starts: at the south end of the widest street, facing north (-z). */
   spawn: { x: number; z: number; yaw: number };
 }

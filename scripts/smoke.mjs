@@ -14,7 +14,7 @@ try {
 }
 
 const PORT = 4179;
-const scenes = (process.argv[2] ?? 'yard,city').split(',');
+const scenes = (process.argv[2] ?? 'yard,city,chicago').split(',');
 const settleSteps = Number(process.argv[3] ?? 240);
 mkdirSync('scripts/out', { recursive: true });
 

@@ -221,7 +221,7 @@ async function boot(): Promise<void> {
   };
   const recorder = sim.add(new SessionRecorder(sim, sceneName, kaiju, damage));
   const audio = new GameAudio(sim, kaiju);
-  if (sceneName === 'city') {
+  if (sceneName === 'city' || sceneName === 'chicago') {
     freeCam.distance = 300;
     freeCam.pitch = 0.7;
   }
@@ -511,7 +511,8 @@ async function boot(): Promise<void> {
           pieces,
           citizens,
           nose,
-          intro: (params.has('intro') || !automated) && sceneName === 'city',
+          intro: (params.has('intro') || !automated) && (sceneName === 'city' || sceneName === 'chicago'),
+          place: sceneName,
           targets: () => {
             const gate = course?.next();
             return gate ? [{ name: gate.name, color: gate.color, done: false, sloppy: false, active: true, x: gate.x, z: gate.z, note: 'next gate' }] : [];
