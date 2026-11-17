@@ -7,6 +7,7 @@ import type { Kaiju } from './kaiju';
 
 const origin = new THREE.Vector3();
 const dir = new THREE.Vector3();
+const back = new THREE.Vector3();
 
 /**
  * Dust gets up the kaiju's nose. Every chunk that breaks or crumbles nearby adds to the
@@ -76,6 +77,8 @@ export class Nose implements System {
     const mass = body.mass();
     body.applyImpulse({ x: -dir.x * mass * t.kick, y: 0, z: -dir.z * mass * t.kick }, true);
     k.trip(-dir.x, -dir.z, 1.3);
+    // And, as shipped, right over: flat on its back.
+    if (t.floors) k.knockDown(back.set(-dir.x, 0, -dir.z));
 
     this.chunks?.blast(origin, dir, t.range, 0.72, t.power);
     this.props?.blast(origin, dir, t.range, 0.72, t.power);

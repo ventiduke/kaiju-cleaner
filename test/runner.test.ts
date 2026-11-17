@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { CourseBot, runCourse } from '../src/bot/coursebot';
 import type { Course } from '../src/city/course';
+import * as THREE from 'three';
+import type { WaterMains } from '../src/city/mains';
 import type { Pieces } from '../src/city/pieces';
+import type { Nose } from '../src/kaiju/nose';
 import { runSpec } from '../src/scenes/course';
 import { Stage } from '../src/core/states';
 import { STYLES } from '../src/core/tuning';
@@ -489,6 +492,122 @@ describe('the runner', () => {
     expect(sorry).toBe(1);
     // And off it goes again.
     expect(k.speed).toBeGreaterThan(g.sim.tuning.runner.speed * 0.9);
+  });
+
+  describe('can be floored', () => {
+    // (As shipped: the tests' reference settings leave these off.)
+    const HAZARDS = { city: { propDensity: 0 }, sneeze: { floors: 1 }, hazards: { geyser: 24, oilSpeed: 0.5 } };
+
+    it('a sneeze puts it flat on its back: it lies there, gets up, and has dropped what it was holding', async () => {
+      const g = await runner('yard', HAZARDS);
+      const k = g.kaiju;
+      const pieces = g.sim.parts.pieces as Pieces;
+      const nose = g.sim.parts.nose as Nose;
+      const inp = g.sim.players[0];
+      const stage = new Stage(g.sim);
+      const piece = pieces.pieces[0];
+      stage.handsOver(piece.job.start.x, piece.job.start.z, 0);
+      pieces.grab(piece);
+      g.sim.run(60);
+      expect(pieces.held).toBe(piece);
+      let fell = 0;
+      g.sim.on('kaijuFall', () => fell++);
+      const at = k.position().clone();
+      nose.sneeze();
+      g.sim.run(20);
+      expect(fell).toBe(1);
+      expect(k.falls).toBe(1);
+      expect(k.state).toBe('fallen');
+      expect(k.flat).toBeGreaterThan(0.9);
+      // On its back: its body is laid right over, low to the ground, and it was thrown backwards.
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion(k.body.rotation().x, k.body.rotation().y, k.body.rotation().z, k.body.rotation().w));
+      expect(up.y).toBeLessThan(0.3);
+      expect(up.dot(k.forward)).toBeLessThan(-0.8);
+      expect(k.position().y).toBeLessThan(k.rideHeight * 0.6);
+      expect(k.position().clone().sub(at).dot(k.forward)).toBeLessThan(-0.5);
+      expect(pieces.held).toBe(null);
+      expect(pieces.drops).toBe(1);
+      // Nothing the player does gets it going while it is down.
+      inp.look = k.yaw;
+      inp.thrust = 1;
+      inp.jump = true;
+      g.sim.run(30);
+      expect(k.state).not.toBe('walk');
+      expect(k.speed).toBeLessThan(3);
+      expect(k.jumps).toBe(0);
+      inp.jump = false;
+      // A couple of seconds, all told, and it is up and off.
+      const up2 = g.sim.stepUntil(() => k.state === 'walk', 5);
+      expect(up2.met).toBe(true);
+      expect(up2.seconds + 50 / 60).toBeLessThan(g.sim.tuning.kaiju.fallDuration + g.sim.tuning.kaiju.getUpDuration + 1);
+      g.sim.run(90);
+      expect(k.flat).toBe(0);
+      expect(k.speed).toBeGreaterThan(g.sim.tuning.runner.speed * 0.9);
+      expect(Math.abs(k.position().y - k.rideHeight)).toBeLessThan(2);
+    });
+
+    it('a bursting water main throws it into the air, and it comes down in a heap', async () => {
+      const g = await runner('yard', HAZARDS);
+      const k = g.kaiju;
+      const mains = g.sim.parts.mains as WaterMains;
+      const main = mains.mains[0];
+      const stage = new Stage(g.sim);
+      // Beside the cover (on it, its own footsteps would burst the main before the test did).
+      stage.face(0, 0);
+      stage.moveTo(main.x, main.z + 12);
+      expect(mains.bursts).toBe(0);
+      const ride = k.position().y;
+      mains.burst(main);
+      let peak = 0;
+      const air = g.sim.stepUntil(() => !k.airborne && g.sim.time > 0.3 && peak > 1, 6, () => (peak = Math.max(peak, k.position().y - ride)));
+      expect(air.met).toBe(true);
+      // Well up: more than a hop, less than over the rooftops.
+      expect(peak).toBeGreaterThan(4);
+      expect(peak).toBeLessThan(25);
+      expect(k.jumps).toBe(0);
+      g.sim.run(5);
+      expect(k.state).toBe('fallen');
+      expect(k.falls).toBe(1);
+      const up = g.sim.stepUntil(() => k.state === 'walk', 6);
+      expect(up.met).toBe(true);
+    });
+
+    it('oil at a run takes its feet from under it and it slides right across; at a crouch it gets over', async () => {
+      const cross = async (crouched: boolean) => {
+        const g = await runner('yard', HAZARDS);
+        const k = g.kaiju;
+        const inp = g.sim.players[0];
+        const oil = g.layout.hazards.find((h) => h.kind === 'oil')!;
+        const stage = new Stage(g.sim);
+        // Come at the slick from the open side, with a run-up.
+        stage.face(Math.PI / 2, 0);
+        stage.moveTo(oil.x - oil.radius - 45, oil.z);
+        let slipped = 0;
+        g.sim.on('oilSlip', () => slipped++);
+        inp.look = Math.PI / 2;
+        inp.thrust = 1;
+        inp.crouch = crouched;
+        let fastestDown = 0;
+        const over = g.sim.stepUntil(
+          () => k.position().x > oil.x + oil.radius + 8 && k.state === 'walk',
+          20,
+          () => {
+            if (k.state === 'fallen') fastestDown = Math.max(fastestDown, k.speed);
+          },
+        );
+        return { over: over.met, seconds: over.seconds, falls: k.falls, slipped, fastestDown, slides: k.slides, run: g.sim.tuning.runner.speed };
+      };
+      const fast = await cross(false);
+      expect(fast.slipped).toBe(1);
+      expect(fast.falls).toBe(1);
+      // It keeps most of its speed across the oil, on its back.
+      expect(fast.fastestDown).toBeGreaterThan(fast.run * 0.7);
+      expect(fast.over).toBe(true);
+      const slow = await cross(true);
+      expect(slow.slipped).toBe(1);
+      expect(slow.falls).toBe(0);
+      expect(slow.over).toBe(true);
+    });
   });
 
   it('is the same run every time', async () => {

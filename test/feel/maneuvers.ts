@@ -24,7 +24,9 @@ export const REF = {
   // now ships with, has its own in test/runner.test.ts.)
   move: { style: 1, jump: 0, slide: 0, relative: 1, controller: 0 },
   // (How often it sneezes is tuned to taste; what a sneeze does is what is tested.)
-  sneeze: { dust: 0.03, clear: 0.04, rest: 0 },
+  sneeze: { dust: 0.03, clear: 0.04, rest: 0, floors: 0 },
+  // (And so with what the other hazards do to it.)
+  hazards: { geyser: 0 },
 };
 
 export interface Rig {

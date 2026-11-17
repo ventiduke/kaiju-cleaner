@@ -235,6 +235,8 @@ export const codeDefaults = {
     clear: 0.05,
     /** Seconds after a sneeze in which its nose is clear and takes no dust (or one sneeze's wreckage would bring on the next). */
     rest: 25,
+    /** 1: a sneeze puts it flat on its back (and whatever it was holding on the ground). 0: it only staggers. */
+    floors: 1,
     /** Seconds between "ah... ah..." and the sneeze. */
     windup: 0.9,
     /** How hard it is thrown backwards (m/s). */
@@ -242,6 +244,12 @@ export const codeDefaults = {
     /** How far the blast reaches (m) and how hard it throws things (m/s close up). */
     range: 80,
     power: 32,
+  },
+  hazards: {
+    /** How hard a bursting water main throws the kaiju into the air (m/s straight up; 0: it only staggers). */
+    geyser: 24,
+    /** On oil faster than this share of running speed, the Runner's feet go from under it (0: never). */
+    oilSpeed: 0.5,
   },
   citizens: {
     /** How many people stroll each block's sidewalks (x5). */
@@ -633,11 +641,13 @@ export const ranges: { [G in TuningGroup]?: { [K in keyof Tuning[G]]?: [number, 
     dust: [0, 0.2, 0.002],
     clear: [0, 1, 0.01],
     rest: [0, 120, 1],
+    floors: [0, 1, 1],
     windup: [0.1, 3, 0.05],
     kick: [0, 40, 0.5],
     range: [10, 200, 5],
     power: [0, 80, 1],
   },
+  hazards: { geyser: [0, 60, 1], oilSpeed: [0, 1.5, 0.05] },
   citizens: { density: [0, 4, 0.1] },
   audio: { volume: [0, 1, 0.01] },
   tail: {

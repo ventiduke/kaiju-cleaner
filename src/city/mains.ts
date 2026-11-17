@@ -123,7 +123,14 @@ export class WaterMains implements System {
     // The kaiju is knocked off the cover it just stood on.
     const p = this.kaiju.body.translation();
     const d = Math.hypot(p.x - main.x, p.z - main.z);
-    if (d < 14) this.kaiju.trip((p.x - main.x) / Math.max(d, 0.1), (p.z - main.z) / Math.max(d, 0.1), 1.2);
+    if (d < 14) {
+      const ax = (p.x - main.x) / Math.max(d, 0.1);
+      const az = (p.z - main.z) / Math.max(d, 0.1);
+      this.kaiju.trip(ax, az, 1.2);
+      // And up it goes, a little away from the middle of the spout.
+      const up = this.sim.tuning.hazards.geyser;
+      this.kaiju.launch(up * (1 - d / 40), ax * 6, az * 6);
+    }
   }
 
   postStep(dt: number): void {

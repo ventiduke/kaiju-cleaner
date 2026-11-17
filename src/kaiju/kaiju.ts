@@ -37,6 +37,8 @@ const BOW_SECONDS = 1.9;
 const SLIDE_SECONDS = 1.6;
 /** How far forward the runner is pitched in a slide (rad): all but flat on its belly. */
 const SLIDE_PITCH = 1.46;
+/** And how far back when it has been floored (rad): all but flat on its back. */
+const BACK_PITCH = 1.42;
 
 /**
  * Adds a rim of sky-coloured light round the edges of a shape, so it stands out against a dark
@@ -167,6 +169,17 @@ export class Kaiju implements System {
   private jumpBuffer = 0;
   private jumpCut = false;
   private slideQueued = false;
+  /**
+   * Knocked down (the Runner cannot lose its balance, but it can be floored: by a sneeze, by oil
+   * under its feet at a run, by coming down from a geyser). Seconds it has left on its back, which
+   * do not start counting until it has stopped sliding; seconds left of getting up; and how flat
+   * it is (0 on its feet .. 1 on its back).
+   */
+  private downFor = 0;
+  private gettingUp = 0;
+  flat = 0;
+  /** Thrown into the air by something: no say in where it goes, and it lands in a heap. */
+  private thrown = false;
   /** The velocity it set itself last step (to tell, next step, whether something stopped it). */
   private askedX = 0;
   private askedZ = 0;
@@ -473,6 +486,8 @@ export class Kaiju implements System {
       this.tail.weigh(runner ? 0.04 : 1);
       if (!runner) this.tail.loose();
       this.yawRate = this.bank = this.nod = this.bankRate = this.nodRate = this.skid = this.prone = this.dip = this.bounce = 0;
+      this.downFor = this.gettingUp = this.flat = 0;
+      this.thrown = false;
     }
     if (runner) {
       this.runnerStep(dt);
@@ -845,7 +860,6 @@ export class Kaiju implements System {
     const p = body.translation();
     const v = body.linvel();
     pos.set(p.x, p.y, p.z);
-    this.state = 'walk';
     this.load = 0;
     this.stall = 0;
 
@@ -860,10 +874,29 @@ export class Kaiju implements System {
     const traction = this.sim.traction(p.x, p.z);
     this.traction = traction;
 
+    if (this.downFor > 0 || this.gettingUp > 0) {
+      this.runnerDown(dt, groundY, traction);
+      return;
+    }
+    this.state = 'walk';
+    this.flat = Math.max(0, this.flat - dt * 4);
+
     let vx = v.x;
     let vz = v.z;
     let vy = v.y;
     const speed = Math.hypot(vx, vz);
+
+    // --- Oil. At a walk or a crouch it is only slippery. At a run its feet go from under it: it
+    // lands on its back and slides across, and out the other side. (A belly-slide just keeps sliding.)
+    const oily = traction < 0.5 && !this.airborne;
+    if (oily && !this.wasOily) this.sim.emit('oilSlip', { x: p.x, y: p.y, z: p.z });
+    this.wasOily = oily;
+    if (oily && this.sliding <= 0 && t.hazards.oilSpeed > 0 && speed > r.speed * t.hazards.oilSpeed) {
+      // (Spinning the way it was already turning, or one way or the other.)
+      this.floor(Math.abs(this.yawRate) > 0.3 ? Math.sign(this.yawRate) * 4 : this.sim.tick % 2 ? 3.5 : -3.5);
+      this.runnerDown(dt, groundY, traction);
+      return;
+    }
 
     // --- A bow of apology: it stops, bends from the hips, holds it, and straightens up. (The same
     // bow as the balancing kaiju's; it has to stand still to mean it.)
@@ -883,12 +916,13 @@ export class Kaiju implements System {
     const bowing = this.bowTime > 0 || this.bow > 0;
 
     // --- What is being asked for: a direction on the ground, by the screen, and how hard.
-    let push = this.planted || bowing ? 0 : Math.min(1, Math.hypot(input.thrust, input.strafe));
+    // (Nothing, while it is being thrown through the air.)
+    let push = this.planted || bowing || this.thrown ? 0 : Math.min(1, Math.hypot(input.thrust, input.strafe));
     let wish = input.look + Math.atan2(input.strafe, input.thrust);
     if (input.turn) {
       // (Steered by hand, by a script or a pad with no view stick: left and right of where it is facing.)
       wish = this.yaw + input.turn * 0.9;
-      push = this.planted || bowing ? 0 : Math.min(1, Math.abs(input.thrust));
+      push = this.planted || bowing || this.thrown ? 0 : Math.min(1, Math.abs(input.thrust));
     }
 
     // --- A slide: crouching on the move throws it flat, and it rides its speed down.
@@ -1045,12 +1079,18 @@ export class Kaiju implements System {
         vy *= 0.5;
         this.jumpCut = true;
       }
+      // Thrown, it turns over backwards as it flies.
+      if (this.thrown) this.flat = Math.min(1, this.flat + dt * 1.6);
       if (this.airTime > 0.15 && vy < 0 && error > -1) {
         this.airborne = false;
         this.dip = Math.min(this.rideHeight * 0.3, -vy * 0.09);
         this.sim.emit('kaijuLand', { x: p.x, y: p.y, z: p.z, speed: -vy });
         this.sim.emit('footfall', { x: p.x, y: groundY, z: p.z, side: 0, strength: 2, wet: this.wading > 0.2 });
         this.chunks?.shake(p.x, p.z, k.bodyRadius + 2 + -vy * 0.15);
+        if (this.thrown) {
+          this.thrown = false;
+          this.floor(0);
+        }
       }
     } else {
       // (Gravity is still pulling: cancel it, then close on the height wanted.)
@@ -1084,7 +1124,7 @@ export class Kaiju implements System {
     this.tilt = Math.abs(this.bank);
 
     // Facing where it faces; pitched by the crouch, the slide and the lean; rolled about its line of travel.
-    const pitch = crawl * m.crawlPitch + prone * (SLIDE_PITCH - m.crawlPitch) + this.nod * (1 - prone) + smooth(this.bow) * BOW_PITCH;
+    const pitch = crawl * m.crawlPitch + prone * (SLIDE_PITCH - m.crawlPitch) + this.nod * (1 - prone) + smooth(this.bow) * BOW_PITCH - smooth(this.flat) * BACK_PITCH;
     quat
       .setFromAxisAngle(UP, this.yaw)
       .multiply(tmpQuat.setFromAxisAngle(AXIS_Z, -this.bank * (1 - 0.5 * crawl)))
@@ -1120,6 +1160,124 @@ export class Kaiju implements System {
     this.tail.arm(body.linvel());
   }
 
+  /**
+   * The Runner on its back. It slides on with whatever speed it had (a long way, on oil), spinning
+   * if it was sent spinning; once it has stopped it lies there for a moment, then gets up. There
+   * is nothing the player can do but wait: that is the cost.
+   */
+  private runnerDown(dt: number, groundY: number, traction: number): void {
+    const t = this.sim.tuning;
+    const k = t.kaiju;
+    const g = t.world.gravity;
+    const body = this.body;
+    const p = body.translation();
+    const v = body.linvel();
+    let vx = v.x;
+    let vz = v.z;
+    let vy = v.y;
+    const speed = Math.hypot(vx, vz);
+    const next = Math.max(0, speed - 34 * traction * dt);
+    if (speed > 1e-3) {
+      vx *= next / speed;
+      vz *= next / speed;
+    }
+    this.yawRate *= Math.exp(-dt * (0.4 + 2.2 * traction));
+    this.yaw += this.yawRate * dt;
+    this.forward.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    this.left.set(this.forward.z, 0, -this.forward.x);
+
+    if (this.downFor > 0) {
+      this.flat = Math.min(1, this.flat + dt * 6);
+      if (next < 5) this.downFor -= dt;
+      if (this.downFor <= 0) {
+        this.downFor = 0;
+        this.gettingUp = Math.max(0.2, k.getUpDuration);
+        this.setState('getup');
+      }
+    } else {
+      this.gettingUp -= dt;
+      this.flat = Math.max(0, this.flat - dt / Math.max(0.2, k.getUpDuration));
+      if (this.gettingUp <= 0) {
+        this.gettingUp = 0;
+        this.setState('walk');
+      }
+    }
+    const flat = smooth(this.flat);
+    // Lying, its back is on the ground; getting up, it comes back to standing height.
+    const want = this.rideHeight + (k.bodyRadius + 0.6 - this.rideHeight) * flat;
+    vy += g * dt;
+    vy += (THREE.MathUtils.clamp((want - (p.y - groundY)) * 14, -40, 40) - vy) * Math.min(1, dt * 20);
+    body.setLinvel({ x: vx, y: vy, z: vz }, true);
+    this.askedX = vx;
+    this.askedZ = vz;
+    this.speed = next;
+    this.forwardSpeed = vx * this.forward.x + vz * this.forward.z;
+    this.airborne = false;
+    this.sliding = 0;
+    this.mode = 'normal';
+    this.crawl = Math.max(0, this.crawl - dt * 8);
+    this.prone = Math.max(0, this.prone - dt * 8);
+    this.skid = 0;
+    this.bank = this.nod = this.bankRate = this.nodRate = 0;
+    this.bow = 0;
+    this.bowTime = 0;
+    this.tilt = flat * BACK_PITCH;
+
+    quat.setFromAxisAngle(UP, this.yaw).multiply(tmpQuat.setFromAxisAngle(AXIS_X, -flat * BACK_PITCH));
+    body.setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+
+    // Its legs are in the air, and its tail is wherever it fell.
+    const ctx = this.legContext;
+    ctx.pos.copy(pos);
+    ctx.velocity.set(vx, 0, vz);
+    ctx.yaw = this.yaw;
+    ctx.standing = flat < 0.25;
+    ctx.tuck = 0.35;
+    ctx.crawl = 0;
+    this.legs.stride(dt, ctx, 0, 0);
+    tmp.copy(this.tailAnchor).applyQuaternion(quat).add(pos).addScaledVector(tmp2.set(vx, vy, vz), dt);
+    this.tail.follow(dt, tmp, this.yaw, { x: vx, y: vy, z: vz }, t.runner.tail, -0.3, 0);
+    this.tail.arm(body.linvel());
+  }
+
+  /** Puts the Runner on its back, sliding on with the speed it has, turning at `spin` rad/s. */
+  private floor(spin: number): void {
+    if (this.downFor > 0 || this.gettingUp > 0) return;
+    this.downFor = Math.max(0.3, this.sim.tuning.kaiju.fallDuration);
+    this.setState('fallen');
+    this.falls++;
+    this.yawRate = spin;
+    this.sliding = 0;
+    this.thrown = false;
+    const t = this.body.translation();
+    this.sim.emit('kaijuFall', { x: t.x, y: t.y, z: t.z });
+  }
+
+  /**
+   * Throws it into the air: straight up at `up` m/s, and sideways with (dx, dz) m/s. The Runner
+   * has no say in where it goes until it lands, which it does on its back. The balancing kaiju
+   * is simply thrown, and lands however it lands.
+   */
+  launch(up: number, dx = 0, dz = 0): void {
+    if (up <= 0) return;
+    const v = this.body.linvel();
+    if (this.sim.tuning.move.controller !== 1) {
+      if (this.state === 'fallen') return;
+      this.body.setLinvel({ x: v.x + dx, y: Math.max(v.y, up * 0.6), z: v.z + dz }, true);
+      return;
+    }
+    if (this.downFor > 0 || this.gettingUp > 0 || this.thrown) return;
+    this.body.setLinvel({ x: v.x + dx, y: up, z: v.z + dz }, true);
+    this.airborne = true;
+    this.airTime = 0;
+    this.thrown = true;
+    this.jumpCut = true;
+    this.sliding = 0;
+    const p = this.body.translation();
+    this.sim.emit('kaijuJump', { x: p.x, y: p.y, z: p.z });
+  }
+
   /** The catch-step of a stumble: a stagger toward the side it is toppling to, which rights it a little. */
   private lurch(mass: number): void {
     const k = this.sim.tuning.kaiju;
@@ -1152,6 +1310,11 @@ export class Kaiju implements System {
 
   /** Knocks the kaiju flat, toppling toward `direction` (defaults to its left). For hazards and tests. */
   knockDown(direction: THREE.Vector3 = this.left): void {
+    if (this.sim.tuning.move.controller === 1) {
+      // (The Runner always lands on its back, whichever way it was pushed.)
+      this.floor(0);
+      return;
+    }
     if (this.state === 'fallen') return;
     this.setState('fallen');
     this.falls++;
@@ -1236,7 +1399,11 @@ export class Kaiju implements System {
       const pump = striding ? side * Math.cos(stride) * Math.min(1, pace) : 0;
       let swing: number;
       let spread = 0.35;
-      if (prone > 0.5) swing = -2.75;
+      if (this.flat > 0.3) {
+        // Floored, or flying: arms flung up and out.
+        swing = -2.5;
+        spread = 1.2;
+      } else if (prone > 0.5) swing = -2.75;
       else if (this.airborne) {
         swing = this.body.linvel().y > 0 ? -2.2 : -0.7;
         spread = 0.8;
